@@ -2,8 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Crosshair that follows the mouse and doubles as a metronome: its four ticks close in towards
-/// the centre over each beat and spring back out on the beat, so click when they close.
+/// Crosshair that follows the mouse. Timing is shown by the ring on each chart target, not here.
 /// Shows PERFECT / GOOD / MISS under the crosshair after each shot.
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
@@ -11,10 +10,8 @@ using UnityEngine.UI;
 public class AimHUD : MonoBehaviour
 {
     public Color crosshairColor = Color.white;
-    [Tooltip("Gap between the centre and the ticks right before a beat, in pixels at 1080p.")]
+    [Tooltip("Gap between the centre and the ticks, in pixels at 1080p.")]
     public float tickGap = 12f;
-    [Tooltip("Extra gap right after a beat, in pixels at 1080p.")]
-    public float beatSpread = 26f;
     [Tooltip("Seconds the PERFECT / GOOD / MISS label stays up.")]
     public float judgmentShowTime = 0.45f;
     public bool hideSystemCursor = true;
@@ -60,14 +57,8 @@ public class AimHUD : MonoBehaviour
     {
         crosshair.position = shooter.AimScreenPosition;
 
-        float gap = tickGap;
-        if (BeatClock.Instance != null)
-        {
-            float beat = BeatClock.Instance.BeatPosition;
-            gap += beatSpread * (1f - (beat - Mathf.Floor(beat)));
-        }
         for (int i = 0; i < ticks.Length; i++)
-            ticks[i].anchoredPosition = TickDirections[i] * (gap + TickLength * 0.5f);
+            ticks[i].anchoredPosition = TickDirections[i] * (tickGap + TickLength * 0.5f);
 
         if (judgmentTimer > 0f)
         {
@@ -112,7 +103,7 @@ public class AimHUD : MonoBehaviour
         var labelRect = judgmentLabel.rectTransform;
         labelRect.SetParent(crosshair, false);
         labelRect.sizeDelta = new Vector2(300f, 40f);
-        labelRect.anchoredPosition = new Vector2(0f, -(tickGap + beatSpread + TickLength + 24f));
+        labelRect.anchoredPosition = new Vector2(0f, -(tickGap + TickLength + 24f));
         judgmentLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         judgmentLabel.fontSize = 28;
         judgmentLabel.fontStyle = FontStyle.Bold;

@@ -4,9 +4,10 @@ using UnityEngine.InputSystem;
 
 /// <summary>
 /// Mouse moves the aim, left click fires a bullet from the muzzle towards the point under the
-/// cursor. Every shot is judged against the beat (Perfect / Good / Miss); the judgment sets the
-/// bullet's damage and colour and is announced through <see cref="ShotFired"/>, e.g. for streaks.
-/// Each beat can only be scored once, so mashing turns the extra shots into Misses.
+/// cursor. Every shot is judged against the nearest chart note / asteroid hit time
+/// (Perfect / Good / Miss); the judgment sets the bullet's damage and colour and is announced
+/// through <see cref="ShotFired"/>. Each chart note can only be scored once, so mashing the
+/// extras into Misses.
 /// </summary>
 public class PlayerShooter : MonoBehaviour
 {
@@ -48,7 +49,7 @@ public class PlayerShooter : MonoBehaviour
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
     float lastShotTime = float.NegativeInfinity;
-    int lastScoredBeat = int.MinValue;
+    int lastScoredNote = int.MinValue;
 
     void Start()
     {
@@ -111,14 +112,25 @@ public class PlayerShooter : MonoBehaviour
     BeatJudgment JudgeShot()
     {
         BeatClock clock = BeatClock.Instance;
+        ChartTargetSpawner spawner = ChartTargetSpawner.Instance;
         if (clock == null) return BeatJudgment.Good;
 
-        BeatJudgment judgment = clock.Judge(out int beat, out _);
-        if (judgment == BeatJudgment.Miss) return judgment;
-        if (beat == lastScoredBeat) return BeatJudgment.Miss;
+        // Prefer chart notes (MIDI / asteroids). Fall back to the quarter grid only if no chart.
+        if (spawner != null && spawner.Notes.Count > 0)
+        {
+            BeatJudgment judgment = spawner.JudgeShot(
+                clock.SongTime, clock.perfectWindow, clock.goodWindow, out int noteIndex, out _);
+            if (judgment == BeatJudgment.Miss) return judgment;
+            if (noteIndex == lastScoredNote) return BeatJudgment.Miss;
+            lastScoredNote = noteIndex;
+            return judgment;
+        }
 
-        lastScoredBeat = beat;
-        return judgment;
+        BeatJudgment grid = clock.Judge(out int beat, out _);
+        if (grid == BeatJudgment.Miss) return grid;
+        if (beat == lastScoredNote) return BeatJudgment.Miss;
+        lastScoredNote = beat;
+        return grid;
     }
 
     public int DamageFor(BeatJudgment judgment) => judgment switch
