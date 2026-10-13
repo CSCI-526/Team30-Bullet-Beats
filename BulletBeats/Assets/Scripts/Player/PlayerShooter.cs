@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Mouse moves the aim; left click fires a straight projectile. Hits are resolved by collision.
@@ -27,8 +28,8 @@ public class PlayerShooter : MonoBehaviour
     public float minShotInterval = 0.08f;
 
     [Header("Projectile")]
-    [InspectorName("Damage")]
-    public int missDamage = 1;
+    [FormerlySerializedAs("missDamage")]
+    public int bulletDamage = 1;
     [Header("Judgment colors (bullet and label)")]
     public Color missColor = new Color(1f, 0.4f, 0.4f);
 
@@ -109,7 +110,7 @@ public class PlayerShooter : MonoBehaviour
         if (bulletPrefab != null)
         {
             PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction.normalized));
-            bullet.Launch(transform, direction.normalized * bulletSpeed, missDamage, judgment, ColorFor(judgment));
+            bullet.Launch(transform, direction.normalized * bulletSpeed, bulletDamage, judgment, ColorFor(judgment));
         }
 
         ShotFired?.Invoke(judgment);
