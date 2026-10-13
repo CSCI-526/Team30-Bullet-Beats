@@ -1,9 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// A player shot. A hit flies to its planet and both disappear. Any other shot flies straight
-/// and stops at the first <see cref="IShootable"/> or solid collider. Trigger colliders without
-/// an <see cref="IShootable"/> are passed through.
+/// A straight projectile that stops at the first <see cref="IShootable"/> or solid collider.
+/// Trigger colliders without an <see cref="IShootable"/> are passed through.
 /// </summary>
 public class PlayerBullet : MonoBehaviour
 {
@@ -20,9 +19,6 @@ public class PlayerBullet : MonoBehaviour
     Transform owner;
     Vector3 velocity;
     float age;
-    bool flyToPlanet;
-    Vector3 planetPoint;
-    ChartTarget planet;
 
     /// <param name="owner">The bullet never hits this object or its children.</param>
     public void Launch(Transform owner, Vector3 velocity, int damage, BeatJudgment judgment, Color color)
@@ -39,26 +35,8 @@ public class PlayerBullet : MonoBehaviour
             r.SetPropertyBlock(block);
     }
 
-    /// <summary>Fly straight to where the planet is, then disappear and remove it.</summary>
-    public void FlyToPlanet(Vector3 point, ChartTarget target)
-    {
-        flyToPlanet = true;
-        planetPoint = point;
-        planet = target;
-        Vector3 delta = point - transform.position;
-        if (delta.sqrMagnitude < 0.0001f || velocity.sqrMagnitude < 0.0001f) return;
-        velocity = delta.normalized * velocity.magnitude;
-        transform.rotation = Quaternion.LookRotation(velocity);
-    }
-
     void Update()
     {
-        if (flyToPlanet)
-        {
-            FlyTowardPlanet();
-            return;
-        }
-
         float step = velocity.magnitude * Time.deltaTime;
         if (step > 0f && HitSomething(step))
         {
@@ -69,25 +47,6 @@ public class PlayerBullet : MonoBehaviour
         transform.position += velocity * Time.deltaTime;
         age += Time.deltaTime;
         if (age >= lifetime) Destroy(gameObject);
-    }
-
-    void FlyTowardPlanet()
-    {
-        float step = velocity.magnitude * Time.deltaTime;
-        Vector3 toPlanet = planetPoint - transform.position;
-        if (step >= toPlanet.magnitude || toPlanet.sqrMagnitude <= 0.0001f)
-        {
-            transform.position = planetPoint;
-            if (planet != null) planet.ResolveShot();
-            Destroy(gameObject);
-            return;
-        }
-
-        transform.position += velocity.normalized * step;
-        age += Time.deltaTime;
-        if (age < lifetime) return;
-        if (planet != null) planet.ResolveShot();
-        Destroy(gameObject);
     }
 
     bool HitSomething(float step)

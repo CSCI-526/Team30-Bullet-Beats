@@ -3,11 +3,10 @@ using UnityEngine;
 
 /// <summary>
 /// Placeholder asteroid: flies so it reaches <see cref="hitPoint"/> at <see cref="hitTime"/>
-/// on the song clock. A click hits it only while the shrinking ring is up, the cursor is
-/// inside that ring, and the click is Perfect or Good. Replace with the real Asteroid prefab
-/// once that PR merges.
+/// on the song clock. A physical bullet hit destroys it; the shrinking ring is a timing cue.
+/// Replace with the real Asteroid prefab once that PR merges.
 /// </summary>
-public class ChartTarget : MonoBehaviour
+public class ChartTarget : MonoBehaviour, IShootable
 {
     static readonly List<ChartTarget> active = new List<ChartTarget>();
 
@@ -25,7 +24,6 @@ public class ChartTarget : MonoBehaviour
     Vector2 viewport;
     bool hasViewport;
     bool armed;
-    bool claimed;
     LineRenderer ring;
     const int RingSegments = 48;
     const float RingMinRadius = 3f;
@@ -35,16 +33,11 @@ public class ChartTarget : MonoBehaviour
 
     void OnDisable() => active.Remove(this);
 
-    /// <summary>
-    /// Claims the ring under the cursor when the click is Perfect or Good for that note.
-    /// The planet stays put until <see cref="ResolveShot"/>.
-    /// </summary>
-    public static bool TryClaimUnderCursor(Vector2 screenPoint, Camera cam, float songTime,
-        float perfectWindow, float goodWindow, out ChartTarget target, out BeatJudgment judgment)
+    /// <summary>Read-only timing feedback; never claims, freezes, or destroys a target.</summary>
+    public static BeatJudgment JudgeUnderCursor(Vector2 screenPoint, Camera cam, float songTime,
+        float perfectWindow, float goodWindow)
     {
-        target = null;
-        judgment = BeatJudgment.Miss;
-        if (cam == null) return false;
+        if (cam == null) return BeatJudgment.Miss;
 
         float bestError = float.MaxValue;
         for (int i = 0; i < active.Count; i++)
@@ -52,18 +45,15 @@ public class ChartTarget : MonoBehaviour
             ChartTarget candidate = active[i];
             if (!candidate.RingContains(screenPoint, cam, songTime)) continue;
             float error = Mathf.Abs(songTime - candidate.hitTime);
-            if (error > goodWindow || error >= bestError) continue;
-            bestError = error;
-            target = candidate;
-            judgment = error <= perfectWindow ? BeatJudgment.Perfect : BeatJudgment.Good;
+            if (error < bestError) bestError = error;
         }
 
-        if (target == null) return false;
-        target.Claim();
-        return true;
+        if (bestError <= perfectWindow) return BeatJudgment.Perfect;
+        if (bestError <= goodWindow) return BeatJudgment.Good;
+        return BeatJudgment.Miss;
     }
 
-    public void ResolveShot() => Destroy(gameObject);
+    public void OnShot(PlayerBullet bullet) => Destroy(gameObject);
 
     public void Arm(ChartNote note, Vector3 spawn, Vector3 hit)
     {
@@ -101,12 +91,6 @@ public class ChartTarget : MonoBehaviour
         if (ring != null) Destroy(ring.gameObject);
     }
 
-    void Claim()
-    {
-        claimed = true;
-        if (ring != null) ring.enabled = false;
-    }
-
     bool RingContains(Vector2 screenPoint, Camera cam, float songTime)
     {
         if (!RingIsShowing(songTime, out float untilHit)) return false;
@@ -122,7 +106,7 @@ public class ChartTarget : MonoBehaviour
     bool RingIsShowing(float songTime, out float untilHit)
     {
         untilHit = hitTime - songTime;
-        return armed && !claimed && untilHit <= quarterSeconds && untilHit >= 0f;
+        return armed && untilHit <= quarterSeconds && untilHit >= 0f;
     }
 
     float RingRadius(float untilHit)
@@ -133,7 +117,7 @@ public class ChartTarget : MonoBehaviour
 
     void Update()
     {
-        if (!armed || claimed) return;
+        if (!armed) return;
 
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;

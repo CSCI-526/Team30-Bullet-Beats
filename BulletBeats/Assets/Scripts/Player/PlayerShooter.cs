@@ -3,9 +3,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Mouse moves the aim, left click fires. A shot hits only when the cursor is inside a note's
-/// ring and the click is Perfect or Good for that note. That bullet flies to the planet and
-/// both disappear. Any other click is a Miss.
+/// Mouse moves the aim; left click fires a straight projectile. Hits are resolved by collision.
 /// </summary>
 public class PlayerShooter : MonoBehaviour
 {
@@ -28,16 +26,24 @@ public class PlayerShooter : MonoBehaviour
     [Tooltip("Clicks closer together than this many seconds are ignored.")]
     public float minShotInterval = 0.08f;
 
-    [Header("Per judgment")]
-    public int perfectDamage = 3;
-    public int goodDamage = 2;
+    [Header("Projectile")]
+    [InspectorName("Damage")]
     public int missDamage = 1;
-    public Color perfectColor = new Color(1f, 0.85f, 0.2f);
-    public Color goodColor = new Color(0.3f, 0.9f, 1f);
+    [Header("Judgment colors (bullet and label)")]
     public Color missColor = new Color(1f, 0.4f, 0.4f);
 
-    /// <summary>Raised for every shot fired, with its judgment.</summary>
+    public Color perfectColor = new Color(1f, 0.85f, 0.2f);
+    public Color goodColor = new Color(0.3f, 0.9f, 1f);
+
+    /// <summary>Timing feedback only; projectile flight and collision are independent of the judgment.</summary>
     public event Action<BeatJudgment> ShotFired;
+
+    public Color ColorFor(BeatJudgment judgment) => judgment switch
+    {
+        BeatJudgment.Perfect => perfectColor,
+        BeatJudgment.Good => goodColor,
+        _ => missColor
+    };
 
     /// <summary>World point the gun is aiming at.</summary>
     public Vector3 AimPoint { get; private set; }
@@ -91,42 +97,21 @@ public class PlayerShooter : MonoBehaviour
     {
         lastShotTime = Time.time;
         BeatClock clock = BeatClock.Instance;
-        float songTime = clock != null ? clock.SongTime : Time.time;
-        float perfect = clock != null ? clock.perfectWindow : 0.07f;
-        float good = clock != null ? clock.goodWindow : 0.15f;
-
-        bool hit = ChartTarget.TryClaimUnderCursor(
-            AimScreenPosition, aimCamera, songTime, perfect, good, out ChartTarget planet, out BeatJudgment judgment);
-
+        BeatJudgment judgment = ChartTarget.JudgeUnderCursor(
+            AimScreenPosition, aimCamera,
+            clock != null ? clock.SongTime : Time.time,
+            clock != null ? clock.perfectWindow : 0.07f,
+            clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
-        Vector3 direction = (hit ? planet.transform.position : AimPoint) - origin;
+        Vector3 direction = AimPoint - origin;
         if (direction.sqrMagnitude < 0.01f) direction = aimCamera.transform.forward;
 
         if (bulletPrefab != null)
         {
             PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction.normalized));
-            bullet.Launch(transform, direction.normalized * bulletSpeed, DamageFor(judgment), judgment, ColorFor(judgment));
-            if (hit) bullet.FlyToPlanet(planet.transform.position, planet);
-        }
-        else if (hit)
-        {
-            planet.ResolveShot();
+            bullet.Launch(transform, direction.normalized * bulletSpeed, missDamage, judgment, ColorFor(judgment));
         }
 
         ShotFired?.Invoke(judgment);
     }
-
-    public int DamageFor(BeatJudgment judgment) => judgment switch
-    {
-        BeatJudgment.Perfect => perfectDamage,
-        BeatJudgment.Good => goodDamage,
-        _ => missDamage
-    };
-
-    public Color ColorFor(BeatJudgment judgment) => judgment switch
-    {
-        BeatJudgment.Perfect => perfectColor,
-        BeatJudgment.Good => goodColor,
-        _ => missColor
-    };
 }
