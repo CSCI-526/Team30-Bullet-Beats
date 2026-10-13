@@ -3,11 +3,9 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 
 /// <summary>
-/// Mouse moves the aim, left click fires a bullet from the muzzle towards the point under the
-/// cursor. Every shot is judged against the nearest chart note / asteroid hit time
-/// (Perfect / Good / Miss); the judgment sets the bullet's damage and colour and is announced
-/// through <see cref="ShotFired"/>. Each chart note can only be scored once, so mashing the
-/// extras into Misses.
+/// Mouse moves the aim, left click fires. A shot hits only when the cursor is inside a note's
+/// ring and the click is Perfect or Good for that note. That bullet flies to the planet and
+/// both disappear. Any other click is a Miss.
 /// </summary>
 public class PlayerShooter : MonoBehaviour
 {
@@ -49,7 +47,6 @@ public class PlayerShooter : MonoBehaviour
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
     float lastShotTime = float.NegativeInfinity;
-    int lastScoredNote = int.MinValue;
 
     void Start()
     {
@@ -93,44 +90,30 @@ public class PlayerShooter : MonoBehaviour
     void Fire()
     {
         lastShotTime = Time.time;
-        BeatJudgment judgment = JudgeShot();
+        BeatClock clock = BeatClock.Instance;
+        float songTime = clock != null ? clock.SongTime : Time.time;
+        float perfect = clock != null ? clock.perfectWindow : 0.07f;
+        float good = clock != null ? clock.goodWindow : 0.15f;
+
+        bool hit = ChartTarget.TryClaimUnderCursor(
+            AimScreenPosition, aimCamera, songTime, perfect, good, out ChartTarget planet, out BeatJudgment judgment);
 
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
-        Vector3 direction = AimPoint - origin;
+        Vector3 direction = (hit ? planet.transform.position : AimPoint) - origin;
         if (direction.sqrMagnitude < 0.01f) direction = aimCamera.transform.forward;
-        direction.Normalize();
 
         if (bulletPrefab != null)
         {
-            PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction));
-            bullet.Launch(transform, direction * bulletSpeed, DamageFor(judgment), judgment, ColorFor(judgment));
+            PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction.normalized));
+            bullet.Launch(transform, direction.normalized * bulletSpeed, DamageFor(judgment), judgment, ColorFor(judgment));
+            if (hit) bullet.FlyToPlanet(planet.transform.position, planet);
+        }
+        else if (hit)
+        {
+            planet.ResolveShot();
         }
 
         ShotFired?.Invoke(judgment);
-    }
-
-    BeatJudgment JudgeShot()
-    {
-        BeatClock clock = BeatClock.Instance;
-        ChartTargetSpawner spawner = ChartTargetSpawner.Instance;
-        if (clock == null) return BeatJudgment.Good;
-
-        // Prefer chart notes (MIDI / asteroids). Fall back to the quarter grid only if no chart.
-        if (spawner != null && spawner.Notes.Count > 0)
-        {
-            BeatJudgment judgment = spawner.JudgeShot(
-                clock.SongTime, clock.perfectWindow, clock.goodWindow, out int noteIndex, out _);
-            if (judgment == BeatJudgment.Miss) return judgment;
-            if (noteIndex == lastScoredNote) return BeatJudgment.Miss;
-            lastScoredNote = noteIndex;
-            return judgment;
-        }
-
-        BeatJudgment grid = clock.Judge(out int beat, out _);
-        if (grid == BeatJudgment.Miss) return grid;
-        if (beat == lastScoredNote) return BeatJudgment.Miss;
-        lastScoredNote = beat;
-        return grid;
     }
 
     public int DamageFor(BeatJudgment judgment) => judgment switch

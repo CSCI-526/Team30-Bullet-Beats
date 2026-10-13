@@ -59,34 +59,6 @@ public class ChartTargetSpawner : MonoBehaviour
         nextIndex = 0;
     }
 
-    /// <summary>
-    /// Judges a shot against the nearest chart note (asteroid hit time), not the quarter-note grid.
-    /// </summary>
-    public BeatJudgment JudgeShot(float songTime, float perfectWindow, float goodWindow, out int noteIndex, out float offset)
-    {
-        noteIndex = -1;
-        offset = 0f;
-        if (notes.Count == 0) return BeatJudgment.Miss;
-
-        float bestError = float.MaxValue;
-        int best = -1;
-        for (int i = 0; i < notes.Count; i++)
-        {
-            float err = Mathf.Abs(songTime - notes[i].time);
-            if (err < bestError)
-            {
-                bestError = err;
-                best = i;
-            }
-        }
-
-        noteIndex = best;
-        offset = songTime - notes[best].time;
-        if (bestError <= perfectWindow) return BeatJudgment.Perfect;
-        if (bestError <= goodWindow) return BeatJudgment.Good;
-        return BeatJudgment.Miss;
-    }
-
     /// <summary>Seconds into the current note window for HUD (0 = just after note, 1 = next note).</summary>
     public bool TryGetNotePulse(float songTime, out float pulse01, out float secondsToNext)
     {
