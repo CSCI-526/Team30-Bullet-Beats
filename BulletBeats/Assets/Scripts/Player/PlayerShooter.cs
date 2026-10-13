@@ -1,12 +1,10 @@
 using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 /// <summary>
-/// Mouse moves the aim, left click fires a bullet from the muzzle towards the point under the
-/// cursor. Every shot is judged against the beat (Perfect / Good / Miss); the judgment sets the
-/// bullet's damage and colour and is announced through <see cref="ShotFired"/>, e.g. for streaks.
-/// Each beat can only be scored once, so mashing turns the extra shots into Misses.
+/// Mouse moves the aim; left click fires a straight projectile. Hits are resolved by collision.
 /// </summary>
 public class PlayerShooter : MonoBehaviour
 {
@@ -29,16 +27,24 @@ public class PlayerShooter : MonoBehaviour
     [Tooltip("Clicks closer together than this many seconds are ignored.")]
     public float minShotInterval = 0.08f;
 
-    [Header("Per judgment")]
-    public int perfectDamage = 3;
-    public int goodDamage = 2;
-    public int missDamage = 1;
-    public Color perfectColor = new Color(1f, 0.85f, 0.2f);
-    public Color goodColor = new Color(0.3f, 0.9f, 1f);
+    [Header("Projectile")]
+    [FormerlySerializedAs("missDamage")]
+    public int bulletDamage = 1;
+    [Header("Judgment colors (bullet and label)")]
     public Color missColor = new Color(1f, 0.4f, 0.4f);
 
-    /// <summary>Raised for every shot fired, with its judgment.</summary>
+    public Color perfectColor = new Color(1f, 0.85f, 0.2f);
+    public Color goodColor = new Color(0.3f, 0.9f, 1f);
+
+    /// <summary>Timing feedback only; projectile flight and collision are independent of the judgment.</summary>
     public event Action<BeatJudgment> ShotFired;
+
+    public Color ColorFor(BeatJudgment judgment) => judgment switch
+    {
+        BeatJudgment.Perfect => perfectColor,
+        BeatJudgment.Good => goodColor,
+        _ => missColor
+    };
 
     /// <summary>World point the gun is aiming at.</summary>
     public Vector3 AimPoint { get; private set; }
@@ -48,7 +54,6 @@ public class PlayerShooter : MonoBehaviour
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
     float lastShotTime = float.NegativeInfinity;
-    int lastScoredBeat = int.MinValue;
 
     void Start()
     {
@@ -92,46 +97,22 @@ public class PlayerShooter : MonoBehaviour
     void Fire()
     {
         lastShotTime = Time.time;
-        BeatJudgment judgment = JudgeShot();
-
+        BeatClock clock = BeatClock.Instance;
+        BeatJudgment judgment = ChartTarget.JudgeUnderCursor(
+            AimScreenPosition, aimCamera,
+            clock != null ? clock.SongTime : Time.time,
+            clock != null ? clock.perfectWindow : 0.07f,
+            clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
         Vector3 direction = AimPoint - origin;
         if (direction.sqrMagnitude < 0.01f) direction = aimCamera.transform.forward;
-        direction.Normalize();
 
         if (bulletPrefab != null)
         {
-            PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction));
-            bullet.Launch(transform, direction * bulletSpeed, DamageFor(judgment), judgment, ColorFor(judgment));
+            PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction.normalized));
+            bullet.Launch(transform, direction.normalized * bulletSpeed, bulletDamage, judgment, ColorFor(judgment));
         }
 
         ShotFired?.Invoke(judgment);
     }
-
-    BeatJudgment JudgeShot()
-    {
-        BeatClock clock = BeatClock.Instance;
-        if (clock == null) return BeatJudgment.Good;
-
-        BeatJudgment judgment = clock.Judge(out int beat, out _);
-        if (judgment == BeatJudgment.Miss) return judgment;
-        if (beat == lastScoredBeat) return BeatJudgment.Miss;
-
-        lastScoredBeat = beat;
-        return judgment;
-    }
-
-    public int DamageFor(BeatJudgment judgment) => judgment switch
-    {
-        BeatJudgment.Perfect => perfectDamage,
-        BeatJudgment.Good => goodDamage,
-        _ => missDamage
-    };
-
-    public Color ColorFor(BeatJudgment judgment) => judgment switch
-    {
-        BeatJudgment.Perfect => perfectColor,
-        BeatJudgment.Good => goodColor,
-        _ => missColor
-    };
 }

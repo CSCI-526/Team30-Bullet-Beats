@@ -1,8 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// A player shot. Flies straight and stops at the first <see cref="IShootable"/> or solid collider
-/// in its path. The path is swept every frame, so fast bullets can't skip through thin targets.
+/// A straight projectile that stops at the first <see cref="IShootable"/> or solid collider.
 /// Trigger colliders without an <see cref="IShootable"/> are passed through.
 /// </summary>
 public class PlayerBullet : MonoBehaviour
