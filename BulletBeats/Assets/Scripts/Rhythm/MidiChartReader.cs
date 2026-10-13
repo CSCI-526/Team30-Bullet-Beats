@@ -15,13 +15,14 @@ public static class MidiChartReader
     {
         notes = new List<ChartNote>();
         bpm = 100f;
-        string path = Path.Combine(Application.streamingAssetsPath, "Charts", fileName);
-        if (!File.Exists(path))
+        string resourcePath = "Charts/" + Path.GetFileNameWithoutExtension(fileName);
+        TextAsset chart = Resources.Load<TextAsset>(resourcePath);
+        if (chart == null)
         {
-            Debug.LogError($"MIDI chart not found: {path}");
+            Debug.LogError($"MIDI chart not found: Resources/{resourcePath}.bytes");
             return false;
         }
-        return TryParse(File.ReadAllBytes(path), notes, out bpm);
+        return TryParse(chart.bytes, notes, out bpm);
     }
 
     public static bool TryParse(byte[] data, List<ChartNote> notes, out float bpm)
