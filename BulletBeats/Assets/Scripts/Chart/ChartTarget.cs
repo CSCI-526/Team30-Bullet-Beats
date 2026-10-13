@@ -25,6 +25,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     Vector2 viewport;
     bool hasViewport;
     bool armed;
+    bool passed;
     LineRenderer ring;
     const int RingSegments = 48;
     const float RingMinRadius = 3f;
@@ -122,15 +123,25 @@ public class ChartTarget : MonoBehaviour, IShootable
 
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
-        float travel = Mathf.Clamp01((songTime - (hitTime - approachSeconds)) / approachSeconds);
-        transform.position = PositionAlongApproach(travel);
+        float travel = (songTime - (hitTime - approachSeconds)) / approachSeconds;
+        transform.position = Vector3.LerpUnclamped(spawnPoint, hitPoint, Mathf.Max(0f, travel));
         transform.Rotate(spinAxis, spinSpeed * Time.deltaTime, Space.World);
         UpdateRing(songTime);
 
-        if (songTime >= hitTime)
+        if (songTime >= hitTime && !passed)
         {
+            passed = true;
             PlayerHealth.Instance?.TakeDamage(1);
-            Destroy(gameObject);
+            foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
+            if (ring != null) ring.enabled = false;
+        }
+
+        if (passed)
+        {
+            Camera cam = DisplayCamera.Find();
+            if (cam == null) cam = Camera.main;
+            if (cam == null || Vector3.Dot(transform.position - cam.transform.position, cam.transform.forward) < -hitDistance)
+                Destroy(gameObject);
         }
     }
 

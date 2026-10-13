@@ -13,6 +13,8 @@ public class ChartTargetSpawner : MonoBehaviour
     [Header("Chart")]
     public string midiFileName = "DrumOnlyMidi.mid";
     public bool loadOnStart = true;
+    [Tooltip("Keep only every Nth chart note (2 = half as many notes).")]
+    [Min(1)] public int noteStride = 2;
 
     [Header("Timing")]
     [Tooltip("How long before the note the planet appears. The ring still waits until one quarter note.")]
@@ -23,6 +25,8 @@ public class ChartTargetSpawner : MonoBehaviour
     public float distanceFromCamera = 55f;
     [Tooltip("Distance from the camera when the planet first appears, farther than the hit point.")]
     public float spawnDistanceFromCamera = 160f;
+    [Tooltip("Multiplier applied to the spawn distance.")]
+    public float spawnDistanceMultiplier = 10f;
 
     [Header("Screen quadrants")]
     [Tooltip("Inset so targets stay inside the quarter and off the center cross.")]
@@ -56,6 +60,15 @@ public class ChartTargetSpawner : MonoBehaviour
             }
         }
         notes.Sort((a, b) => a.time.CompareTo(b.time));
+        int stride = Mathf.Max(1, noteStride);
+        if (stride > 1)
+        {
+            var thinned = new List<ChartNote>();
+            for (int i = 0; i < notes.Count; i += stride)
+                thinned.Add(notes[i]);
+            notes.Clear();
+            notes.AddRange(thinned);
+        }
         nextIndex = 0;
     }
 
@@ -131,7 +144,9 @@ public class ChartTargetSpawner : MonoBehaviour
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
         Vector2 viewport = PickViewport(note.lane);
-        float spawnDistance = Mathf.Max(spawnDistanceFromCamera, distanceFromCamera + 1f);
+        float spawnDistance = Mathf.Max(spawnDistanceFromCamera * Mathf.Max(1f, spawnDistanceMultiplier), distanceFromCamera + 1f);
+        if (cam != null && cam.farClipPlane < spawnDistance + 50f)
+            cam.farClipPlane = spawnDistance + 50f;
         Vector3 hit = cam != null
             ? cam.ViewportToWorldPoint(new Vector3(viewport.x, viewport.y, distanceFromCamera))
             : new Vector3(note.lane == NoteLane.LeftUpper ? -8f : 8f, 8f, 0f);
@@ -157,13 +172,13 @@ public class ChartTargetSpawner : MonoBehaviour
             rb.useGravity = false;
             target = go.AddComponent<ChartTarget>();
             var renderer = go.GetComponent<MeshRenderer>();
-            if (renderer != null)
-            {
-                renderer.material = new Material(renderer.sharedMaterial)
-                {
-                    color = note.lane == NoteLane.LeftUpper ? leftColor : rightColor
-                };
-            }
+            //if (renderer != null)
+            //{
+            //    renderer.material = new Material(renderer.sharedMaterial)
+            //    {
+            //        color = note.lane == NoteLane.LeftUpper ? leftColor : rightColor
+            //    };
+            //}
         }
 
         target.Arm(note, spawn, hit);
