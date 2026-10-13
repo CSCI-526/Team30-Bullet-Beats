@@ -4,6 +4,7 @@ using UnityEngine;
 /// <summary>
 /// Placeholder asteroid: flies so it reaches <see cref="hitPoint"/> at <see cref="hitTime"/>
 /// on the song clock. A physical bullet hit destroys it; the shrinking ring is a timing cue.
+/// If it reaches its beat without being shot, or touches the ship, the ship takes a hit.
 /// Replace with the real Asteroid prefab once that PR merges.
 /// </summary>
 public class ChartTarget : MonoBehaviour, IShootable
@@ -127,7 +128,10 @@ public class ChartTarget : MonoBehaviour, IShootable
         UpdateRing(songTime);
 
         if (songTime >= hitTime)
+        {
+            PlayerHealth.Instance?.TakeDamage(1);
             Destroy(gameObject);
+        }
     }
 
     Vector3 PositionAlongApproach(float travel)
@@ -207,6 +211,9 @@ public class ChartTarget : MonoBehaviour, IShootable
     void OnTriggerEnter(Collider other)
     {
         if (other.CompareTag("Player"))
+        {
+            PlayerHealth.Instance?.TakeDamage(1);
             Destroy(gameObject);
+        }
     }
 }
