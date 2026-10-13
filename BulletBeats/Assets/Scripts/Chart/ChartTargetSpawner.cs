@@ -15,7 +15,7 @@ public class ChartTargetSpawner : MonoBehaviour
     public bool loadOnStart = true;
 
     [Header("Timing")]
-    [Tooltip("How long before the note the planet appears. The ring still waits until one quarter note.")]
+    [Tooltip("How long before the note the planet appears. The ring still waits until two quarter notes.")]
     public float planetLeadSeconds = 6f;
     [Tooltip("Extra shift applied on top of RhythmSession chart offset (usually leave 0).")]
     public float chartOffsetSeconds = 0f;
@@ -31,8 +31,10 @@ public class ChartTargetSpawner : MonoBehaviour
     public float minViewportSeparation = 0.14f;
 
     [Header("Prefab")]
-    [Tooltip("Optional. Empty = spawn a simple cube placeholder.")]
+    [Tooltip("Optional. Empty = spawn a simple cube placeholder, or visualPrefab when that is set.")]
     public ChartTarget targetPrefab;
+    [Tooltip("Asteroid prefab from the enemy-prefab branch. Its own movement script is removed; this spawner still drives timing.")]
+    public GameObject visualPrefab;
     public float targetScale = 4.4f;
     public Color leftColor = new Color(0.3f, 0.85f, 1f);
     public Color rightColor = new Color(1f, 0.75f, 0.25f);
@@ -145,6 +147,22 @@ public class ChartTargetSpawner : MonoBehaviour
         {
             target = Instantiate(targetPrefab, spawn, Quaternion.identity);
         }
+        else if (visualPrefab != null)
+        {
+            GameObject go = Instantiate(visualPrefab, spawn, Quaternion.identity);
+            go.name = $"ChartTarget_{note.lane}_{note.time:0.00}";
+            StripBranchBehaviour(go);
+            foreach (Collider col in go.GetComponentsInChildren<Collider>())
+                col.isTrigger = true;
+            if (go.GetComponent<Rigidbody>() == null)
+            {
+                Rigidbody rb = go.AddComponent<Rigidbody>();
+                rb.isKinematic = true;
+                rb.useGravity = false;
+            }
+            target = go.GetComponent<ChartTarget>();
+            if (target == null) target = go.AddComponent<ChartTarget>();
+        }
         else
         {
             GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -168,6 +186,24 @@ public class ChartTargetSpawner : MonoBehaviour
 
         target.Arm(note, spawn, hit);
         target.SetLifetime(quarter, lead, viewport);
+    }
+
+    /// <summary>
+    /// The branch prefab flies and scores hits on its own. Drop those scripts so
+    /// <see cref="ChartTarget"/> is the only <see cref="IShootable"/> and the chart owns movement.
+    /// </summary>
+    static void StripBranchBehaviour(GameObject go)
+    {
+        foreach (Asteroid asteroid in go.GetComponents<Asteroid>())
+        {
+            asteroid.enabled = false;
+            DestroyImmediate(asteroid);
+        }
+        foreach (Enemy enemy in go.GetComponents<Enemy>())
+        {
+            enemy.enabled = false;
+            DestroyImmediate(enemy);
+        }
     }
 
     Vector2 PickViewport(NoteLane lane)
