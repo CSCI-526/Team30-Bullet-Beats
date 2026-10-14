@@ -25,6 +25,9 @@ public class ChartTarget : MonoBehaviour, IShootable
     Vector2 viewport;
     bool hasViewport;
     bool armed;
+
+    [HideInInspector] public float shipHitRadius = 3f;
+    Vector3 lastPosition;
     bool passed;
     LineRenderer ring;
     const int RingSegments = 48;
@@ -68,6 +71,18 @@ public class ChartTarget : MonoBehaviour, IShootable
         spinSpeed = Random.Range(40f, 120f);
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
+        if (cam != null && PlayerHealth.Instance != null)
+        {
+            Vector3 ship = PlayerHealth.Instance.transform.position;
+            Vector3 fwd = cam.transform.forward;
+            float spawnDepth = Vector3.Dot(spawn - ship, fwd);
+            float hitDepth = Vector3.Dot(hit - ship, fwd);
+            if (spawnDepth > 0.01f && hitDepth > 0f)
+            {
+                hitPoint = Vector3.Lerp(ship, spawn, hitDepth / spawnDepth);
+                hit = hitPoint;
+            }
+        }
         if (cam != null)
         {
             spawnDistance = Vector3.Distance(cam.transform.position, spawn);
@@ -124,15 +139,41 @@ public class ChartTarget : MonoBehaviour, IShootable
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
         float travel = (songTime - (hitTime - approachSeconds)) / approachSeconds;
+
+        lastPosition = transform.position;
         transform.position = Vector3.LerpUnclamped(spawnPoint, hitPoint, Mathf.Max(0f, travel));
         transform.Rotate(spinAxis, spinSpeed * Time.deltaTime, Space.World);
         UpdateRing(songTime);
 
+        //<<<<<<< Updated upstream
+        //if (songTime >= hitTime && !passed)
+        //{
+        //    passed = true;
+        //    PlayerHealth.Instance?.TakeDamage(1);
+        //    foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
+        //    if (ring != null) ring.enabled = false;
+        //}
+
+        //if (passed)
+        //{
+        //    Camera cam = DisplayCamera.Find();
+        //    if (cam == null) cam = Camera.main;
+        //    if (cam == null || Vector3.Dot(transform.position - cam.transform.position, cam.transform.forward) < -hitDistance)
+        //        Destroy(gameObject);
+        ////=======
+        //        // Damage only when the planet actually reaches the ship.
+        PlayerHealth ship = PlayerHealth.Instance;
+        if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius)
+        {
+            ship.TakeDamage(1);
+            Destroy(gameObject);
+            return;
+//>>>>>>> Stashed changes
+        }
+
         if (songTime >= hitTime && !passed)
         {
             passed = true;
-            PlayerHealth.Instance?.TakeDamage(1);
-            foreach (var c in GetComponentsInChildren<Collider>()) c.enabled = false;
             if (ring != null) ring.enabled = false;
         }
 
@@ -143,6 +184,15 @@ public class ChartTarget : MonoBehaviour, IShootable
             if (cam == null || Vector3.Dot(transform.position - cam.transform.position, cam.transform.forward) < -hitDistance)
                 Destroy(gameObject);
         }
+    }
+
+    static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
+    {
+        Vector3 ab = b - a;
+        float lengthSq = ab.sqrMagnitude;
+        if (lengthSq < 0.0001f) return Vector3.Distance(point, a);
+        float t = Mathf.Clamp01(Vector3.Dot(point - a, ab) / lengthSq);
+        return Vector3.Distance(point, a + ab * t);
     }
 
     Vector3 PositionAlongApproach(float travel)

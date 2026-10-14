@@ -11,22 +11,26 @@ public class ChartTargetSpawner : MonoBehaviour
     public static float SharedLeadTime { get; private set; } = 2f;
 
     [Header("Chart")]
-    public string midiFileName = "DrumOnlyMidi.mid";
+    public string midiFileName = "Tetris.mid";
     public bool loadOnStart = true;
     [Tooltip("Keep only every Nth chart note (2 = half as many notes).")]
     [Min(1)] public int noteStride = 2;
 
+
     [Header("Timing")]
     [Tooltip("How long before the note the planet appears. The ring still waits until one quarter note.")]
-    public float planetLeadSeconds = 6f;
+    public float planetLeadSeconds = 0f;
     [Tooltip("Extra shift applied on top of RhythmSession chart offset (usually leave 0).")]
     public float chartOffsetSeconds = 0f;
     [Tooltip("Distance from the camera when the planet reaches its hit point.")]
     public float distanceFromCamera = 55f;
     [Tooltip("Distance from the camera when the planet first appears, farther than the hit point.")]
-    public float spawnDistanceFromCamera = 160f;
+
+    public float spawnDistanceFromCamera = 60f;
     [Tooltip("Multiplier applied to the spawn distance.")]
-    public float spawnDistanceMultiplier = 10f;
+    public float spawnDistanceMultiplier = 1f;
+    [Tooltip("How close a planet must get to the ship to deal damage.")]
+    public float shipHitRadius = 3f;
 
     [Header("Screen quadrants")]
     [Tooltip("Inset so targets stay inside the quarter and off the center cross.")]
@@ -182,6 +186,7 @@ public class ChartTargetSpawner : MonoBehaviour
         }
 
         target.Arm(note, spawn, hit);
+        target.shipHitRadius = shipHitRadius;
         target.SetLifetime(quarter, lead, viewport);
     }
 

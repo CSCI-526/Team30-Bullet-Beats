@@ -10,6 +10,7 @@ public static class MidiChartReader
 {
     public const int PitchLeft = 36;  // kick
     public const int PitchRight = 38; // snare
+    public const int MelodicSplitPitch = 60; // middle C, for files without drums
 
     public static bool TryLoadStreamingChart(string fileName, out List<ChartNote> notes, out float bpm)
     {
@@ -117,14 +118,29 @@ public static class MidiChartReader
         tempoMap.Sort((x, y) => x.tick.CompareTo(y.tick));
         bpm = 60_000_000f / tempoMap[0].usPerQuarter;
 
+        bool hasDrums = false;
+        foreach (var (_, pitch) in rawNotes)
+            if (TryMapLane(pitch, out _)) { hasDrums = true; break; }
+
+        var seen = new HashSet<(long, NoteLane)>();
         foreach (var (tick, pitch) in rawNotes)
         {
-            if (!TryMapLane(pitch, out NoteLane lane)) continue;
+            NoteLane lane;
+            if (hasDrums)
+            {
+                if (!TryMapLane(pitch, out lane)) continue;
+            }
+            else
+            {
+                // Melodic file (no kick/snare): low notes left, high notes right.
+                lane = pitch < MelodicSplitPitch ? NoteLane.LeftUpper : NoteLane.RightUpper;
+            }
+            if (!seen.Add((tick, lane))) continue;
             notes.Add(new ChartNote(TicksToSeconds(tick, division, tempoMap), pitch, lane));
         }
 
         notes.Sort((a, b) => a.time.CompareTo(b.time));
-        Debug.Log($"MIDI parsed ({format}): {notes.Count} chart notes @ {bpm:0.##} BPM (ignored non 36/38).");
+        Debug.Log($"MIDI parsed ({format}): {notes.Count} chart notes @ {bpm:0.##} BPM ({(hasDrums ? "drums 36/38" : "melodic split")}).");
         return notes.Count > 0;
     }
 
