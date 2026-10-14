@@ -101,8 +101,7 @@ public class PlayerShooter : MonoBehaviour
         BeatJudgment judgment = ChartTarget.JudgeUnderCursor(
             AimScreenPosition, aimCamera,
             clock != null ? clock.SongTime : Time.time,
-            clock != null ? clock.perfectWindow : 0.07f,
-            clock != null ? clock.goodWindow : 0.15f);
+            clock != null ? clock.perfectWindow : 0.14f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
         Vector3 direction = AimPoint - origin;
         if (direction.sqrMagnitude < 0.01f) direction = aimCamera.transform.forward;

@@ -22,8 +22,8 @@ public class BeatClock : MonoBehaviour
     public bool holdUntilMusicPlays = true;
 
     [Header("Timing windows (seconds either side of a beat)")]
-    public float perfectWindow = 0.07f;
-    public float goodWindow = 0.15f;
+    public float perfectWindow = 0.14f;
+    public float goodWindow = 0.30f;
 
     /// <summary>Raised once per beat with the beat's index (0 = first beat).</summary>
     public event Action<int> Beat;

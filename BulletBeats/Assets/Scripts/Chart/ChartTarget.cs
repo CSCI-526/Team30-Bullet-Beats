@@ -27,31 +27,39 @@ public class ChartTarget : MonoBehaviour, IShootable
     bool armed;
     LineRenderer ring;
     const int RingSegments = 48;
-    const float RingMinRadius = 3f;
-    const float RingMaxRadius = 14f;
+    const float RingMinRadius = 6f;
+    const float RingMaxRadius = 28f;
+    const float RingWindowScale = 2f;
+
+    float RingWindowSeconds => quarterSeconds * RingWindowScale;
 
     void OnEnable() => active.Add(this);
 
     void OnDisable() => active.Remove(this);
 
-    /// <summary>Read-only timing feedback; never claims, freezes, or destroys a target.</summary>
+    /// <summary>
+    /// Cursor outside every ring is a Miss. Inside a ring is Good, or Perfect when the click
+    /// is within <paramref name="perfectWindow"/> of that note. Never claims or destroys a target.
+    /// </summary>
     public static BeatJudgment JudgeUnderCursor(Vector2 screenPoint, Camera cam, float songTime,
-        float perfectWindow, float goodWindow)
+        float perfectWindow)
     {
         if (cam == null) return BeatJudgment.Miss;
 
         float bestError = float.MaxValue;
+        bool inside = false;
         for (int i = 0; i < active.Count; i++)
         {
             ChartTarget candidate = active[i];
             if (!candidate.RingContains(screenPoint, cam, songTime)) continue;
+            inside = true;
             float error = Mathf.Abs(songTime - candidate.hitTime);
             if (error < bestError) bestError = error;
         }
 
+        if (!inside) return BeatJudgment.Miss;
         if (bestError <= perfectWindow) return BeatJudgment.Perfect;
-        if (bestError <= goodWindow) return BeatJudgment.Good;
-        return BeatJudgment.Miss;
+        return BeatJudgment.Good;
     }
 
     public void OnShot(PlayerBullet bullet) => Destroy(gameObject);
@@ -76,7 +84,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         BuildRing();
     }
 
-    /// <summary>Ring is visible for one quarter note. <paramref name="lead"/> is the full fly-in.</summary>
+    /// <summary>Ring is visible for two quarter notes. <paramref name="lead"/> is the full fly-in.</summary>
     public void SetLifetime(float quarter, float lead, Vector2 viewportPoint)
     {
         quarterSeconds = Mathf.Max(0.05f, quarter);
@@ -107,12 +115,12 @@ public class ChartTarget : MonoBehaviour, IShootable
     bool RingIsShowing(float songTime, out float untilHit)
     {
         untilHit = hitTime - songTime;
-        return armed && untilHit <= quarterSeconds && untilHit >= 0f;
+        return armed && untilHit <= RingWindowSeconds && untilHit >= 0f;
     }
 
     float RingRadius(float untilHit)
     {
-        float approach = Mathf.Clamp01(untilHit / quarterSeconds);
+        float approach = Mathf.Clamp01(untilHit / RingWindowSeconds);
         return Mathf.Lerp(RingMinRadius, RingMaxRadius, approach);
     }
 
@@ -176,7 +184,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         if (ring == null) return;
 
         float untilHit = hitTime - songTime;
-        bool visible = untilHit <= quarterSeconds && untilHit >= 0f;
+        bool visible = untilHit <= RingWindowSeconds && untilHit >= 0f;
         ring.enabled = visible;
         if (!visible) return;
 
@@ -198,14 +206,12 @@ public class ChartTarget : MonoBehaviour, IShootable
     static Color RingColor(float untilHit)
     {
         BeatClock clock = BeatClock.Instance;
-        float perfect = clock != null ? clock.perfectWindow : 0.07f;
-        float good = clock != null ? clock.goodWindow : 0.15f;
+        float perfect = clock != null ? clock.perfectWindow : 0.14f;
         float abs = Mathf.Abs(untilHit);
 
         if (untilHit < -perfect) return new Color(1f, 0.25f, 0.25f);
         if (abs <= perfect) return new Color(1f, 0.92f, 0.35f);
-        if (abs <= good) return new Color(1f, 0.55f, 0.15f);
-        return new Color(0.35f, 0.85f, 1f);
+        return new Color(1f, 0.55f, 0.15f);
     }
 
     void OnTriggerEnter(Collider other)
