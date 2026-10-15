@@ -33,6 +33,8 @@ static class GameBootstrap
         PlayerHealth health = Object.FindFirstObjectByType<PlayerHealth>();
         if (health.GetComponent<HealthHUD>() == null)
             health.gameObject.AddComponent<HealthHUD>();
+        if (health.GetComponent<ShipDamageFlash>() == null)
+            health.gameObject.AddComponent<ShipDamageFlash>();
 
         if (Object.FindFirstObjectByType<GameFlow>() == null)
             new GameObject("GameFlow", typeof(GameFlow), typeof(GameMenus));

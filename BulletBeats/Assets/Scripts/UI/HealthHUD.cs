@@ -3,7 +3,8 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Health pips in the top-left corner and the current streak under them, with how many more notes
-/// in a row heal the ship. Builds its own overlay canvas, so it needs no scene setup.
+/// in a row heal the ship. A pip that was just lost flashes red before going empty.
+/// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(PlayerHealth))]
 public class HealthHUD : MonoBehaviour
@@ -11,8 +12,11 @@ public class HealthHUD : MonoBehaviour
     public Color fullColor = new Color(0.3f, 0.9f, 1f);
     public Color emptyColor = new Color(1f, 1f, 1f, 0.15f);
     public Color streakColor = Color.white;
+    public Color lostColor = new Color(1f, 0.2f, 0.2f);
     [Tooltip("Seconds a pip glows after the ship heals.")]
     public float healGlowTime = 0.5f;
+    [Tooltip("Seconds a lost pip flashes red before going empty.")]
+    public float lostFlashTime = 0.6f;
 
     const float PipWidth = 34f;
     const float PipHeight = 14f;
@@ -24,6 +28,8 @@ public class HealthHUD : MonoBehaviour
     Image[] pips;
     Text streakLabel;
     float healGlowTimer;
+    float lostFlashTimer;
+    int lostFrom, lostTo;
 
     void Awake()
     {
@@ -36,6 +42,7 @@ public class HealthHUD : MonoBehaviour
         health.HealthChanged += OnHealthChanged;
         health.StreakChanged += OnStreakChanged;
         health.Healed += OnHealed;
+        health.Damaged += OnDamaged;
         canvasObject.SetActive(true);
         Refresh();
     }
@@ -45,6 +52,7 @@ public class HealthHUD : MonoBehaviour
         health.HealthChanged -= OnHealthChanged;
         health.StreakChanged -= OnStreakChanged;
         health.Healed -= OnHealed;
+        health.Damaged -= OnDamaged;
         if (canvasObject != null) canvasObject.SetActive(false);
     }
 
@@ -55,8 +63,9 @@ public class HealthHUD : MonoBehaviour
 
     void LateUpdate()
     {
-        if (healGlowTimer <= 0f) return;
+        if (healGlowTimer <= 0f && lostFlashTimer <= 0f) return;
         healGlowTimer -= Time.deltaTime;
+        lostFlashTimer -= Time.deltaTime;
         RefreshPips();
     }
 
@@ -66,6 +75,14 @@ public class HealthHUD : MonoBehaviour
     void OnHealed(int _)
     {
         healGlowTimer = healGlowTime;
+        RefreshPips();
+    }
+
+    void OnDamaged(int amount)
+    {
+        lostFrom = health.Health;
+        lostTo = Mathf.Min(health.maxHealth, health.Health + amount);
+        lostFlashTimer = lostFlashTime;
         RefreshPips();
     }
 
@@ -79,8 +96,14 @@ public class HealthHUD : MonoBehaviour
     {
         float glow = healGlowTime > 0f ? Mathf.Clamp01(healGlowTimer / healGlowTime) : 0f;
         Color full = Color.Lerp(fullColor, Color.white, glow);
+        float lost = lostFlashTime > 0f ? Mathf.Clamp01(lostFlashTimer / lostFlashTime) : 0f;
+        Color justLost = Color.Lerp(emptyColor, lostColor, lost);
         for (int i = 0; i < pips.Length; i++)
-            pips[i].color = i < health.Health ? full : emptyColor;
+        {
+            if (i < health.Health) pips[i].color = full;
+            else if (lost > 0f && i >= lostFrom && i < lostTo) pips[i].color = justLost;
+            else pips[i].color = emptyColor;
+        }
     }
 
     void RefreshStreak()
