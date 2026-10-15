@@ -34,6 +34,9 @@ public class GameFlow : MonoBehaviour
     public Level[] levels = { new Level { displayName = "Main Level", sceneName = "MainLevel" } };
     [Tooltip("Level length in seconds while BeatClock has no song. 0 = never ends by time.")]
     public float levelLengthSeconds = 90f;
+    [Tooltip("If off, running out of health does not end the level (for testing).")]
+    //public bool endOnDeath = false;
+    public bool endOnDeath = true;
     [Tooltip("Turned off outside of play. Empty = the player's shooter, dash, aim HUD and health.")]
     public Behaviour[] playerControls;
 
@@ -184,7 +187,10 @@ public class GameFlow : MonoBehaviour
         SetState(GameState.Playing);
     }
 
-    void OnPlayerDied() => EndLevel(false);
+    void OnPlayerDied()
+    {
+        if (endOnDeath) EndLevel(false);
+    }
 
     void OnShotFired(BeatJudgment judgment)
     {

@@ -32,7 +32,15 @@ public class BeatClock : MonoBehaviour
 
     public bool HasMusic => music != null && music.clip != null;
 
-    public bool IsMusicPlaying => HasMusic && music.isPlaying;
+    [Tooltip("Song length in seconds. 0 = the music clip's length. Longer keeps the clock running after the clip ends.")]
+    public float songLength = 0f;
+
+    public float SongLength => Mathf.Max(songLength, HasMusic ? music.clip.length : 0f);
+
+    bool musicStarted;
+    float clipEndedAt = -1f;
+
+    public bool IsMusicPlaying => HasMusic && (music.isPlaying || (musicStarted && SongTime < SongLength));
 
     /// <summary>
     /// Song timeline in seconds. Follows <see cref="music"/> once it has a clip; otherwise
@@ -44,6 +52,8 @@ public class BeatClock : MonoBehaviour
         {
             if (HasMusic)
             {
+                if (clipEndedAt >= 0f)
+                    return music.clip.length + (Time.time - clipEndedAt);
                 if (holdUntilMusicPlays && !music.isPlaying && music.timeSamples == 0)
                     return 0f;
                 return (float)music.timeSamples / Mathf.Max(1, music.clip.frequency);
@@ -73,7 +83,11 @@ public class BeatClock : MonoBehaviour
 
     void Update()
     {
-        if (HasMusic && holdUntilMusicPlays && !music.isPlaying && music.timeSamples == 0)
+        if (HasMusic && music.isPlaying) musicStarted = true;
+        if (HasMusic && musicStarted && clipEndedAt < 0f && !music.isPlaying && !AudioListener.pause)
+            clipEndedAt = Time.time;
+
+        if (HasMusic && holdUntilMusicPlays && !musicStarted)
             return;
 
         int beat = Mathf.FloorToInt(BeatPosition);
@@ -87,6 +101,8 @@ public class BeatClock : MonoBehaviour
     {
         lastBeat = int.MinValue;
         startTime = Time.time;
+        musicStarted = false;
+        clipEndedAt = -1f;
     }
 
     /// <summary>Judges an input made this frame against the nearest beat.</summary>
