@@ -9,12 +9,10 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -40,17 +38,104 @@ jobs:
           targetPlatform: WebGL
           buildName: BulletBeats
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
+          name: WebGL
           path: build/WebGL/BulletBeats
 
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: write
+    concurrency:
+      group: gh-pages-deploy
+      cancel-in-progress: false
+    env:
+      COMMIT_MSG: ${{ github.event.head_commit.message }}
+      REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
     steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: WebGL
+          path: new-build
+
+      - name: Check out gh-pages
+        run: |
+          if ! git clone --depth 1 --branch gh-pages "$REPO_URL" site; then
+            git init -b gh-pages site
+            git -C site remote add origin "$REPO_URL"
+          fi
+
+      - name: Add build to site
+        run: |
+          BUILD_ID="$(date -u +%Y-%m-%d)-${GITHUB_SHA::7}"
+          echo "BUILD_ID=$BUILD_ID" >> "$GITHUB_ENV"
+          mkdir -p site/builds
+          rm -rf "site/builds/$BUILD_ID" site/latest
+          cp -r new-build "site/builds/$BUILD_ID"
+          cp -r new-build site/latest
+          touch site/.nojekyll
+
+      - name: Generate main page
+        run: |
+          python3 - <<'EOF'
+          import datetime, html, json, os
+
+          site = "site"
+          manifest = os.path.join(site, "builds.json")
+          builds = json.load(open(manifest)) if os.path.exists(manifest) else []
+          build_id = os.environ["BUILD_ID"]
+          builds = [b for b in builds if b["id"] != build_id]
+          builds.insert(0, {
+              "id": build_id,
+              "date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+              "sha": os.environ["GITHUB_SHA"][:7],
+              "message": (os.environ.get("COMMIT_MSG") or "Manual run").splitlines()[0],
+          })
+          json.dump(builds, open(manifest, "w"), indent=2)
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          rows = "\n".join(
+              f'<li><a href="builds/{b["id"]}/">{html.escape(b["date"])}</a>'
+              f'<a class="sha" href="https://github.com/{repo}/commit/{b["sha"]}">{b["sha"]}</a>'
+              f'<span>{html.escape(b["message"])}</span></li>'
+              for b in builds)
+
+          page = f"""<!doctype html>
+          <html lang="en"><head><meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Bullet Beats Builds</title>
+          <style>
+          :root {{ color-scheme: light dark; --bg:#fafafa; --fg:#1a1a1a; --muted:#666; --accent:#6c4cf1; --line:#ddd; }}
+          @media (prefers-color-scheme: dark) {{ :root {{ --bg:#121212; --fg:#eee; --muted:#999; --accent:#9d85ff; --line:#333; }} }}
+          body {{ margin:0; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }}
+          main {{ max-width:720px; margin:0 auto; padding:32px 16px; }}
+          a {{ color:var(--accent); }}
+          .play {{ display:inline-block; padding:12px 20px; background:var(--accent); color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }}
+          ul {{ list-style:none; padding:0; }}
+          li {{ display:flex; flex-wrap:wrap; gap:4px 12px; padding:10px 0; border-bottom:1px solid var(--line); }}
+          .sha {{ font-family:ui-monospace, monospace; color:var(--muted); }}
+          li span {{ flex-basis:100%; color:var(--muted); }}
+          </style></head>
+          <body><main>
+          <h1>Bullet Beats</h1>
+          <p><a class="play" href="latest/">Play latest build</a></p>
+          <h2>All builds</h2>
+          <ul>
+          {rows}
+          </ul>
+          </main></body></html>
+          """
+          open(os.path.join(site, "index.html"), "w").write(page)
+          EOF
+
+      - name: Push to gh-pages
+        run: |
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy $BUILD_ID"
+          git push origin gh-pages
