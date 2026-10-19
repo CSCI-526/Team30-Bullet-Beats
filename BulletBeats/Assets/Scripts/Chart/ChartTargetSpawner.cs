@@ -45,6 +45,17 @@ public class ChartTargetSpawner : MonoBehaviour
     public Color leftColor = new Color(0.3f, 0.85f, 1f);
     public Color rightColor = new Color(1f, 0.75f, 0.25f);
 
+    [Header("Turbo asteroid")]
+    [Tooltip("Every Nth spawned target is a turbo asteroid. 0 = off")]
+    [Min(0)] public int turboEveryN = 8;
+    [Tooltip("Shots needed to destroy a turbo asteroid.")]
+    [Min(2)] public int turboHits = 2;
+    [Tooltip("Life gained when a turbo asteroid is destroyed.")]
+    [Min(1)] public int turboHeal = 2;
+    public float turboScale = 1.5f;
+    public Color turboColor = new Color(1f, 0.45f, 0.1f);
+    int spawnCount;
+
     readonly List<ChartNote> notes = new List<ChartNote>();
     readonly List<Vector2> liveViewports = new List<Vector2>();
     int nextIndex;
@@ -188,6 +199,10 @@ public class ChartTargetSpawner : MonoBehaviour
         target.Arm(note, spawn, hit);
         target.shipHitRadius = shipHitRadius;
         target.SetLifetime(quarter, lead, viewport);
+
+        spawnCount++;
+        if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
+            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
     }
 
     Vector2 PickViewport(NoteLane lane)
