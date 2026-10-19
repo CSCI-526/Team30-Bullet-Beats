@@ -111,7 +111,7 @@ public class PlayerHealth : MonoBehaviour
         }
 
         SetStreak(Streak + 1);
-        if (Streak % healStreak == 0 && Health < maxHealth)
+        if (judgment == BeatJudgment.Perfect)
         {
             int before = Health;
             SetHealth(Health + healAmount);
@@ -121,7 +121,7 @@ public class PlayerHealth : MonoBehaviour
 
     void SetHealth(int value)
     {
-        value = Mathf.Clamp(value, 0, maxHealth);
+        value = Mathf.Max(0, value);
         if (value == Health) return;
         Health = value;
         HealthChanged?.Invoke(Health);

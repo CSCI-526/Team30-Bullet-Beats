@@ -25,7 +25,8 @@ public class HealthHUD : MonoBehaviour
 
     PlayerHealth health;
     GameObject canvasObject;
-    Image[] pips;
+    RectTransform corner;
+    readonly System.Collections.Generic.List<Image> pips = new System.Collections.Generic.List<Image>();
     Text streakLabel;
     float healGlowTimer;
     float lostFlashTimer;
@@ -81,7 +82,7 @@ public class HealthHUD : MonoBehaviour
     void OnDamaged(int amount)
     {
         lostFrom = health.Health;
-        lostTo = Mathf.Min(health.maxHealth, health.Health + amount);
+        lostTo = health.Health + amount;
         lostFlashTimer = lostFlashTime;
         RefreshPips();
     }
@@ -96,9 +97,11 @@ public class HealthHUD : MonoBehaviour
     {
         float glow = healGlowTime > 0f ? Mathf.Clamp01(healGlowTimer / healGlowTime) : 0f;
         Color full = Color.Lerp(fullColor, Color.white, glow);
+        while (pips.Count < Mathf.Max(health.maxHealth, health.Health))
+            AddPip();
         float lost = lostFlashTime > 0f ? Mathf.Clamp01(lostFlashTimer / lostFlashTime) : 0f;
         Color justLost = Color.Lerp(emptyColor, lostColor, lost);
-        for (int i = 0; i < pips.Length; i++)
+        for (int i = 0; i < pips.Count; i++)
         {
             if (i < health.Health) pips[i].color = full;
             else if (lost > 0f && i >= lostFrom && i < lostTo) pips[i].color = justLost;
@@ -106,11 +109,24 @@ public class HealthHUD : MonoBehaviour
         }
     }
 
+    void AddPip()
+    {
+        int i = pips.Count;
+        var pip = new GameObject("Pip", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        RectTransform rect = pip.rectTransform;
+        rect.SetParent(corner, false);
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+        rect.sizeDelta = new Vector2(PipWidth, PipHeight);
+        rect.anchoredPosition = new Vector2(i * (PipWidth + PipGap), 0f);
+        pip.raycastTarget = false;
+        pips.Add(pip);
+    }
+
     void RefreshStreak()
     {
         streakLabel.text = health.Streak > 0
-            ? $"STREAK {health.Streak}   heal in {health.NotesUntilHeal}"
-            : $"Hit {health.healStreak} notes in a row to heal";
+            ? $"STREAK {health.Streak}"
+            : "Hit a Perfect note to gain a life";
     }
 
     void BuildCanvas()
@@ -124,24 +140,14 @@ public class HealthHUD : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 1f;
 
-        var corner = new GameObject("Corner", typeof(RectTransform)).GetComponent<RectTransform>();
+        corner = new GameObject("Corner", typeof(RectTransform)).GetComponent<RectTransform>();
         corner.SetParent(canvasObject.transform, false);
         corner.anchorMin = corner.anchorMax = corner.pivot = new Vector2(0f, 1f);
         corner.anchoredPosition = new Vector2(Margin, -Margin);
         corner.sizeDelta = Vector2.zero;
 
-        pips = new Image[health.maxHealth];
-        for (int i = 0; i < pips.Length; i++)
-        {
-            var pip = new GameObject("Pip", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
-            RectTransform rect = pip.rectTransform;
-            rect.SetParent(corner, false);
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
-            rect.sizeDelta = new Vector2(PipWidth, PipHeight);
-            rect.anchoredPosition = new Vector2(i * (PipWidth + PipGap), 0f);
-            pip.raycastTarget = false;
-            pips[i] = pip;
-        }
+        for (int i = 0; i < health.maxHealth; i++)
+            AddPip();
 
         streakLabel = new GameObject("Streak", typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
         RectTransform labelRect = streakLabel.rectTransform;
