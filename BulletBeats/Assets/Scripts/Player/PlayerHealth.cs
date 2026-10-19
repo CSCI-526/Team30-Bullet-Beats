@@ -98,6 +98,15 @@ public class PlayerHealth : MonoBehaviour
         return true;
     }
 
+    //<summary> Adds health as reward for a turbo asteroid </summary>
+    public void Heal(int amount)
+    {
+        if (amount <= 0 || IsDead) return;
+        int before = Health;
+        SetHealth(Health + amount);
+        Healed?.Invoke(Health - before);
+    }
+
     [ContextMenu("Take 1 damage")]
     void TakeOneDamage() => TakeDamage(1);
 

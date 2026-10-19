@@ -29,6 +29,9 @@ public class ChartTarget : MonoBehaviour, IShootable
     [HideInInspector] public float shipHitRadius = 3f;
     Vector3 lastPosition;
     bool passed;
+    int hitsLeft = 1;
+    int healOnDestroy;
+    bool dying;
     LineRenderer ring;
     const int RingSegments = 48;
     const float RingMinRadius = 3f;
@@ -58,7 +61,21 @@ public class ChartTarget : MonoBehaviour, IShootable
         return BeatJudgment.Miss;
     }
 
-    public void OnShot(PlayerBullet bullet) => Destroy(gameObject);
+    public void OnShot(PlayerBullet bullet)
+    {
+        if(dying) return;
+
+        hitsLeft--;
+        if(hitsLeft > 0)
+        {
+            transform.localScale *= 0.9f;
+            return;
+        }
+
+        dying = true;
+        if (healOnDestroy > 0) PlayerHealth.Instance?.Heal(healOnDestroy);
+        Destroy(gameObject);
+    }
 
     public void Arm(ChartNote note, Vector3 spawn, Vector3 hit)
     {
@@ -99,6 +116,15 @@ public class ChartTarget : MonoBehaviour, IShootable
         approachSeconds = Mathf.Max(0.05f, lead);
         viewport = viewportPoint;
         hasViewport = true;
+    }
+
+    public void MakeTurbo(int hits, int heal, float scale, Color tint)
+    {
+        hitsLeft = hits;
+        healOnDestroy = heal;
+        transform.localScale *= scale;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>())
+            r.material.color = tint;
     }
 
     void OnDestroy()
