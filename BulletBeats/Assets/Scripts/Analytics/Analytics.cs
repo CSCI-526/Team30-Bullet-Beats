@@ -17,8 +17,25 @@ public class Analytics : MonoBehaviour
     float levelStartTime;
     int attempt = 1;
 
-    //Time since level started
-    public float LevelTime => Time.time - levelStartTime;
+    /// <summary>Raised for every logged event (event, level time, data 1-3), even when nothing is sent.</summary>
+    public static event System.Action<string, float, string, string, string> Logged;
+
+    //Time since level started: the song's playback time once a song is playing (so the
+    //count-in isn't counted; when the song finishes it keeps the last time), otherwise
+    //time since the scene loaded
+    public float LevelTime
+    {
+        get
+        {
+            BeatClock clock = BeatClock.Instance;
+            if (clock == null || !clock.HasMusic) return Time.time - levelStartTime;
+            float songTime = clock.SongTime;
+            if (songTime > lastSongTime) lastSongTime = songTime;
+            return lastSongTime;
+        }
+    }
+
+    float lastSongTime;
 
     void Awake()
     {
@@ -38,9 +55,13 @@ public class Analytics : MonoBehaviour
             SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
+    // Keep the last song time current, so an event right after the song ends still gets it.
+    void Update() => _ = LevelTime;
+
     void OnSceneLoaded(Scene scene, LoadSceneMode mode)
     {
         levelStartTime = Time.time; //reset clock on restart
+        lastSongTime = 0f;
     }
 
     public void LogShot(string judgement) => Log("shot", judgement);
@@ -57,6 +78,8 @@ public class Analytics : MonoBehaviour
 
     void Log(string evt, string d1 = "", string d2 = "", string d3 = "")
     {
+        Logged?.Invoke(evt, LevelTime, d1, d2, d3);
+        if (!isActiveAndEnabled) return; //disable the component to stop sending (e.g. for tests)
 #if UNITY_EDITOR
         if (!sendInEditor) return;
 #endif
