@@ -68,7 +68,7 @@ public class GameMenus : MonoBehaviour
         endHeading.text = flow.Won ? "LEVEL COMPLETE" : "GAME OVER";
         endHeading.color = flow.Won ? winColor : loseColor;
 
-        int shots = flow.PerfectCount + flow.GoodCount + flow.MissCount;
+        int shots = flow.PerfectCount + flow.GoodCount + flow.FineCount + flow.MissCount;
         int onBeat = flow.PerfectCount + flow.GoodCount;
         string accuracy = shots > 0 ? $"{Mathf.RoundToInt(100f * onBeat / shots)}%" : "-";
         int seconds = Mathf.FloorToInt(flow.TimePlayed);
@@ -77,7 +77,7 @@ public class GameMenus : MonoBehaviour
         endStats.text =
             $"{flow.CurrentLevel?.displayName ?? "Level"}\n\n" +
             $"Time  {seconds / 60}:{seconds % 60:00}\n" +
-            $"Perfect  {flow.PerfectCount}     Good  {flow.GoodCount}     Miss  {flow.MissCount}\n" +
+            $"Perfect  {flow.PerfectCount}     Good  {flow.GoodCount}     Fine  {flow.FineCount}     Miss  {flow.MissCount}\n" +
             $"On-beat accuracy  {accuracy}\n" +
             $"Best streak  {bestStreak}";
     }

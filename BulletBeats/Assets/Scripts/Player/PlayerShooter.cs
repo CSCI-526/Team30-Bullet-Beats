@@ -53,6 +53,7 @@ public class PlayerShooter : MonoBehaviour
 
     public Color perfectColor = new Color(1f, 0.85f, 0.2f);
     public Color goodColor = new Color(0.3f, 0.9f, 1f);
+    public Color fineColor = new Color(0.35f, 0.95f, 0.45f);
 
     /// <summary>Timing feedback only; projectile flight and collision are independent of the judgment.</summary>
     public event Action<BeatJudgment> ShotFired;
@@ -61,6 +62,7 @@ public class PlayerShooter : MonoBehaviour
     {
         BeatJudgment.Perfect => perfectColor,
         BeatJudgment.Good => goodColor,
+        BeatJudgment.Fine => fineColor,
         _ => missColor
     };
 
@@ -68,6 +70,8 @@ public class PlayerShooter : MonoBehaviour
     public Vector3 AimPoint { get; private set; }
     /// <summary>Cursor position in screen pixels.</summary>
     public Vector2 AimScreenPosition { get; private set; }
+
+    bool aimLocked;
 
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
@@ -97,7 +101,7 @@ public class PlayerShooter : MonoBehaviour
         Vector2 cursor = mouse.position.ReadValue();
         AimScreenPosition = cursor;
         AimPoint = FindAimPoint(cursor);
-        ApplyAimAssist(cursor);
+        aimLocked = ApplyAimAssist(cursor);
 
         if (gunPivot != null)
         {
@@ -109,19 +113,20 @@ public class PlayerShooter : MonoBehaviour
             Fire();
     }
 
-    void ApplyAimAssist(Vector2 cursor)
+    bool ApplyAimAssist(Vector2 cursor)
     {
-        if (aimCamera == null) return;
+        if (aimCamera == null) return false;
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
         if (!ChartTarget.TryGetAimAssist(cursor, aimCamera, songTime, out Vector3 worldPoint, out Vector2 targetScreen, out float ringPixels))
-            return;
+            return false;
 
         float rings = Mathf.Lerp(1f, aimAssistRange, aimAssist);
-        if (Vector2.Distance(cursor, targetScreen) > Mathf.Max(8f, ringPixels) * rings) return;
+        if (Vector2.Distance(cursor, targetScreen) > Mathf.Max(8f, ringPixels) * rings) return false;
 
         AimPoint = worldPoint;
         AimScreenPosition = targetScreen;
+        return true;
     }
 
     Vector3 FindAimPoint(Vector2 screenPosition)
@@ -150,9 +155,21 @@ public class PlayerShooter : MonoBehaviour
             clock != null ? clock.perfectWindow : 0.07f,
             clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
+        bool connected = aimLocked;
 
-        if (hitscan) FireHitscan(origin, judgment);
-        else FireProjectile(origin, judgment);
+        if (hitscan)
+        {
+            Ray ray = aimCamera.ScreenPointToRay(AimScreenPosition);
+            IShootable target = FindHitscanTarget(ray, out Vector3 hitPoint);
+            connected = target is ChartTarget;
+            if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
+            FireHitscan(origin, judgment, target, hitPoint);
+        }
+        else
+        {
+            if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
+            FireProjectile(origin, judgment);
+        }
 
         ShotFired?.Invoke(judgment);
     }
@@ -169,10 +186,8 @@ public class PlayerShooter : MonoBehaviour
         }
     }
 
-    void FireHitscan(Vector3 origin, BeatJudgment judgment)
+    void FireHitscan(Vector3 origin, BeatJudgment judgment, IShootable target, Vector3 hitPoint)
     {
-        Ray ray = aimCamera.ScreenPointToRay(AimScreenPosition);
-        IShootable target = FindHitscanTarget(ray, out Vector3 hitPoint);
         Vector3 end = target != null ? hitPoint : AimPoint;
 
         Vector3 direction = end - origin;

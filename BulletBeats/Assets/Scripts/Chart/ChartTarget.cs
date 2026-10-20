@@ -98,7 +98,7 @@ public class ChartTarget : MonoBehaviour, IShootable
 
     public void OnShot(PlayerBullet bullet)
     {
-        if (dying || bullet.Judgment == BeatJudgment.Miss) return;
+        if (dying) return;
 
         hitsLeft--;
         if(hitsLeft > 0)
