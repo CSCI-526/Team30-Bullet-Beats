@@ -51,6 +51,7 @@ public class GameFlow : MonoBehaviour
     public int PerfectCount { get; private set; }
     public int GoodCount { get; private set; }
     public int MissCount { get; private set; }
+    public int FineCount { get; private set; }
     public PlayerHealth PlayerHealth => health;
     public Level CurrentLevel => Array.Find(levels, l => l.sceneName == SceneManager.GetActiveScene().name);
 
@@ -182,7 +183,7 @@ public class GameFlow : MonoBehaviour
     {
         started = true;
         TimePlayed = 0f;
-        PerfectCount = GoodCount = MissCount = 0;
+        PerfectCount = GoodCount = MissCount = FineCount = 0;
         if (session != null) session.enabled = true;
         SetState(GameState.Playing);
     }
@@ -199,6 +200,7 @@ public class GameFlow : MonoBehaviour
         {
             case BeatJudgment.Perfect: PerfectCount++; break;
             case BeatJudgment.Good: GoodCount++; break;
+            case BeatJudgment.Fine: FineCount++; break;
             default: MissCount++; break;
         }
     }

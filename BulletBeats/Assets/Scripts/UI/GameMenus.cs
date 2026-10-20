@@ -68,7 +68,7 @@ public class GameMenus : MonoBehaviour
         endHeading.text = flow.Won ? "LEVEL COMPLETE" : "GAME OVER";
         endHeading.color = flow.Won ? winColor : loseColor;
 
-        int shots = flow.PerfectCount + flow.GoodCount + flow.MissCount;
+        int shots = flow.PerfectCount + flow.GoodCount + flow.FineCount + flow.MissCount;
         int onBeat = flow.PerfectCount + flow.GoodCount;
         string accuracy = shots > 0 ? $"{Mathf.RoundToInt(100f * onBeat / shots)}%" : "-";
         int seconds = Mathf.FloorToInt(flow.TimePlayed);
@@ -77,7 +77,7 @@ public class GameMenus : MonoBehaviour
         endStats.text =
             $"{flow.CurrentLevel?.displayName ?? "Level"}\n\n" +
             $"Time  {seconds / 60}:{seconds % 60:00}\n" +
-            $"Perfect  {flow.PerfectCount}     Good  {flow.GoodCount}     Miss  {flow.MissCount}\n" +
+            $"Perfect  {flow.PerfectCount}     Good  {flow.GoodCount}     Fine  {flow.FineCount}     Miss  {flow.MissCount}\n" +
             $"On-beat accuracy  {accuracy}\n" +
             $"Best streak  {bestStreak}";
     }
@@ -120,8 +120,56 @@ public class GameMenus : MonoBehaviour
 #if !UNITY_WEBGL
         AddButton(titlePanel, "QUIT", -190f, flow.Quit);
 #endif
-        AddText(titlePanel, ControlsHint, 22, new Color(1f, 1f, 1f, 0.6f), -380f);
+        BuildAimAssistSlider();
+        AddText(titlePanel, ControlsHint, 22, new Color(1f, 1f, 1f, 0.6f), -420f);
     }
+
+    void BuildAimAssistSlider()
+    {
+        PlayerShooter shooter = FindFirstObjectByType<PlayerShooter>();
+        float initial = shooter != null ? shooter.aimAssist : 1f;
+        Text label = AddText(titlePanel, AimAssistLabel(initial), 26, Color.white, -280f);
+
+        var sliderRect = new GameObject("AimAssist", typeof(RectTransform), typeof(Slider)).GetComponent<RectTransform>();
+        sliderRect.SetParent(titlePanel.transform, false);
+        sliderRect.sizeDelta = new Vector2(460f, 28f);
+        sliderRect.anchoredPosition = new Vector2(0f, -330f);
+
+        var background = new GameObject("Background", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        Stretch(background.rectTransform, sliderRect);
+        background.color = new Color(0.08f, 0.08f, 0.16f, 0.95f);
+
+        var fillArea = new GameObject("Fill Area", typeof(RectTransform)).GetComponent<RectTransform>();
+        Stretch(fillArea, sliderRect);
+        fillArea.offsetMin = new Vector2(8f, 6f);
+        fillArea.offsetMax = new Vector2(-8f, -6f);
+
+        var fill = new GameObject("Fill", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        Stretch(fill.rectTransform, fillArea);
+        fill.color = accentColor;
+
+        var handle = new GameObject("Handle", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        handle.rectTransform.SetParent(sliderRect, false);
+        handle.rectTransform.sizeDelta = new Vector2(18f, 36f);
+        handle.color = Color.white;
+
+        var slider = sliderRect.GetComponent<Slider>();
+        slider.fillRect = fill.rectTransform;
+        slider.handleRect = handle.rectTransform;
+        slider.targetGraphic = handle;
+        slider.direction = Slider.Direction.LeftToRight;
+        slider.minValue = 0f;
+        slider.maxValue = 1f;
+        slider.SetValueWithoutNotify(initial);
+        slider.onValueChanged.AddListener(value =>
+        {
+            if (shooter == null) shooter = FindFirstObjectByType<PlayerShooter>();
+            shooter?.SetAimAssist(value);
+            label.text = AimAssistLabel(value);
+        });
+    }
+
+    static string AimAssistLabel(float value) => $"AIM ASSIST  {Mathf.RoundToInt(value * 100f)}%";
 
     void BuildLevelPanel()
     {

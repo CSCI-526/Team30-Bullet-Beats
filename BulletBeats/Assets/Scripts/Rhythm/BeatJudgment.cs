@@ -3,5 +3,7 @@ public enum BeatJudgment
 {
     Perfect,
     Good,
-    Miss
+    Miss,
+    /// <summary>The shot destroyed an asteroid, but the timing was outside Good and Perfect.</summary>
+    Fine
 }

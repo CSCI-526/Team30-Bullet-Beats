@@ -61,9 +61,44 @@ public class ChartTarget : MonoBehaviour, IShootable
         return BeatJudgment.Miss;
     }
 
+    /// <summary>
+    /// Nearest target whose ring is showing. <paramref name="worldPoint"/> is where a bullet
+    /// has to fly to actually hit it. The screen values are for the crosshair.
+    /// </summary>
+    public static bool TryGetAimAssist(Vector2 cursor, Camera cam, float songTime,
+        out Vector3 worldPoint, out Vector2 targetScreen, out float ringPixels)
+    {
+        worldPoint = default;
+        targetScreen = cursor;
+        ringPixels = 0f;
+        if (cam == null) return false;
+
+        float best = float.MaxValue;
+        bool found = false;
+        for (int i = 0; i < active.Count; i++)
+        {
+            ChartTarget candidate = active[i];
+            if (!candidate.armed) continue;
+            bool showing = candidate.RingIsShowing(songTime, out float untilHit);
+            float worldRadius = showing ? candidate.RingRadius(untilHit) : RingMaxRadius;
+            Vector3 center = cam.WorldToScreenPoint(candidate.transform.position);
+            if (center.z <= 0f) continue;
+            Vector2 screen = new Vector2(center.x, center.y);
+            float distance = Vector2.Distance(cursor, screen);
+            if (distance >= best) continue;
+            Vector3 edge = cam.WorldToScreenPoint(candidate.transform.position + cam.transform.right * worldRadius);
+            best = distance;
+            found = true;
+            worldPoint = candidate.transform.position;
+            targetScreen = screen;
+            ringPixels = Vector2.Distance(screen, new Vector2(edge.x, edge.y));
+        }
+        return found;
+    }
+
     public void OnShot(PlayerBullet bullet)
     {
-        if(dying) return;
+        if (dying) return;
 
         hitsLeft--;
         if(hitsLeft > 0)

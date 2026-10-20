@@ -23,6 +23,15 @@ public class PlayerShooter : MonoBehaviour
     [Tooltip("How far from the camera the aim point is when the cursor is not over anything.")]
     public float aimDistance = 400f;
     public LayerMask aimMask = Physics.DefaultRaycastLayers;
+    /// <summary>Title-screen value kept across scene loads. Negative means the ship still uses its own setting.</summary>
+    public static float SavedAimAssist = -1f;
+
+    [Range(0f, 1f)]
+    [Tooltip("0 = the bullet tracks the rock only when the crosshair is inside the ring. 1 = it also tracks from well outside the ring. The title screen slider writes this.")]
+    public float aimAssist = 1f;
+    [Range(1f, 4f)]
+    [Tooltip("At full Aim Assist, how many ring-radii away a shot still flies to the rock.")]
+    public float aimAssistRange = 2.5f;
 
     [Header("Shooting")]
     public float bulletSpeed = 250f;
@@ -44,6 +53,7 @@ public class PlayerShooter : MonoBehaviour
 
     public Color perfectColor = new Color(1f, 0.85f, 0.2f);
     public Color goodColor = new Color(0.3f, 0.9f, 1f);
+    public Color fineColor = new Color(0.35f, 0.95f, 0.45f);
 
     /// <summary>Timing feedback only; projectile flight and collision are independent of the judgment.</summary>
     public event Action<BeatJudgment> ShotFired;
@@ -52,6 +62,7 @@ public class PlayerShooter : MonoBehaviour
     {
         BeatJudgment.Perfect => perfectColor,
         BeatJudgment.Good => goodColor,
+        BeatJudgment.Fine => fineColor,
         _ => missColor
     };
 
@@ -60,13 +71,26 @@ public class PlayerShooter : MonoBehaviour
     /// <summary>Cursor position in screen pixels.</summary>
     public Vector2 AimScreenPosition { get; private set; }
 
+    bool aimLocked;
+
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
     float lastShotTime = float.NegativeInfinity;
 
+    void Awake()
+    {
+        if (SavedAimAssist >= 0f) aimAssist = SavedAimAssist;
+    }
+
     void Start()
     {
         if (aimCamera == null) aimCamera = DisplayCamera.Find();
+    }
+
+    public void SetAimAssist(float value)
+    {
+        aimAssist = Mathf.Clamp01(value);
+        SavedAimAssist = aimAssist;
     }
 
     void Update()
@@ -74,8 +98,10 @@ public class PlayerShooter : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse == null || aimCamera == null) return;
 
-        AimScreenPosition = mouse.position.ReadValue();
-        AimPoint = FindAimPoint(AimScreenPosition);
+        Vector2 cursor = mouse.position.ReadValue();
+        AimScreenPosition = cursor;
+        AimPoint = FindAimPoint(cursor);
+        aimLocked = ApplyAimAssist(cursor);
 
         if (gunPivot != null)
         {
@@ -85,6 +111,22 @@ public class PlayerShooter : MonoBehaviour
 
         if (mouse.leftButton.wasPressedThisFrame && Time.time - lastShotTime >= minShotInterval)
             Fire();
+    }
+
+    bool ApplyAimAssist(Vector2 cursor)
+    {
+        if (aimCamera == null) return false;
+        BeatClock clock = BeatClock.Instance;
+        float songTime = clock != null ? clock.SongTime : Time.time;
+        if (!ChartTarget.TryGetAimAssist(cursor, aimCamera, songTime, out Vector3 worldPoint, out Vector2 targetScreen, out float ringPixels))
+            return false;
+
+        float rings = Mathf.Lerp(1f, aimAssistRange, aimAssist);
+        if (Vector2.Distance(cursor, targetScreen) > Mathf.Max(8f, ringPixels) * rings) return false;
+
+        AimPoint = worldPoint;
+        AimScreenPosition = targetScreen;
+        return true;
     }
 
     Vector3 FindAimPoint(Vector2 screenPosition)
@@ -113,9 +155,21 @@ public class PlayerShooter : MonoBehaviour
             clock != null ? clock.perfectWindow : 0.07f,
             clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
+        bool connected = aimLocked;
 
-        if (hitscan) FireHitscan(origin, judgment);
-        else FireProjectile(origin, judgment);
+        if (hitscan)
+        {
+            Ray ray = aimCamera.ScreenPointToRay(AimScreenPosition);
+            IShootable target = FindHitscanTarget(ray, out Vector3 hitPoint);
+            connected = target is ChartTarget;
+            if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
+            FireHitscan(origin, judgment, target, hitPoint);
+        }
+        else
+        {
+            if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
+            FireProjectile(origin, judgment);
+        }
 
         ShotFired?.Invoke(judgment);
     }
@@ -132,10 +186,8 @@ public class PlayerShooter : MonoBehaviour
         }
     }
 
-    void FireHitscan(Vector3 origin, BeatJudgment judgment)
+    void FireHitscan(Vector3 origin, BeatJudgment judgment, IShootable target, Vector3 hitPoint)
     {
-        Ray ray = aimCamera.ScreenPointToRay(AimScreenPosition);
-        IShootable target = FindHitscanTarget(ray, out Vector3 hitPoint);
         Vector3 end = target != null ? hitPoint : AimPoint;
 
         Vector3 direction = end - origin;
