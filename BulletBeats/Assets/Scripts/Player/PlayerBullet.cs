@@ -3,6 +3,7 @@ using UnityEngine;
 /// <summary>
 /// A straight projectile that stops at the first <see cref="IShootable"/> or solid collider.
 /// Trigger colliders without an <see cref="IShootable"/> are passed through.
+/// Launched with <see cref="LaunchTracer"/> it is visual only and never hits anything.
 /// </summary>
 public class PlayerBullet : MonoBehaviour
 {
@@ -19,6 +20,9 @@ public class PlayerBullet : MonoBehaviour
     Transform owner;
     Vector3 velocity;
     float age;
+    bool tracer;
+    float tracerDistance;
+    float travelled;
 
     /// <param name="owner">The bullet never hits this object or its children.</param>
     public void Launch(Transform owner, Vector3 velocity, int damage, BeatJudgment judgment, Color color)
@@ -35,10 +39,28 @@ public class PlayerBullet : MonoBehaviour
             r.SetPropertyBlock(block);
     }
 
+    /// <summary>Visual only (hitscan): flies <paramref name="distance"/> and disappears without hitting
+    /// anything, since the shooter already resolved the hit.</summary>
+    public void LaunchTracer(Transform owner, Vector3 velocity, float distance, int damage, BeatJudgment judgment, Color color)
+    {
+        Launch(owner, velocity, damage, judgment, color);
+        tracer = true;
+        tracerDistance = distance;
+    }
+
     void Update()
     {
         float step = velocity.magnitude * Time.deltaTime;
-        if (step > 0f && HitSomething(step))
+        if (tracer)
+        {
+            travelled += step;
+            if (travelled >= tracerDistance)
+            {
+                Destroy(gameObject);
+                return;
+            }
+        }
+        else if (step > 0f && HitSomething(step))
         {
             Destroy(gameObject);
             return;

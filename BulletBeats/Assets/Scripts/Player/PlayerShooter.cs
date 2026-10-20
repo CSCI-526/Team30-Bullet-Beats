@@ -4,7 +4,9 @@ using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
 
 /// <summary>
-/// Mouse moves the aim; left click fires a straight projectile. Hits are resolved by collision.
+/// Mouse moves the aim; left click fires. With <see cref="hitscan"/> on, the click hits whatever is
+/// under the cursor that frame and the bullet is only a visual tracer; with it off, a straight
+/// projectile flies and hits are resolved by collision.
 /// </summary>
 public class PlayerShooter : MonoBehaviour
 {
@@ -24,6 +26,13 @@ public class PlayerShooter : MonoBehaviour
 
     [Header("Shooting")]
     public float bulletSpeed = 250f;
+    [Tooltip("On: a click instantly hits whatever is under the cursor; the bullet is only a visual tracer. " +
+             "Off: the bullet flies at Bullet Speed and hits by collision.")]
+    public bool hitscan = true;
+    [Tooltip("Hitscan only. Radius of the hit check along the cursor ray.")]
+    public float hitscanRadius = 1f;
+    [Tooltip("Hitscan only. Speed of the visual tracer.")]
+    public float tracerSpeed = 1500f;
     [Tooltip("Clicks closer together than this many seconds are ignored.")]
     public float minShotInterval = 0.08f;
 
@@ -104,6 +113,15 @@ public class PlayerShooter : MonoBehaviour
             clock != null ? clock.perfectWindow : 0.07f,
             clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
+
+        if (hitscan) FireHitscan(origin, judgment);
+        else FireProjectile(origin, judgment);
+
+        ShotFired?.Invoke(judgment);
+    }
+
+    void FireProjectile(Vector3 origin, BeatJudgment judgment)
+    {
         Vector3 direction = AimPoint - origin;
         if (direction.sqrMagnitude < 0.01f) direction = aimCamera.transform.forward;
 
@@ -112,7 +130,51 @@ public class PlayerShooter : MonoBehaviour
             PlayerBullet bullet = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction.normalized));
             bullet.Launch(transform, direction.normalized * bulletSpeed, bulletDamage, judgment, ColorFor(judgment));
         }
+    }
 
-        ShotFired?.Invoke(judgment);
+    void FireHitscan(Vector3 origin, BeatJudgment judgment)
+    {
+        Ray ray = aimCamera.ScreenPointToRay(AimScreenPosition);
+        IShootable target = FindHitscanTarget(ray, out Vector3 hitPoint);
+        Vector3 end = target != null ? hitPoint : AimPoint;
+
+        Vector3 direction = end - origin;
+        if (direction.sqrMagnitude < 0.01f) direction = aimCamera.transform.forward;
+
+        PlayerBullet tracer = null;
+        if (bulletPrefab != null)
+        {
+            tracer = Instantiate(bulletPrefab, origin, Quaternion.LookRotation(direction.normalized));
+            tracer.LaunchTracer(transform, direction.normalized * tracerSpeed, direction.magnitude,
+                bulletDamage, judgment, ColorFor(judgment));
+        }
+
+        target?.OnShot(tracer);
+    }
+
+    /// <summary>Same rules as <see cref="PlayerBullet"/>: the nearest <see cref="IShootable"/> or solid
+    /// collider stops the shot; trigger colliders without an <see cref="IShootable"/> are passed through.</summary>
+    IShootable FindHitscanTarget(Ray ray, out Vector3 hitPoint)
+    {
+        hitPoint = default;
+        int count = Physics.SphereCastNonAlloc(ray, hitscanRadius, hits, aimDistance,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+
+        float nearest = float.MaxValue;
+        IShootable target = null;
+        for (int i = 0; i < count; i++)
+        {
+            Collider col = hits[i].collider;
+            if (col.transform.IsChildOf(transform)) continue;
+
+            IShootable shootable = col.GetComponentInParent<IShootable>();
+            if (shootable == null && col.isTrigger) continue;
+            if (hits[i].distance >= nearest) continue;
+
+            nearest = hits[i].distance;
+            target = shootable;
+            hitPoint = hits[i].distance > 0f ? hits[i].point : col.bounds.center;
+        }
+        return target;
     }
 }
