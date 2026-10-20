@@ -23,6 +23,15 @@ public class PlayerShooter : MonoBehaviour
     [Tooltip("How far from the camera the aim point is when the cursor is not over anything.")]
     public float aimDistance = 400f;
     public LayerMask aimMask = Physics.DefaultRaycastLayers;
+    /// <summary>Title-screen value kept across scene loads. Negative means the ship still uses its own setting.</summary>
+    public static float SavedAimAssist = -1f;
+
+    [Range(0f, 1f)]
+    [Tooltip("0 = the bullet tracks the rock only when the crosshair is inside the ring. 1 = it also tracks from well outside the ring. The title screen slider writes this.")]
+    public float aimAssist = 1f;
+    [Range(1f, 4f)]
+    [Tooltip("At full Aim Assist, how many ring-radii away a shot still flies to the rock.")]
+    public float aimAssistRange = 2.5f;
 
     [Header("Shooting")]
     public float bulletSpeed = 250f;
@@ -64,9 +73,20 @@ public class PlayerShooter : MonoBehaviour
 
     float lastShotTime = float.NegativeInfinity;
 
+    void Awake()
+    {
+        if (SavedAimAssist >= 0f) aimAssist = SavedAimAssist;
+    }
+
     void Start()
     {
         if (aimCamera == null) aimCamera = DisplayCamera.Find();
+    }
+
+    public void SetAimAssist(float value)
+    {
+        aimAssist = Mathf.Clamp01(value);
+        SavedAimAssist = aimAssist;
     }
 
     void Update()
@@ -74,8 +94,10 @@ public class PlayerShooter : MonoBehaviour
         Mouse mouse = Mouse.current;
         if (mouse == null || aimCamera == null) return;
 
-        AimScreenPosition = mouse.position.ReadValue();
-        AimPoint = FindAimPoint(AimScreenPosition);
+        Vector2 cursor = mouse.position.ReadValue();
+        AimScreenPosition = cursor;
+        AimPoint = FindAimPoint(cursor);
+        ApplyAimAssist(cursor);
 
         if (gunPivot != null)
         {
@@ -85,6 +107,21 @@ public class PlayerShooter : MonoBehaviour
 
         if (mouse.leftButton.wasPressedThisFrame && Time.time - lastShotTime >= minShotInterval)
             Fire();
+    }
+
+    void ApplyAimAssist(Vector2 cursor)
+    {
+        if (aimCamera == null) return;
+        BeatClock clock = BeatClock.Instance;
+        float songTime = clock != null ? clock.SongTime : Time.time;
+        if (!ChartTarget.TryGetAimAssist(cursor, aimCamera, songTime, out Vector3 worldPoint, out Vector2 targetScreen, out float ringPixels))
+            return;
+
+        float rings = Mathf.Lerp(1f, aimAssistRange, aimAssist);
+        if (Vector2.Distance(cursor, targetScreen) > Mathf.Max(8f, ringPixels) * rings) return;
+
+        AimPoint = worldPoint;
+        AimScreenPosition = targetScreen;
     }
 
     Vector3 FindAimPoint(Vector2 screenPosition)
