@@ -31,7 +31,7 @@ public class GameFlow : MonoBehaviour
 
     public static GameFlow Instance { get; private set; }
 
-    public Level[] levels = { new Level { displayName = "Main Level", sceneName = "MainLevel" } };
+    public Level[] levels = { new Level { displayName = "Tetris", sceneName = "MainLevel" } };
     [Tooltip("Level length in seconds while BeatClock has no song. 0 = never ends by time.")]
     public float levelLengthSeconds = 90f;
     [Tooltip("If off, running out of health does not end the level (for testing).")]
