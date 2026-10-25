@@ -4,8 +4,9 @@ using UnityEngine.InputSystem.UI;
 using UnityEngine.UI;
 
 /// <summary>
-/// Title, level select and end-of-level screens for <see cref="GameFlow"/>. Builds its own overlay
-/// canvas (and an EventSystem if the scene has none), so it needs no scene setup.
+/// Title, level select, difficulty and end-of-level screens for <see cref="GameFlow"/>. Builds its own
+/// overlay canvas (and an EventSystem if the scene has none), so it needs no scene setup.
+/// Scores and high scores come from <see cref="ScoreKeeper"/>.
 /// </summary>
 [RequireComponent(typeof(GameFlow))]
 public class GameMenus : MonoBehaviour
@@ -18,13 +19,16 @@ public class GameMenus : MonoBehaviour
     public Color backdropColor = new Color(0.02f, 0.01f, 0.06f, 0.82f);
 
     const string ControlsHint = "W A S D  jump between spots      Mouse  aim      Left click  shoot when the ring closes";
+    const float WideButton = 860f;
 
     GameFlow flow;
     Font font;
     GameObject canvasObject;
-    GameObject titlePanel, levelPanel, endPanel;
+    GameObject titlePanel, levelPanel, difficultyPanel, endPanel;
     Button titleFirst, levelFirst, endFirst;
-    Text endHeading, endStats;
+    Text endHeading, endStats, difficultySong;
+    readonly Button[] difficultyButtons = new Button[3];
+    GameFlow.Level difficultyLevel;
 
     void Awake()
     {
@@ -48,6 +52,7 @@ public class GameMenus : MonoBehaviour
         canvasObject.SetActive(state != GameState.Playing);
         titlePanel.SetActive(state == GameState.Title);
         levelPanel.SetActive(state == GameState.LevelSelect);
+        difficultyPanel.SetActive(false);
         endPanel.SetActive(state == GameState.Ended);
 
         if (state == GameState.Ended) FillEndScreen();
@@ -74,8 +79,20 @@ public class GameMenus : MonoBehaviour
         int seconds = Mathf.FloorToInt(flow.TimePlayed);
         int bestStreak = flow.PlayerHealth != null ? flow.PlayerHealth.BestStreak : 0;
 
+        string scoreLines = "";
+        ScoreKeeper keeper = GetComponent<ScoreKeeper>();
+        if (keeper != null)
+        {
+            keeper.RecordResult();
+            string best = keeper.IsNewHighScore
+                ? $"<color=#{ColorUtility.ToHtmlStringRGB(winColor)}>NEW HIGH SCORE!</color>"
+                : $"High score  {ScoreKeeper.FormatPoints(Mathf.Max(keeper.Score, keeper.PreviousHighScore))}";
+            scoreLines = $"Score  {ScoreKeeper.FormatPoints(keeper.Score)}\n{best}\n";
+        }
+
         endStats.text =
-            $"{flow.CurrentLevel?.displayName ?? "Level"}\n\n" +
+            $"{flow.CurrentLevel?.displayName ?? "Level"}  -  {ScoreKeeper.DifficultyName(ScoreKeeper.SelectedDifficulty)}\n\n" +
+            scoreLines +
             $"Time  {seconds / 60}:{seconds % 60:00}\n" +
             $"Perfect  {flow.PerfectCount}     Good  {flow.GoodCount}     Fine  {flow.FineCount}     Miss  {flow.MissCount}\n" +
             $"On-beat accuracy  {accuracy}\n" +
@@ -106,6 +123,7 @@ public class GameMenus : MonoBehaviour
 
         BuildTitlePanel();
         BuildLevelPanel();
+        BuildDifficultyPanel();
         BuildEndPanel();
     }
 
@@ -180,8 +198,8 @@ public class GameMenus : MonoBehaviour
         foreach (GameFlow.Level level in flow.levels)
         {
             bool playable = GameFlow.CanLoad(level);
-            string label = playable ? level.displayName : $"{level.displayName}  (not in build)";
-            Button button = AddButton(levelPanel, label, y, () => flow.StartLevel(level));
+            string label = playable ? LevelLabel(level) : $"{level.displayName}  (not in build)";
+            Button button = AddButton(levelPanel, label, y, () => ShowDifficultySelect(level), WideButton);
             button.interactable = playable;
             if (playable && levelFirst == null) levelFirst = button;
             y -= 90f;
@@ -191,12 +209,61 @@ public class GameMenus : MonoBehaviour
         if (levelFirst == null) levelFirst = back;
     }
 
+    static string LevelLabel(GameFlow.Level level) =>
+        ScoreKeeper.TryGetBestHighScore(level, out int best, out Difficulty difficulty)
+            ? $"{level.displayName}      HIGH SCORE  {ScoreKeeper.FormatPoints(best)}  ({ScoreKeeper.DifficultyName(difficulty)})"
+            : $"{level.displayName}      HIGH SCORE  -";
+
+    void BuildDifficultyPanel()
+    {
+        difficultyPanel = NewPanel("Difficulty");
+        AddText(difficultyPanel, "SELECT DIFFICULTY", 72, accentColor, 300f, FontStyle.Bold);
+        difficultySong = AddText(difficultyPanel, "", 36, Color.white, 210f);
+
+        float y = 90f;
+        for (int i = 0; i < difficultyButtons.Length; i++)
+        {
+            var difficulty = (Difficulty)i;
+            difficultyButtons[i] = AddButton(difficultyPanel, ScoreKeeper.DifficultyName(difficulty), y,
+                () => StartLevel(difficulty), WideButton);
+            y -= 90f;
+        }
+
+        AddButton(difficultyPanel, "BACK", y - 40f, () => Show(GameState.LevelSelect));
+    }
+
+    /// <summary>Second step of level select: pick a difficulty for <paramref name="level"/>.</summary>
+    void ShowDifficultySelect(GameFlow.Level level)
+    {
+        difficultyLevel = level;
+        levelPanel.SetActive(false);
+        difficultyPanel.SetActive(true);
+        difficultySong.text = level.displayName;
+
+        for (int i = 0; i < difficultyButtons.Length; i++)
+        {
+            var difficulty = (Difficulty)i;
+            int high = ScoreKeeper.GetHighScore(level, difficulty);
+            difficultyButtons[i].GetComponentInChildren<Text>().text =
+                $"{ScoreKeeper.DifficultyName(difficulty)}      HIGH SCORE  {(high >= 0 ? ScoreKeeper.FormatPoints(high) : "-")}";
+        }
+
+        Button selected = difficultyButtons[(int)ScoreKeeper.SelectedDifficulty];
+        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(selected.gameObject);
+    }
+
+    void StartLevel(Difficulty difficulty)
+    {
+        ScoreKeeper.SelectedDifficulty = difficulty;
+        flow.StartLevel(difficultyLevel);
+    }
+
     void BuildEndPanel()
     {
         endPanel = NewPanel("End");
         endHeading = AddText(endPanel, "", 96, Color.white, 260f, FontStyle.Bold);
         endStats = AddText(endPanel, "", 30, Color.white, 50f);
-        endStats.rectTransform.sizeDelta = new Vector2(1200f, 280f);
+        endStats.rectTransform.sizeDelta = new Vector2(1200f, 340f);
 
         endFirst = AddButton(endPanel, "RETRY", -170f, flow.Retry);
         AddButton(endPanel, "LEVEL SELECT", -260f, flow.ShowLevelSelect);
@@ -226,11 +293,11 @@ public class GameMenus : MonoBehaviour
         return label;
     }
 
-    Button AddButton(GameObject panel, string text, float y, UnityEngine.Events.UnityAction onClick)
+    Button AddButton(GameObject panel, string text, float y, UnityEngine.Events.UnityAction onClick, float width = 460f)
     {
         var image = new GameObject(text, typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
         image.rectTransform.SetParent(panel.transform, false);
-        image.rectTransform.sizeDelta = new Vector2(460f, 70f);
+        image.rectTransform.sizeDelta = new Vector2(width, 70f);
         image.rectTransform.anchoredPosition = new Vector2(0f, y);
         image.color = Color.white;
 

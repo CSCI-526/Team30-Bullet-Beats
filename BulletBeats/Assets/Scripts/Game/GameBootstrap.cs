@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// Adds the health, menu and analytics hook systems to every gameplay scene (any scene with a
+/// Adds the health, menu, score and analytics hook systems to every gameplay scene (any scene with a
 /// <see cref="PlayerShooter"/>) when it loads, unless the scene already has them. This keeps them
 /// out of the scene and prefab files, which are in Git LFS and can't be merged. Once someone adds
 /// <see cref="PlayerHealth"/> / <see cref="GameFlow"/> to the scene by hand, this does nothing.
@@ -40,5 +40,7 @@ static class GameBootstrap
             new GameObject("GameFlow", typeof(GameFlow), typeof(GameMenus));
         if (Object.FindFirstObjectByType<AnalyticsHooks>() == null)
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<AnalyticsHooks>();
+        if (Object.FindFirstObjectByType<ScoreKeeper>() == null)
+            Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<ScoreKeeper>();
     }
 }
