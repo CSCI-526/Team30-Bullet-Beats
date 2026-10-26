@@ -31,6 +31,11 @@ static class GameBootstrap
         if (Object.FindFirstObjectByType<PlayerHealth>() == null)
             shooter.gameObject.AddComponent<PlayerHealth>();
         PlayerHealth health = Object.FindFirstObjectByType<PlayerHealth>();
+        // Shields before the HUD, so the HUD finds them in Awake.
+        if (health.GetComponent<BasicShield>() == null)
+            health.gameObject.AddComponent<BasicShield>();
+        if (health.GetComponent<DirectionalShield>() == null)
+            health.gameObject.AddComponent<DirectionalShield>();
         if (health.GetComponent<HealthHUD>() == null)
             health.gameObject.AddComponent<HealthHUD>();
         if (health.GetComponent<ShipDamageFlash>() == null)
