@@ -134,24 +134,25 @@ public class GameMenus : MonoBehaviour
         AddText(titlePanel, tagline, 30, Color.white, 120f);
 
         titleFirst = AddButton(titlePanel, "PLAY", -10f, flow.Play);
-        AddButton(titlePanel, "LEVEL SELECT", -100f, flow.ShowLevelSelect);
+        AddButton(titlePanel, "TUTORIAL", -100f, flow.StartTutorial);
+        AddButton(titlePanel, "LEVEL SELECT", -190f, flow.ShowLevelSelect);
 #if !UNITY_WEBGL
-        AddButton(titlePanel, "QUIT", -190f, flow.Quit);
+        AddButton(titlePanel, "QUIT", -280f, flow.Quit);
 #endif
         BuildAimAssistSlider();
-        AddText(titlePanel, ControlsHint, 22, new Color(1f, 1f, 1f, 0.6f), -420f);
+        AddText(titlePanel, ControlsHint, 22, new Color(1f, 1f, 1f, 0.6f), -490f);
     }
 
     void BuildAimAssistSlider()
     {
         PlayerShooter shooter = FindFirstObjectByType<PlayerShooter>();
         float initial = shooter != null ? shooter.aimAssist : 1f;
-        Text label = AddText(titlePanel, AimAssistLabel(initial), 26, Color.white, -280f);
+        Text label = AddText(titlePanel, AimAssistLabel(initial), 26, Color.white, -370f);
 
         var sliderRect = new GameObject("AimAssist", typeof(RectTransform), typeof(Slider)).GetComponent<RectTransform>();
         sliderRect.SetParent(titlePanel.transform, false);
         sliderRect.sizeDelta = new Vector2(460f, 28f);
-        sliderRect.anchoredPosition = new Vector2(0f, -330f);
+        sliderRect.anchoredPosition = new Vector2(0f, -420f);
 
         var background = new GameObject("Background", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
         Stretch(background.rectTransform, sliderRect);
