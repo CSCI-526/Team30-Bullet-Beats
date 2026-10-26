@@ -62,6 +62,9 @@ public class ChartTargetSpawner : MonoBehaviour
 
     public IReadOnlyList<ChartNote> Notes => notes;
 
+    /// <summary>Raised for every target right after it spawns (and after it is made turbo).</summary>
+    public event System.Action<ChartTarget> Spawned;
+
     public void SetNotes(List<ChartNote> chartNotes)
     {
         notes.Clear();
@@ -133,7 +136,8 @@ public class ChartTargetSpawner : MonoBehaviour
         BeatClock clock = BeatClock.Instance;
         if (clock == null || notes.Count == 0) return;
 
-        if (!clock.IsMusicPlaying) return;
+        // With a song, wait for it to play; without one (e.g. the tutorial) follow the scene clock.
+        if (clock.HasMusic && !clock.IsMusicPlaying) return;
 
         float songTime = clock.SongTime;
         float quarter = clock.SecondsPerBeat;
@@ -203,6 +207,8 @@ public class ChartTargetSpawner : MonoBehaviour
         spawnCount++;
         if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
             target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+
+        Spawned?.Invoke(target);
     }
 
     Vector2 PickViewport(NoteLane lane)

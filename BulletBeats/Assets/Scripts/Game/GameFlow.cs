@@ -17,7 +17,8 @@ public enum GameState
 /// <see cref="RhythmSession"/> (count-in, song, chart) only starts when play starts.
 /// The level ends in a loss when the ship's health runs out, or in a win when the song ends
 /// (or after <see cref="levelLengthSeconds"/> while there is no song). <see cref="GameMenus"/>
-/// draws the screens.
+/// draws the screens. A tutorial run (<see cref="StartTutorial"/>, and the first PLAY ever) plays
+/// <see cref="Tutorial"/> instead of the song, then goes into the first level on Easy.
 /// </summary>
 public class GameFlow : MonoBehaviour
 {
@@ -54,9 +55,22 @@ public class GameFlow : MonoBehaviour
     public int FineCount { get; private set; }
     public PlayerHealth PlayerHealth => health;
     public Level CurrentLevel => Array.Find(levels, l => l.sceneName == SceneManager.GetActiveScene().name);
+    /// <summary>True while this run is the tutorial rather than a level.</summary>
+    public bool IsTutorial { get; private set; }
+
+    /// <summary>True once the player has finished or skipped the tutorial (saved in PlayerPrefs).</summary>
+    public static bool TutorialDone
+    {
+        get => PlayerPrefs.GetInt(TutorialDoneKey, 0) == 1;
+        set { PlayerPrefs.SetInt(TutorialDoneKey, value ? 1 : 0); PlayerPrefs.Save(); }
+    }
+
+    const string TutorialDoneKey = "BulletBeats.TutorialDone";
 
     /// <summary>Screen the next loaded scene opens on; Playing skips the menus.</summary>
     static GameState stateAfterLoad = GameState.Title;
+    /// <summary>Set before a scene load so the next Playing state is a tutorial run.</summary>
+    static bool tutorialAfterLoad;
 
     PlayerHealth health;
     PlayerShooter shooter;
@@ -94,7 +108,9 @@ public class GameFlow : MonoBehaviour
 
         GameState first = stateAfterLoad;
         stateAfterLoad = GameState.Title;
-        if (first == GameState.Playing) BeginPlay();
+        bool tutorial = tutorialAfterLoad;
+        tutorialAfterLoad = false;
+        if (first == GameState.Playing) BeginPlay(tutorial);
         else SetState(first);
     }
 
@@ -115,6 +131,7 @@ public class GameFlow : MonoBehaviour
         if (State != GameState.Playing) return;
 
         TimePlayed += Time.deltaTime;
+        if (IsTutorial) return; // the tutorial decides when it's over
 
         BeatClock clock = BeatClock.Instance;
         if (clock != null && clock.HasMusic)
@@ -142,9 +159,18 @@ public class GameFlow : MonoBehaviour
         else SetState(GameState.LevelSelect);
     }
 
-    /// <summary>Plays the current scene's level, or the first level when this scene isn't one.</summary>
+    /// <summary>
+    /// Plays the current scene's level, or the first level when this scene isn't one. The very first
+    /// time, plays the tutorial instead (it leads into the level afterwards).
+    /// </summary>
     public void Play()
     {
+        if (!TutorialDone)
+        {
+            StartTutorial();
+            return;
+        }
+
         Level level = CurrentLevel;
         if (level != null) StartLevel(level);
         else if (levels.Length > 0) StartLevel(levels[0]);
@@ -158,6 +184,27 @@ public class GameFlow : MonoBehaviour
     }
 
     public void Retry() => LoadScene(SceneManager.GetActiveScene().name, GameState.Playing);
+
+    /// <summary>Plays the tutorial in the first level's scene.</summary>
+    public void StartTutorial()
+    {
+        if (levels.Length == 0) return;
+        bool sameScene = levels[0].sceneName == SceneManager.GetActiveScene().name;
+        if (sameScene && !started) BeginPlay(true);
+        else
+        {
+            tutorialAfterLoad = true;
+            LoadScene(levels[0].sceneName, GameState.Playing);
+        }
+    }
+
+    /// <summary>Called by <see cref="Tutorial"/> when it ends: remembers it, then starts the first level on Easy.</summary>
+    public void FinishTutorial()
+    {
+        TutorialDone = true;
+        ScoreKeeper.SelectedDifficulty = Difficulty.Easy;
+        if (levels.Length > 0) LoadScene(levels[0].sceneName, GameState.Playing);
+    }
 
     /// <summary>Ends the level now; for anything else that can finish a level (e.g. reaching the end of the track).</summary>
     public void EndLevel(bool won)
@@ -179,13 +226,16 @@ public class GameFlow : MonoBehaviour
     public static bool CanLoad(Level level) =>
         !string.IsNullOrEmpty(level.sceneName) && Application.CanStreamedLevelBeLoaded(level.sceneName);
 
-    void BeginPlay()
+    void BeginPlay(bool tutorial = false)
     {
         started = true;
+        IsTutorial = tutorial;
         TimePlayed = 0f;
         PerfectCount = GoodCount = MissCount = FineCount = 0;
-        if (session != null) session.enabled = true;
+        // The tutorial runs on the scene clock with its own asteroids, so the song never starts.
+        if (session != null && !tutorial) session.enabled = true;
         SetState(GameState.Playing);
+        if (tutorial && GetComponent<Tutorial>() == null) gameObject.AddComponent<Tutorial>();
     }
 
     void OnPlayerDied()

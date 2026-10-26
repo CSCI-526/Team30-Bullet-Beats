@@ -17,6 +17,8 @@ public class PlayerHealth : MonoBehaviour
     public static PlayerHealth Instance { get; private set; }
 
     [Min(1)] public int maxHealth = 5;
+    [Tooltip("Health never drops below this (1 = the ship can't die, e.g. in the tutorial).")]
+    [Min(0)] public int minHealth = 0;
     [Tooltip("Seconds the ship can't be hit again after taking a hit.")]
     public float hitInvulnerableTime = 0.6f;
 
@@ -132,7 +134,7 @@ public class PlayerHealth : MonoBehaviour
 
     void SetHealth(int value)
     {
-        value = Mathf.Max(0, value);
+        value = Mathf.Max(minHealth, value);
         if (value == Health) return;
         Health = value;
         HealthChanged?.Invoke(Health);
