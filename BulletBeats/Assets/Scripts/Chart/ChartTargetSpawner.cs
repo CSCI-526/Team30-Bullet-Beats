@@ -42,6 +42,8 @@ public class ChartTargetSpawner : MonoBehaviour
     [Tooltip("Optional. Empty = spawn a simple cube placeholder.")]
     public ChartTarget targetPrefab;
     public float targetScale = 4.4f;
+    [Tooltip("Colour of normal asteroids (turbo asteroids use turboColor).")]
+    public Color asteroidColor = new Color(0.62f, 0.66f, 0.74f);
     public Color leftColor = new Color(0.3f, 0.85f, 1f);
     public Color rightColor = new Color(1f, 0.75f, 0.25f);
 
@@ -187,13 +189,11 @@ public class ChartTargetSpawner : MonoBehaviour
             rb.useGravity = false;
             target = go.AddComponent<ChartTarget>();
             var renderer = go.GetComponent<MeshRenderer>();
-            //if (renderer != null)
-            //{
-            //    renderer.material = new Material(renderer.sharedMaterial)
-            //    {
-            //        color = note.lane == NoteLane.LeftUpper ? leftColor : rightColor
-            //    };
-            //}
+            if (renderer != null)
+            {
+                Material material = NewAsteroidMaterial();
+                if (material != null) renderer.material = material;
+            }
         }
 
         target.Arm(note, spawn, hit);
@@ -203,6 +203,33 @@ public class ChartTargetSpawner : MonoBehaviour
         spawnCount++;
         if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
             target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+    }
+
+    // A primitive made from code gets the built-in default material, whose shader the URP web build
+    // can't draw (magenta). Copy the ship's material instead: it's in the build and renders correctly.
+    Material NewAsteroidMaterial()
+    {
+        Material template = null;
+        if (PlayerHealth.Instance != null)
+        {
+            Renderer ship = PlayerHealth.Instance.GetComponentInChildren<Renderer>();
+            if (ship != null) template = ship.sharedMaterial;
+        }
+
+        Material material;
+        if (template != null) material = new Material(template);
+        else
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Universal Render Pipeline/Simple Lit");
+            if (shader == null) return null;
+            material = new Material(shader);
+        }
+
+        material.name = "Asteroid";
+        if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", asteroidColor);
+        if (material.HasProperty("_Color")) material.SetColor("_Color", asteroidColor);
+        return material;
     }
 
     Vector2 PickViewport(NoteLane lane)
