@@ -98,6 +98,15 @@ public class PlayerMovement : MonoBehaviour
         _ => bottom
     };
 
+    /// <summary>World position of a spot, e.g. to park a pickup the ship has to dash to.</summary>
+    public Vector3 WorldPositionOf(Spot spot)
+    {
+        Vector3 rightAxis = axesFrom != null ? axesFrom.right : Vector3.right;
+        Vector3 upAxis = axesFrom != null ? axesFrom.up : Vector3.up;
+        Vector2 delta = OffsetOf(spot) - appliedOffset;
+        return transform.position + rightAxis * delta.x + upAxis * delta.y;
+    }
+
     void ApplyOffset(Vector2 newOffset)
     {
         Vector2 delta = newOffset - appliedOffset;

@@ -31,7 +31,7 @@ public class PlayerHealth : MonoBehaviour
 
     /// <summary>Raised whenever <see cref="Health"/> changes, with the new value.</summary>
     public event Action<int> HealthChanged;
-    /// <summary>Raised when a hit lands, with the damage taken (e.g. for a damage flash).</summary>
+    /// <summary>Raised when a hit lands, with the damage taken (e.g. for a damage flash); 0 if a <see cref="BasicShield"/> took it.</summary>
     public event Action<int> Damaged;
     /// <summary>Raised when the streak heals the ship, with the health gained.</summary>
     public event Action<int> Healed;
@@ -91,9 +91,10 @@ public class PlayerHealth : MonoBehaviour
         if (amount <= 0 || IsDead || IsInvulnerable) return false;
 
         invulnerableUntil = Time.time + hitInvulnerableTime;
-        SetHealth(Health - amount);
+        bool absorbed = TryGetComponent(out BasicShield shield) && shield.TryAbsorb();
+        if (!absorbed) SetHealth(Health - amount);
         SetStreak(0);
-        Damaged?.Invoke(amount);
+        Damaged?.Invoke(absorbed ? 0 : amount);
         if (IsDead) Died?.Invoke();
         return true;
     }

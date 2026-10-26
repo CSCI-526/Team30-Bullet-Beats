@@ -4,6 +4,8 @@ using UnityEngine.UI;
 /// <summary>
 /// Health pips in the top-left corner and the current streak under them, with how many more notes
 /// in a row heal the ship. A pip that was just lost flashes red before going empty.
+/// An extra pip after the health shows the <see cref="BasicShield"/>, and a line under the streak
+/// shows the <see cref="DirectionalShield"/>'s blocks left.
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(PlayerHealth))]
@@ -13,6 +15,7 @@ public class HealthHUD : MonoBehaviour
     public Color emptyColor = new Color(1f, 1f, 1f, 0.15f);
     public Color streakColor = Color.white;
     public Color lostColor = new Color(1f, 0.2f, 0.2f);
+    public Color shieldColor = new Color(0.75f, 0.6f, 1f);
     [Tooltip("Seconds a pip glows after the ship heals.")]
     public float healGlowTime = 0.5f;
     [Tooltip("Seconds a lost pip flashes red before going empty.")]
@@ -24,10 +27,14 @@ public class HealthHUD : MonoBehaviour
     const float Margin = 32f;
 
     PlayerHealth health;
+    BasicShield basicShield;
+    DirectionalShield movingShield;
     GameObject canvasObject;
     RectTransform corner;
     readonly System.Collections.Generic.List<Image> pips = new System.Collections.Generic.List<Image>();
+    Image shieldPip;
     Text streakLabel;
+    Text movingShieldLabel;
     float healGlowTimer;
     float lostFlashTimer;
     int lostFrom, lostTo;
@@ -35,6 +42,8 @@ public class HealthHUD : MonoBehaviour
     void Awake()
     {
         health = GetComponent<PlayerHealth>();
+        basicShield = GetComponent<BasicShield>();
+        movingShield = GetComponent<DirectionalShield>();
         BuildCanvas();
     }
 
@@ -44,6 +53,8 @@ public class HealthHUD : MonoBehaviour
         health.StreakChanged += OnStreakChanged;
         health.Healed += OnHealed;
         health.Damaged += OnDamaged;
+        if (basicShield != null) basicShield.Changed += OnBasicShieldChanged;
+        if (movingShield != null) movingShield.Changed += RefreshMovingShield;
         canvasObject.SetActive(true);
         Refresh();
     }
@@ -54,6 +65,8 @@ public class HealthHUD : MonoBehaviour
         health.StreakChanged -= OnStreakChanged;
         health.Healed -= OnHealed;
         health.Damaged -= OnDamaged;
+        if (basicShield != null) basicShield.Changed -= OnBasicShieldChanged;
+        if (movingShield != null) movingShield.Changed -= RefreshMovingShield;
         if (canvasObject != null) canvasObject.SetActive(false);
     }
 
@@ -72,6 +85,7 @@ public class HealthHUD : MonoBehaviour
 
     void OnHealthChanged(int _) => RefreshPips();
     void OnStreakChanged(int _) => RefreshStreak();
+    void OnBasicShieldChanged(bool _) => RefreshPips();
 
     void OnHealed(int _)
     {
@@ -91,6 +105,7 @@ public class HealthHUD : MonoBehaviour
     {
         RefreshPips();
         RefreshStreak();
+        RefreshMovingShield();
     }
 
     void RefreshPips()
@@ -107,19 +122,25 @@ public class HealthHUD : MonoBehaviour
             else if (lost > 0f && i >= lostFrom && i < lostTo) pips[i].color = justLost;
             else pips[i].color = emptyColor;
         }
+
+        bool shielded = basicShield != null && basicShield.Active;
+        shieldPip.gameObject.SetActive(shielded);
+        shieldPip.rectTransform.anchoredPosition = new Vector2(pips.Count * (PipWidth + PipGap), 0f);
+        shieldPip.color = shieldColor;
     }
 
-    void AddPip()
+    void AddPip() => pips.Add(MakePip("Pip", pips.Count));
+
+    Image MakePip(string name, int index)
     {
-        int i = pips.Count;
-        var pip = new GameObject("Pip", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        var pip = new GameObject(name, typeof(RectTransform), typeof(Image)).GetComponent<Image>();
         RectTransform rect = pip.rectTransform;
         rect.SetParent(corner, false);
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
         rect.sizeDelta = new Vector2(PipWidth, PipHeight);
-        rect.anchoredPosition = new Vector2(i * (PipWidth + PipGap), 0f);
+        rect.anchoredPosition = new Vector2(index * (PipWidth + PipGap), 0f);
         pip.raycastTarget = false;
-        pips.Add(pip);
+        return pip;
     }
 
     void RefreshStreak()
@@ -127,6 +148,13 @@ public class HealthHUD : MonoBehaviour
         streakLabel.text = health.Streak > 0
             ? $"STREAK {health.Streak}"
             : "Hit a Perfect note to gain a life";
+    }
+
+    void RefreshMovingShield()
+    {
+        bool up = movingShield != null && movingShield.Active;
+        movingShieldLabel.gameObject.SetActive(up);
+        if (up) movingShieldLabel.text = $"ARC SHIELD x{movingShield.BlocksLeft}";
     }
 
     void BuildCanvas()
@@ -148,18 +176,26 @@ public class HealthHUD : MonoBehaviour
 
         for (int i = 0; i < health.maxHealth; i++)
             AddPip();
+        shieldPip = MakePip("ShieldPip", health.maxHealth);
 
-        streakLabel = new GameObject("Streak", typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
-        RectTransform labelRect = streakLabel.rectTransform;
+        streakLabel = MakeLabel("Streak", -(PipHeight + 10f), streakColor);
+        movingShieldLabel = MakeLabel("ArcShield", -(PipHeight + 10f + 32f), shieldColor);
+    }
+
+    Text MakeLabel(string name, float y, Color color)
+    {
+        var label = new GameObject(name, typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
+        RectTransform labelRect = label.rectTransform;
         labelRect.SetParent(corner, false);
         labelRect.anchorMin = labelRect.anchorMax = labelRect.pivot = new Vector2(0f, 1f);
         labelRect.sizeDelta = new Vector2(600f, 32f);
-        labelRect.anchoredPosition = new Vector2(0f, -(PipHeight + 10f));
-        streakLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        streakLabel.fontSize = 22;
-        streakLabel.fontStyle = FontStyle.Bold;
-        streakLabel.color = streakColor;
-        streakLabel.alignment = TextAnchor.UpperLeft;
-        streakLabel.raycastTarget = false;
+        labelRect.anchoredPosition = new Vector2(0f, y);
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.fontSize = 22;
+        label.fontStyle = FontStyle.Bold;
+        label.color = color;
+        label.alignment = TextAnchor.UpperLeft;
+        label.raycastTarget = false;
+        return label;
     }
 }
