@@ -56,6 +56,14 @@ public class ChartTargetSpawner : MonoBehaviour
     public Color turboColor = new Color(1f, 0.45f, 0.1f);
     int spawnCount;
 
+    [Header("Big asteroid")]
+    [Tooltip("Every Nth spawned target is a big, indestructible asteroid. 0 = off.")]
+    [Min(0)] public int bigEveryN = 16;
+    public float bigScale = 3f;
+    [Tooltip("How close the asteroid must pass to hit the ship.")]
+    public float bigHitRadius = 7f;
+    public Color bigColor = new Color(1f, 0.15f, 0.15f);
+
     readonly List<ChartNote> notes = new List<ChartNote>();
     readonly List<Vector2> liveViewports = new List<Vector2>();
     int nextIndex;
@@ -205,7 +213,9 @@ public class ChartTargetSpawner : MonoBehaviour
         target.SetLifetime(quarter, lead, viewport);
 
         spawnCount++;
-        if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
+        if (bigEveryN > 0 && spawnCount % bigEveryN == 0)
+            target.MakeBig(bigScale, bigHitRadius, bigColor);
+        else if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
             target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
 
         Spawned?.Invoke(target);

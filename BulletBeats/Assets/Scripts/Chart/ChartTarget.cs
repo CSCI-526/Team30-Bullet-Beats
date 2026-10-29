@@ -36,6 +36,9 @@ public class ChartTarget : MonoBehaviour, IShootable
     const int RingSegments = 48;
     const float RingMinRadius = 3f;
     const float RingMaxRadius = 14f;
+    bool isBig;
+    Color bigWarnColor;
+    Renderer[] bigRenderers;
 
     void OnEnable() => active.Add(this);
 
@@ -98,6 +101,7 @@ public class ChartTarget : MonoBehaviour, IShootable
 
     public void OnShot(PlayerBullet bullet)
     {
+        if (isBig) return; // indestructible: force player to dodge
         if (dying) return;
 
         hitsLeft--;
@@ -153,6 +157,14 @@ public class ChartTarget : MonoBehaviour, IShootable
         hasViewport = true;
     }
 
+    public void MakeBig(float scale, float hitRadius, Color warnColor)
+    {
+        isBig = true;
+        bigWarnColor = warnColor;
+        shipHitRadius = hitRadius;
+        transform.localScale *= scale;
+        bigRenderers = GetComponentsInChildren<Renderer>();
+    }
     public void MakeTurbo(int hits, int heal, float scale, Color tint)
     {
         hitsLeft = hits;
@@ -184,7 +196,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     bool RingIsShowing(float songTime, out float untilHit)
     {
         untilHit = hitTime - songTime;
-        return armed && untilHit <= quarterSeconds && untilHit >= 0f;
+        return armed && !isBig && untilHit <= quarterSeconds && untilHit >= 0f;
     }
 
     float RingRadius(float untilHit)
@@ -205,6 +217,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         transform.position = Vector3.LerpUnclamped(spawnPoint, hitPoint, Mathf.Max(0f, travel));
         transform.Rotate(spinAxis, spinSpeed * Time.deltaTime, Space.World);
         UpdateRing(songTime);
+        if (isBig) PulseWarning(songTime);
 
         //<<<<<<< Updated upstream
         //if (songTime >= hitTime && !passed)
@@ -247,6 +260,15 @@ public class ChartTarget : MonoBehaviour, IShootable
         }
     }
 
+    void PulseWarning(float songTime)
+    {
+        BeatClock clock = BeatClock.Instance;
+        float beat = clock != null ? clock.SecondsPerBeat : 0.5f;
+        float pulse = 0.5f + 0.5f * Mathf.Sin(songTime / Mathf.Max(0.05f, beat) * Mathf.PI * 2f);
+        Color c = Color.Lerp(bigWarnColor, Color.white, pulse);
+        foreach (Renderer r in bigRenderers)
+             if (r != null) r.material.color = c;
+    }
     static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
     {
         Vector3 ab = b - a;
@@ -298,7 +320,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         if (ring == null) return;
 
         float untilHit = hitTime - songTime;
-        bool visible = untilHit <= quarterSeconds && untilHit >= 0f;
+        bool visible = !isBig && untilHit <= quarterSeconds && untilHit >= 0f;
         ring.enabled = visible;
         if (!visible) return;
 
