@@ -8,6 +8,7 @@ using UnityEngine.InputSystem;
 /// The ship's hit points. Anything that hurts the player calls <see cref="TakeDamage"/>, e.g.
 /// <c>PlayerHealth.Instance?.TakeDamage(1)</c>; asteroid notes that reach their beat without being
 /// shot do this (<see cref="ChartTarget"/>).
+/// Starts at <see cref="startHealth"/> and never goes above <see cref="maxHealth"/>.
 /// Hits are ignored while dashing (<see cref="PlayerMovement.IsInvulnerable"/>) and for a moment after
 /// each hit. Shots on the beat (Perfect / Good) build a streak of notes; every
 /// <see cref="healStreak"/> notes in a row heals the ship. A Miss or taking a hit resets the streak.
@@ -16,6 +17,9 @@ public class PlayerHealth : MonoBehaviour
 {
     public static PlayerHealth Instance { get; private set; }
 
+    [Tooltip("Health at the start of a level.")]
+    [Min(1)] public int startHealth = 3;
+    [Tooltip("Health never goes above this, so lives can't pile up.")]
     [Min(1)] public int maxHealth = 5;
     [Tooltip("Health never drops below this (1 = the ship can't die, e.g. in the tutorial).")]
     [Min(0)] public int minHealth = 0;
@@ -59,7 +63,7 @@ public class PlayerHealth : MonoBehaviour
     {
         shooter = GetComponent<PlayerShooter>();
         movement = GetComponent<PlayerMovement>();
-        Health = maxHealth;
+        Health = Mathf.Min(startHealth, maxHealth);
         Instance = this;
     }
 
@@ -106,7 +110,7 @@ public class PlayerHealth : MonoBehaviour
         if (amount <= 0 || IsDead) return;
         int before = Health;
         SetHealth(Health + amount);
-        Healed?.Invoke(Health - before);
+        if (Health > before) Healed?.Invoke(Health - before);
     }
 
     [ContextMenu("Take 1 damage")]
@@ -125,16 +129,12 @@ public class PlayerHealth : MonoBehaviour
 
         SetStreak(Streak + 1);
         if (judgment == BeatJudgment.Perfect)
-        {
-            int before = Health;
-            SetHealth(Health + healAmount);
-            Healed?.Invoke(Health - before);
-        }
+            Heal(healAmount);
     }
 
     void SetHealth(int value)
     {
-        value = Mathf.Max(minHealth, value);
+        value = Mathf.Clamp(value, minHealth, maxHealth);
         if (value == Health) return;
         Health = value;
         HealthChanged?.Invoke(Health);
