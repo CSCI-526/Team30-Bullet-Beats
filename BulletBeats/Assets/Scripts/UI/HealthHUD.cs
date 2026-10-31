@@ -19,8 +19,8 @@ public class HealthHUD : MonoBehaviour
     [Tooltip("Seconds a lost pip flashes red before going empty.")]
     public float lostFlashTime = 0.6f;
 
-    const float PipWidth = 30f;
-    const float PipHeight = 28f;
+    const float PipWidth = 42f;
+    const float PipHeight = 38f;
     const float PipGap = 6f;
     const float Margin = 32f;
 
