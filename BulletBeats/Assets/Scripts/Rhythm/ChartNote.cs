@@ -16,9 +16,11 @@ public struct ChartNote
     }
 }
 
-/// <summary>Where a chart note spawns targets. DrumOnly maps kick→LeftUpper, snare→RightUpper.</summary>
+/// <summary>Screen quadrant a chart note flies into.</summary>
 public enum NoteLane
 {
     LeftUpper,
-    RightUpper
+    RightUpper,
+    LeftLower,
+    RightLower
 }

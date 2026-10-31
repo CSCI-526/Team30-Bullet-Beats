@@ -1,3 +1,5 @@
+using System.Collections;
+using System.IO;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem.UI;
@@ -26,7 +28,8 @@ public class GameMenus : MonoBehaviour
     GameObject canvasObject;
     GameObject titlePanel, levelPanel, difficultyPanel, endPanel;
     Button titleFirst, levelFirst, endFirst;
-    Text endHeading, endStats, difficultySong;
+    Text endHeading, endStats, difficultySong, yourSongLabel;
+    Button yourSongButton;
     readonly Button[] difficultyButtons = new Button[3];
     GameFlow.Level difficultyLevel;
 
@@ -195,7 +198,7 @@ public class GameMenus : MonoBehaviour
         levelPanel = NewPanel("LevelSelect");
         AddText(levelPanel, "SELECT LEVEL", 72, accentColor, 300f, FontStyle.Bold);
 
-        float y = 150f;
+        float y = 210f;
         foreach (GameFlow.Level level in flow.levels)
         {
             bool playable = GameFlow.CanLoad(level);
@@ -206,8 +209,69 @@ public class GameMenus : MonoBehaviour
             y -= 90f;
         }
 
-        Button back = AddButton(levelPanel, "BACK", y - 40f, flow.ShowTitle);
+        AddText(levelPanel, "OR LOAD A FILE", 22, new Color(0.95f, 0.78f, 0.35f), y + 8f);
+        yourSongButton = AddFilePicker(levelPanel, y - 58f);
+        y -= 150f;
+
+        Button back = AddButton(levelPanel, "BACK", y - 20f, flow.ShowTitle);
         if (levelFirst == null) levelFirst = back;
+    }
+
+    const string ChooseFilePrompt = "Choose a .wav, .mp3, or .ogg file…";
+
+    Button AddFilePicker(GameObject panel, float y)
+    {
+        var image = new GameObject("ChooseFile", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
+        image.rectTransform.SetParent(panel.transform, false);
+        image.rectTransform.sizeDelta = new Vector2(WideButton, 70f);
+        image.rectTransform.anchoredPosition = new Vector2(0f, y);
+        image.color = Color.white;
+
+        var outline = image.GetComponent<Outline>();
+        outline.effectColor = new Color(0.95f, 0.78f, 0.35f);
+        outline.effectDistance = new Vector2(2f, -2f);
+
+        var button = image.GetComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.normalColor = new Color(0.04f, 0.05f, 0.08f, 0.95f);
+        colors.highlightedColor = new Color(0.16f, 0.13f, 0.05f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        colors.pressedColor = new Color(0.95f, 0.78f, 0.35f, 1f);
+        colors.disabledColor = new Color(0.08f, 0.08f, 0.1f, 0.5f);
+        button.colors = colors;
+        button.onClick.AddListener(PickSong);
+
+        yourSongLabel = new GameObject("Prompt", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+        Stretch(yourSongLabel.rectTransform, image.transform);
+        yourSongLabel.rectTransform.offsetMin = new Vector2(28f, 0f);
+        yourSongLabel.rectTransform.offsetMax = new Vector2(-210f, 0f);
+        yourSongLabel.font = font;
+        yourSongLabel.fontSize = 26;
+        yourSongLabel.fontStyle = FontStyle.Italic;
+        yourSongLabel.alignment = TextAnchor.MiddleLeft;
+        yourSongLabel.color = new Color(1f, 1f, 1f, 0.72f);
+        yourSongLabel.raycastTarget = false;
+        yourSongLabel.text = ChooseFilePrompt;
+
+        var browse = new GameObject("Browse", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        browse.rectTransform.SetParent(image.transform, false);
+        browse.rectTransform.anchorMin = browse.rectTransform.anchorMax = new Vector2(1f, 0.5f);
+        browse.rectTransform.pivot = new Vector2(1f, 0.5f);
+        browse.rectTransform.sizeDelta = new Vector2(168f, 46f);
+        browse.rectTransform.anchoredPosition = new Vector2(-12f, 0f);
+        browse.color = new Color(0.95f, 0.78f, 0.35f, 1f);
+        browse.raycastTarget = false;
+
+        var browseLabel = new GameObject("Label", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+        Stretch(browseLabel.rectTransform, browse.transform);
+        browseLabel.font = font;
+        browseLabel.fontSize = 24;
+        browseLabel.fontStyle = FontStyle.Bold;
+        browseLabel.alignment = TextAnchor.MiddleCenter;
+        browseLabel.color = new Color(0.12f, 0.08f, 0.02f, 1f);
+        browseLabel.raycastTarget = false;
+        browseLabel.text = "BROWSE…";
+        return button;
     }
 
     static string LevelLabel(GameFlow.Level level) =>
@@ -257,6 +321,33 @@ public class GameMenus : MonoBehaviour
     {
         ScoreKeeper.SelectedDifficulty = difficulty;
         flow.StartLevel(difficultyLevel);
+    }
+
+    void PickSong()
+    {
+#if UNITY_EDITOR
+        string path = UnityEditor.EditorUtility.OpenFilePanel("Choose a song", "", "wav,mp3,ogg");
+        if (string.IsNullOrEmpty(path)) return;
+        StartCoroutine(LoadPickedSong(path));
+#else
+        Debug.LogWarning("Choosing a song file works in the Unity editor.");
+#endif
+    }
+
+    IEnumerator LoadPickedSong(string path)
+    {
+        if (yourSongButton != null) yourSongButton.interactable = false;
+        if (yourSongLabel != null) yourSongLabel.text = "Loading file…";
+
+        AudioClip clip = null;
+        yield return SongFile.Load(path, loaded => clip = loaded);
+
+        if (yourSongButton != null) yourSongButton.interactable = true;
+        if (yourSongLabel != null) yourSongLabel.text = ChooseFilePrompt;
+        if (clip == null) yield break;
+
+        GameFlow.RememberCustomSong(path, clip, Path.GetFileNameWithoutExtension(path));
+        ShowDifficultySelect(GameFlow.CustomLevel);
     }
 
     void BuildEndPanel()
