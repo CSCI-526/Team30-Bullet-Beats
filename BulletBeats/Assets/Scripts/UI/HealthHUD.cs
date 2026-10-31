@@ -2,13 +2,14 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Health pips in the top-left corner and the current streak under them, with how many more notes
-/// in a row heal the ship. A pip that was just lost flashes red before going empty.
+/// Health hearts in the top-left corner and the current streak under them. Full pips take the ship's
+/// health colour (<see cref="ShipDamageFlash.ColorFor"/>). A pip that was just lost flashes red before going empty.
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(PlayerHealth))]
 public class HealthHUD : MonoBehaviour
 {
+    [Tooltip("Full pip colour when the ship has no ShipDamageFlash.")]
     public Color fullColor = new Color(0.3f, 0.9f, 1f);
     public Color emptyColor = new Color(1f, 1f, 1f, 0.15f);
     public Color streakColor = Color.white;
@@ -18,14 +19,16 @@ public class HealthHUD : MonoBehaviour
     [Tooltip("Seconds a lost pip flashes red before going empty.")]
     public float lostFlashTime = 0.6f;
 
-    const float PipWidth = 34f;
-    const float PipHeight = 14f;
+    const float PipWidth = 30f;
+    const float PipHeight = 28f;
     const float PipGap = 6f;
     const float Margin = 32f;
 
     PlayerHealth health;
+    ShipDamageFlash shipColor;
     GameObject canvasObject;
     RectTransform corner;
+    static Sprite heart;
     readonly System.Collections.Generic.List<Image> pips = new System.Collections.Generic.List<Image>();
     Text streakLabel;
     float healGlowTimer;
@@ -57,6 +60,9 @@ public class HealthHUD : MonoBehaviour
         if (canvasObject != null) canvasObject.SetActive(false);
     }
 
+    // The ship colour component may be added after this one, so colour the pips again once both exist.
+    void Start() => RefreshPips();
+
     void OnDestroy()
     {
         if (canvasObject != null) Destroy(canvasObject);
@@ -65,12 +71,17 @@ public class HealthHUD : MonoBehaviour
     void LateUpdate()
     {
         if (healGlowTimer <= 0f && lostFlashTimer <= 0f) return;
-        healGlowTimer -= Time.deltaTime;
-        lostFlashTimer -= Time.deltaTime;
+        // Unscaled, so the flash still fades once the game freezes on the end screen.
+        healGlowTimer -= Time.unscaledDeltaTime;
+        lostFlashTimer -= Time.unscaledDeltaTime;
         RefreshPips();
     }
 
-    void OnHealthChanged(int _) => RefreshPips();
+    void OnHealthChanged(int _)
+    {
+        RefreshPips();
+        RefreshStreak();
+    }
     void OnStreakChanged(int _) => RefreshStreak();
 
     void OnHealed(int _)
@@ -96,7 +107,9 @@ public class HealthHUD : MonoBehaviour
     void RefreshPips()
     {
         float glow = healGlowTime > 0f ? Mathf.Clamp01(healGlowTimer / healGlowTime) : 0f;
-        Color full = Color.Lerp(fullColor, Color.white, glow);
+        if (shipColor == null) shipColor = GetComponent<ShipDamageFlash>();
+        Color baseColor = shipColor != null ? shipColor.ColorFor(health.Health) : fullColor;
+        Color full = Color.Lerp(baseColor, Color.white, glow);
         while (pips.Count < Mathf.Max(health.maxHealth, health.Health))
             AddPip();
         float lost = lostFlashTime > 0f ? Mathf.Clamp01(lostFlashTimer / lostFlashTime) : 0f;
@@ -118,15 +131,46 @@ public class HealthHUD : MonoBehaviour
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
         rect.sizeDelta = new Vector2(PipWidth, PipHeight);
         rect.anchoredPosition = new Vector2(i * (PipWidth + PipGap), 0f);
+        pip.sprite = HeartSprite();
+        pip.preserveAspect = true;
         pip.raycastTarget = false;
         pips.Add(pip);
     }
 
+    /// <summary>A white heart drawn in code (no image asset), tinted per pip.</summary>
+    static Sprite HeartSprite()
+    {
+        if (heart != null) return heart;
+        const int size = 64;
+        const int samples = 4;
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var pixels = new Color32[size * size];
+        for (int py = 0; py < size; py++)
+        for (int px = 0; px < size; px++)
+        {
+            int inside = 0;
+            for (int sy = 0; sy < samples; sy++)
+            for (int sx = 0; sx < samples; sx++)
+            {
+                // Heart curve (x² + y² - 1)³ - x²y³ <= 0, fitted to the square.
+                float x = ((px + (sx + 0.5f) / samples) / size - 0.5f) * 2.6f;
+                float y = ((py + (sy + 0.5f) / samples) / size - 0.5f) * 2.6f + 0.15f;
+                float a = x * x + y * y - 1f;
+                if (a * a * a - x * x * y * y * y <= 0f) inside++;
+            }
+            pixels[py * size + px] = new Color32(255, 255, 255, (byte)(255 * inside / (samples * samples)));
+        }
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        heart = Sprite.Create(texture, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f));
+        return heart;
+    }
+
     void RefreshStreak()
     {
-        streakLabel.text = health.Streak > 0
-            ? $"STREAK {health.Streak}"
-            : "Hit a Perfect note to gain a life";
+        streakLabel.text = health.Streak > 0 ? $"STREAK {health.Streak}"
+            : health.Health < health.maxHealth ? "Hit a Perfect note to gain a life"
+            : "";
     }
 
     void BuildCanvas()
