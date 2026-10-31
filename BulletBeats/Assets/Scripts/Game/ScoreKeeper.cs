@@ -119,7 +119,11 @@ public class ScoreKeeper : MonoBehaviour
 
     public static string DifficultyName(Difficulty difficulty) => difficulty.ToString().ToUpperInvariant();
 
-    static string Key(GameFlow.Level level, Difficulty difficulty) => $"BulletBeats.HighScore.{level.sceneName}.{difficulty}";
+    static string Key(GameFlow.Level level, Difficulty difficulty)
+    {
+        string id = string.IsNullOrEmpty(level.id) ? level.sceneName : level.id;
+        return $"BulletBeats.HighScore.{id}.{difficulty}";
+    }
 
     void OnStateChanged(GameState state)
     {
