@@ -6,7 +6,8 @@ using UnityEngine.Serialization;
 /// <summary>
 /// Mouse moves the aim; left click fires. With <see cref="hitscan"/> on, the click hits whatever is
 /// under the cursor that frame and the bullet is only a visual tracer; with it off, a straight
-/// projectile flies and hits are resolved by collision.
+/// projectile flies and hits are resolved by collision. Aim assist never moves the crosshair: it
+/// locks the rock the next shot goes to (<see cref="LockedTarget"/>), and <see cref="AimHUD"/> marks it.
 /// </summary>
 public class PlayerShooter : MonoBehaviour
 {
@@ -27,11 +28,11 @@ public class PlayerShooter : MonoBehaviour
     public static float SavedAimAssist = -1f;
 
     [Range(0f, 1f)]
-    [Tooltip("0 = the bullet tracks the rock only when the crosshair is inside the ring. 1 = it also tracks from well outside the ring. The title screen slider writes this.")]
+    [Tooltip("0 = a shot locks a rock only when the crosshair is on it or inside its visible ring. 1 = it also locks from Aim Assist Reach away. The title screen slider writes this.")]
     public float aimAssist = 1f;
-    [Range(1f, 4f)]
-    [Tooltip("At full Aim Assist, how many ring-radii away a shot still flies to the rock.")]
-    public float aimAssistRange = 2.5f;
+    [Range(0f, 0.5f)]
+    [Tooltip("At full Aim Assist, how far the crosshair can be from a rock and still lock it, as a fraction of the screen height.")]
+    public float aimAssistReach = 0.12f;
 
     [Header("Shooting")]
     public float bulletSpeed = 250f;
@@ -68,10 +69,12 @@ public class PlayerShooter : MonoBehaviour
 
     /// <summary>World point the gun is aiming at.</summary>
     public Vector3 AimPoint { get; private set; }
-    /// <summary>Cursor position in screen pixels.</summary>
+    /// <summary>Cursor position in screen pixels, which is where the crosshair is drawn.</summary>
     public Vector2 AimScreenPosition { get; private set; }
+    /// <summary>The rock the next shot goes to; null if it goes straight under the crosshair.</summary>
+    public ChartTarget LockedTarget { get; private set; }
 
-    bool aimLocked;
+    Vector2 shotScreenPosition;
 
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
@@ -87,6 +90,8 @@ public class PlayerShooter : MonoBehaviour
         if (aimCamera == null) aimCamera = DisplayCamera.Find();
     }
 
+    void OnDisable() => LockedTarget = null;
+
     public void SetAimAssist(float value)
     {
         aimAssist = Mathf.Clamp01(value);
@@ -101,7 +106,7 @@ public class PlayerShooter : MonoBehaviour
         Vector2 cursor = mouse.position.ReadValue();
         AimScreenPosition = cursor;
         AimPoint = FindAimPoint(cursor);
-        aimLocked = ApplyAimAssist(cursor);
+        ApplyAimAssist(cursor);
 
         if (gunPivot != null)
         {
@@ -113,20 +118,17 @@ public class PlayerShooter : MonoBehaviour
             Fire();
     }
 
-    bool ApplyAimAssist(Vector2 cursor)
+    void ApplyAimAssist(Vector2 cursor)
     {
-        if (aimCamera == null) return false;
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
-        if (!ChartTarget.TryGetAimAssist(cursor, aimCamera, songTime, out Vector3 worldPoint, out Vector2 targetScreen, out float ringPixels))
-            return false;
+        float reach = aimAssist * aimAssistReach * aimCamera.pixelHeight;
+        LockedTarget = ChartTarget.FindAimTarget(cursor, aimCamera, songTime, reach, LockedTarget);
 
-        float rings = Mathf.Lerp(1f, aimAssistRange, aimAssist);
-        if (Vector2.Distance(cursor, targetScreen) > Mathf.Max(8f, ringPixels) * rings) return false;
-
-        AimPoint = worldPoint;
-        AimScreenPosition = targetScreen;
-        return true;
+        shotScreenPosition = cursor;
+        if (LockedTarget == null) return;
+        AimPoint = LockedTarget.transform.position;
+        shotScreenPosition = aimCamera.WorldToScreenPoint(AimPoint);
     }
 
     Vector3 FindAimPoint(Vector2 screenPosition)
@@ -150,17 +152,19 @@ public class PlayerShooter : MonoBehaviour
         lastShotTime = Time.time;
         BeatClock clock = BeatClock.Instance;
         BeatJudgment judgment = ChartTarget.JudgeUnderCursor(
-            AimScreenPosition, aimCamera,
+            shotScreenPosition, aimCamera,
             clock != null ? clock.SongTime : Time.time,
             clock != null ? clock.perfectWindow : 0.07f,
             clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
-        bool connected = aimLocked;
+        bool connected = LockedTarget != null;
 
         if (hitscan)
         {
-            Ray ray = aimCamera.ScreenPointToRay(AimScreenPosition);
-            IShootable target = FindHitscanTarget(ray, out Vector3 hitPoint);
+            // The marker is a promise: a locked shot always lands on the marked rock.
+            IShootable target = LockedTarget;
+            Vector3 hitPoint = AimPoint;
+            if (LockedTarget == null) target = FindHitscanTarget(aimCamera.ScreenPointToRay(AimScreenPosition), out hitPoint);
             connected = target is ChartTarget;
             if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
             FireHitscan(origin, judgment, target, hitPoint);

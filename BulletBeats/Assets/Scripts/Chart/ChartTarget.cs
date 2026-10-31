@@ -36,6 +36,12 @@ public class ChartTarget : MonoBehaviour, IShootable
     const int RingSegments = 48;
     const float RingMinRadius = 3f;
     const float RingMaxRadius = 14f;
+    /// <summary>A locked rock keeps the lock this much longer, so it doesn't flicker at the edge or between two rocks.</summary>
+    const float LockHoldFactor = 1.3f;
+    /// <summary>A rock whose ring is closing counts as this much closer: it's the one to hit now.</summary>
+    const float RingLockPreference = 0.6f;
+    float baseRadius = 1f;
+    float baseScale = 1f;
     bool isBig;
     Color bigWarnColor;
     Renderer[] bigRenderers;
@@ -65,38 +71,64 @@ public class ChartTarget : MonoBehaviour, IShootable
     }
 
     /// <summary>
-    /// Nearest target whose ring is showing. <paramref name="worldPoint"/> is where a bullet
-    /// has to fly to actually hit it. The screen values are for the crosshair.
+    /// The rock a shot from <paramref name="cursor"/> goes to: the closest one within
+    /// <paramref name="reachPixels"/> of it, or whose visible ring contains it. Null if there is none.
+    /// Rocks that can't be destroyed or have flown past the ship are never picked.
     /// </summary>
-    public static bool TryGetAimAssist(Vector2 cursor, Camera cam, float songTime,
-        out Vector3 worldPoint, out Vector2 targetScreen, out float ringPixels)
+    /// <param name="current">The rock locked last frame, which is harder to lose.</param>
+    public static ChartTarget FindAimTarget(Vector2 cursor, Camera cam, float songTime, float reachPixels, ChartTarget current)
     {
-        worldPoint = default;
-        targetScreen = cursor;
-        ringPixels = 0f;
-        if (cam == null) return false;
+        if (cam == null) return null;
 
-        float best = float.MaxValue;
-        bool found = false;
+        ChartTarget best = null;
+        float bestScore = float.MaxValue;
         for (int i = 0; i < active.Count; i++)
         {
             ChartTarget candidate = active[i];
-            if (!candidate.armed) continue;
+            if (!candidate.CanBeLocked(cam) || !candidate.TryGetScreenCircle(cam, out Vector2 center, out float radius))
+                continue;
+
+            bool held = candidate == current;
+            float hold = held ? LockHoldFactor : 1f;
+            float distance = Vector2.Distance(cursor, center);
+            float gap = Mathf.Max(0f, distance - radius);
             bool showing = candidate.RingIsShowing(songTime, out float untilHit);
-            float worldRadius = showing ? candidate.RingRadius(untilHit) : RingMaxRadius;
-            Vector3 center = cam.WorldToScreenPoint(candidate.transform.position);
-            if (center.z <= 0f) continue;
-            Vector2 screen = new Vector2(center.x, center.y);
-            float distance = Vector2.Distance(cursor, screen);
-            if (distance >= best) continue;
-            Vector3 edge = cam.WorldToScreenPoint(candidate.transform.position + cam.transform.right * worldRadius);
-            best = distance;
-            found = true;
-            worldPoint = candidate.transform.position;
-            targetScreen = screen;
-            ringPixels = Vector2.Distance(screen, new Vector2(edge.x, edge.y));
+            bool inRing = showing && distance <= candidate.ScreenPixels(cam, center, candidate.RingRadius(untilHit)) * hold;
+            if (gap > reachPixels * hold && !inRing) continue;
+
+            float score = gap / hold * (showing ? RingLockPreference : 1f);
+            if (score < bestScore || (held && score <= bestScore))
+            {
+                bestScore = score;
+                best = candidate;
+            }
         }
-        return found;
+        return best;
+    }
+
+    /// <summary>Where the rock is on screen and how big it looks, in pixels.</summary>
+    /// <returns>False if it is behind the camera.</returns>
+    public bool TryGetScreenCircle(Camera cam, out Vector2 center, out float radius)
+    {
+        Vector3 point = cam.WorldToScreenPoint(transform.position);
+        center = point;
+        radius = 0f;
+        if (point.z <= 0f) return false;
+        radius = ScreenPixels(cam, center, baseRadius * transform.lossyScale.x / baseScale);
+        return true;
+    }
+
+    float ScreenPixels(Camera cam, Vector2 center, float worldRadius)
+    {
+        Vector3 edge = cam.WorldToScreenPoint(transform.position + cam.transform.right * worldRadius);
+        return Vector2.Distance(center, edge);
+    }
+
+    bool CanBeLocked(Camera cam)
+    {
+        if (!armed || isBig || dying) return false;
+        PlayerHealth ship = PlayerHealth.Instance;
+        return ship == null || Vector3.Dot(transform.position - ship.transform.position, cam.transform.forward) > 0f;
     }
 
     public void OnShot(PlayerBullet bullet)
@@ -144,6 +176,10 @@ public class ChartTarget : MonoBehaviour, IShootable
             spawnDistance = Vector3.Distance(cam.transform.position, spawn);
             hitDistance = Vector3.Distance(cam.transform.position, hit);
         }
+        baseScale = Mathf.Max(0.01f, transform.lossyScale.x);
+        baseRadius = 0.5f;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>())
+            baseRadius = Mathf.Max(baseRadius, r.localBounds.extents.magnitude * r.transform.lossyScale.x);
         armed = true;
         BuildRing();
     }
