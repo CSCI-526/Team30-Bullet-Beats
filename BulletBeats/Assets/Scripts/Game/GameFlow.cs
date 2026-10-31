@@ -25,9 +25,19 @@ public class GameFlow : MonoBehaviour
     [Serializable]
     public class Level
     {
+        [Tooltip("Stable id for high scores. Empty uses the scene name.")]
+        public string id;
         public string displayName;
         [Tooltip("Scene to load. It must be in File > Build Profiles > Scene List.")]
         public string sceneName;
+        [Tooltip("Song for this level. Empty keeps the clip assigned on Rhythm Session.")]
+        public AudioClip music;
+        [Tooltip("MIDI chart to spawn from. Empty builds the chart from the song instead.")]
+        public string midiFileName;
+        [Tooltip("Quarter-note tempo of this song. 0 estimates it from the audio.")]
+        public float bpm;
+        [Tooltip("Seconds from the start of the file to beat 1. 0 if the downbeat is at the start.")]
+        public float firstBeatOffset;
     }
 
     public static GameFlow Instance { get; private set; }
@@ -54,7 +64,44 @@ public class GameFlow : MonoBehaviour
     public int MissCount { get; private set; }
     public int FineCount { get; private set; }
     public PlayerHealth PlayerHealth => health;
-    public Level CurrentLevel => Array.Find(levels, l => l.sceneName == SceneManager.GetActiveScene().name);
+    /// <summary>Id of a song the player picked from disk. One high-score slot for whatever they loaded last.</summary>
+    public const string CustomLevelId = "custom";
+
+    /// <summary>Survives scene reloads. Several levels share one scene, so the scene name is not enough.</summary>
+    static string selectedLevelId;
+    static Level customLevel;
+
+    /// <summary>Absolute path of the song chosen on the level select screen. The clip itself may not survive a reload.</summary>
+    public static string CustomSongPath { get; private set; }
+    public static Level CustomLevel => customLevel;
+
+    public static void RememberCustomSong(string path, AudioClip clip, string displayName)
+    {
+        CustomSongPath = path;
+        customLevel = new Level
+        {
+            id = CustomLevelId,
+            displayName = displayName,
+            sceneName = "MainLevel",
+            music = clip
+        };
+    }
+
+    public Level CurrentLevel
+    {
+        get
+        {
+            if (customLevel != null && selectedLevelId == customLevel.id)
+                return customLevel;
+            if (levels == null || levels.Length == 0) return null;
+            if (!string.IsNullOrEmpty(selectedLevelId))
+            {
+                Level picked = Array.Find(levels, level => level.id == selectedLevelId);
+                if (picked != null) return picked;
+            }
+            return Array.Find(levels, level => level.sceneName == SceneManager.GetActiveScene().name);
+        }
+    }
     /// <summary>True while this run is the tutorial rather than a level.</summary>
     public bool IsTutorial { get; private set; }
 
@@ -84,8 +131,12 @@ public class GameFlow : MonoBehaviour
             Debug.LogWarning("More than one GameFlow in the scene; using the newest one.", this);
         Instance = this;
 
+        LevelCatalog catalog = Resources.Load<LevelCatalog>("LevelCatalog");
+        if (catalog != null && catalog.levels != null && catalog.levels.Length > 0)
+            levels = catalog.levels;
+
         // The count-in runs on the audio clock, which pausing doesn't stop, so hold the session
-        // back until play starts. This runs before the session's Start.
+        // back until play starts. Playback itself begins in BeginPlay.
         session = FindFirstObjectByType<RhythmSession>();
         if (session != null) session.enabled = false;
     }
@@ -160,14 +211,20 @@ public class GameFlow : MonoBehaviour
     }
 
     /// <summary>
-    /// Plays the current scene's level, or the first level when this scene isn't one. The very first
-    /// time, plays the tutorial instead (it leads into the level afterwards).
+    /// With more than one song, opens level select. The very first time, plays the tutorial
+    /// instead (it leads into the first song afterwards).
     /// </summary>
     public void Play()
     {
         if (!TutorialDone)
         {
             StartTutorial();
+            return;
+        }
+
+        if (levels != null && levels.Length > 1)
+        {
+            ShowLevelSelect();
             return;
         }
 
@@ -178,6 +235,8 @@ public class GameFlow : MonoBehaviour
 
     public void StartLevel(Level level)
     {
+        if (level == null) return;
+        if (!string.IsNullOrEmpty(level.id)) selectedLevelId = level.id;
         bool sameScene = level.sceneName == SceneManager.GetActiveScene().name;
         if (sameScene && !started) BeginPlay();
         else LoadScene(level.sceneName, GameState.Playing);
@@ -203,7 +262,7 @@ public class GameFlow : MonoBehaviour
     {
         TutorialDone = true;
         ScoreKeeper.SelectedDifficulty = Difficulty.Easy;
-        if (levels.Length > 0) LoadScene(levels[0].sceneName, GameState.Playing);
+        if (levels.Length > 0) StartLevel(levels[0]);
     }
 
     /// <summary>Ends the level now; for anything else that can finish a level (e.g. reaching the end of the track).</summary>
@@ -232,9 +291,14 @@ public class GameFlow : MonoBehaviour
         IsTutorial = tutorial;
         TimePlayed = 0f;
         PerfectCount = GoodCount = MissCount = FineCount = 0;
-        // The tutorial runs on the scene clock with its own asteroids, so the song never starts.
-        if (session != null && !tutorial) session.enabled = true;
+        // Difficulty sets the spawn stride from this state change, before the chart is built.
         SetState(GameState.Playing);
+        // The tutorial runs on the scene clock with its own asteroids, so the song never starts.
+        if (session != null && !tutorial)
+        {
+            session.enabled = true;
+            session.Begin(CurrentLevel);
+        }
         if (tutorial && GetComponent<Tutorial>() == null) gameObject.AddComponent<Tutorial>();
     }
 

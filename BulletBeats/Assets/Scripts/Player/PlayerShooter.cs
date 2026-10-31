@@ -109,7 +109,7 @@ public class PlayerShooter : MonoBehaviour
             if (look.sqrMagnitude > 0.01f) gunPivot.rotation = Quaternion.LookRotation(look, transform.up);
         }
 
-        if (mouse.leftButton.wasPressedThisFrame && Time.time - lastShotTime >= minShotInterval)
+        if (mouse.leftButton.wasPressedThisFrame && !CornerMute.Contains(cursor) && Time.time - lastShotTime >= minShotInterval)
             Fire();
     }
 

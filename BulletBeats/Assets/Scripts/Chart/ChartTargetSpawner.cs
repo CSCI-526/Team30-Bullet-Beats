@@ -223,11 +223,12 @@ public class ChartTargetSpawner : MonoBehaviour
 
     Vector2 PickViewport(NoteLane lane)
     {
-        bool left = lane == NoteLane.LeftUpper;
+        bool left = lane == NoteLane.LeftUpper || lane == NoteLane.LeftLower;
+        bool upper = lane == NoteLane.LeftUpper || lane == NoteLane.RightUpper;
         float xMin = left ? quadrantMargin : 0.5f + quadrantMargin;
         float xMax = left ? 0.5f - quadrantMargin : 1f - quadrantMargin;
-        float yMin = 0.5f + quadrantMargin;
-        float yMax = 1f - quadrantMargin;
+        float yMin = upper ? 0.5f + quadrantMargin : quadrantMargin;
+        float yMax = upper ? 1f - quadrantMargin : 0.5f - quadrantMargin;
 
         Vector2 best = new Vector2((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f);
         float bestDist = -1f;
