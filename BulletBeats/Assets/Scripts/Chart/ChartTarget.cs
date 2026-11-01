@@ -32,6 +32,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     int hitsLeft = 1;
     int healOnDestroy;
     bool dying;
+    bool shieldChecked;
     LineRenderer ring;
     const int RingSegments = 48;
     const float RingMinRadius = 3f;
@@ -273,6 +274,18 @@ public class ChartTarget : MonoBehaviour, IShootable
         ////=======
         //        // Damage only when the planet actually reaches the ship.
         PlayerHealth ship = PlayerHealth.Instance;
+        DirectionalShield shield = DirectionalShield.Instance;
+        if (!shieldChecked && ship != null && shield != null && shield.Active
+            && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shield.blockRadius)
+        {
+            shieldChecked = true;
+            if (shield.TryBlock(transform.position))
+            {
+                Destroy(gameObject);
+                return;
+            }
+        }
+
         if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius)
         {
             ship.TakeDamage(1);
@@ -305,7 +318,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         foreach (Renderer r in bigRenderers)
              if (r != null) r.material.color = c;
     }
-    static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
+    public static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
     {
         Vector3 ab = b - a;
         float lengthSq = ab.sqrMagnitude;
@@ -392,6 +405,16 @@ public class ChartTarget : MonoBehaviour, IShootable
     {
         if (other.CompareTag("Player"))
         {
+            DirectionalShield shield = DirectionalShield.Instance;
+            if (!shieldChecked && shield != null && shield.Active)
+            {
+                shieldChecked = true;
+                if (shield.TryBlock(transform.position))
+                {
+                    Destroy(gameObject);
+                    return;
+                }
+            }
             PlayerHealth.Instance?.TakeDamage(1);
             Destroy(gameObject);
         }
