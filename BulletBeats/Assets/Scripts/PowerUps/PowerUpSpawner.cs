@@ -17,6 +17,8 @@ public class PowerUpSpawner : MonoBehaviour
 
     public float basicSpawnDistance = 60f;
     public float basicFlightSeconds = 6f;
+    public Vector2 basicViewportMin = new Vector2(0.3f, 0.55f);
+    public Vector2 basicViewportMax = new Vector2(0.7f, 0.8f);
     public float movingLifetime = 6f;
 
     float timer;
@@ -56,12 +58,16 @@ public class PowerUpSpawner : MonoBehaviour
         Camera cam = DisplayCamera.Find();
         if (cam == null) return null;
 
-        Vector3 viewport = new Vector3(Random.Range(0.15f, 0.85f), Random.Range(0.6f, 0.9f), basicSpawnDistance);
+        Vector3 viewport = new Vector3(
+            Random.Range(basicViewportMin.x, basicViewportMax.x),
+            Random.Range(basicViewportMin.y, basicViewportMax.y),
+            basicSpawnDistance);
         Vector3 spawn = cam.ViewportToWorldPoint(viewport);
         PowerUpPickup pickup = Instantiate(basicShieldPrefab, spawn, Quaternion.identity);
         pickup.kind = PowerUpPickup.Kind.BasicShield;
-        pickup.velocity = (ship.transform.position - spawn) / Mathf.Max(0.1f, basicFlightSeconds);
-        pickup.lifetime = basicFlightSeconds * 2f;
+        pickup.velocity = (ShipCenter(ship) - spawn) / Mathf.Max(0.1f, basicFlightSeconds);
+        // Gone once it reaches the ship, instead of flying on into the camera.
+        pickup.lifetime = basicFlightSeconds;
         return pickup;
     }
 
@@ -73,10 +79,32 @@ public class PowerUpSpawner : MonoBehaviour
         do spot = (PlayerMovement.Spot)Random.Range(0, 4);
         while (spot == movement.Current);
 
-        PowerUpPickup pickup = Instantiate(movingShieldPrefab, movement.WorldPositionOf(spot), Quaternion.identity);
+        // Put it where the ship's body will be, not its origin, which sits off to the side of the mesh.
+        Vector3 bodyOffset = ShipCenter(ship) - ship.transform.position;
+        PowerUpPickup pickup = Instantiate(movingShieldPrefab, movement.WorldPositionOf(spot) + bodyOffset, Quaternion.identity);
         pickup.kind = PowerUpPickup.Kind.MovingShield;
         pickup.velocity = Vector3.zero;
         pickup.lifetime = movingLifetime;
+        pickup.shipOffset = bodyOffset;
         return pickup;
+    }
+
+    /// <summary>Center of the ship's visible meshes, leaving out the shield visuals.</summary>
+    static Vector3 ShipCenter(PlayerHealth ship)
+    {
+        Transform shieldA = ship.TryGetComponent(out DirectionalShield moving) && moving.pivot != null ? moving.pivot : null;
+        Transform shieldB = ship.TryGetComponent(out BasicShield basic) && basic.visual != null ? basic.visual.transform : null;
+
+        bool found = false;
+        Bounds bounds = default;
+        foreach (Renderer r in ship.GetComponentsInChildren<Renderer>())
+        {
+            if ((shieldA != null && r.transform.IsChildOf(shieldA)) || (shieldB != null && r.transform.IsChildOf(shieldB)))
+                continue;
+            if (found) bounds.Encapsulate(r.bounds);
+            else bounds = r.bounds;
+            found = true;
+        }
+        return found ? bounds.center : ship.transform.position;
     }
 }

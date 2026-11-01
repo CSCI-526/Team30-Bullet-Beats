@@ -18,6 +18,8 @@ public class PowerUpPickup : MonoBehaviour, IShootable
     public Vector3 velocity;
     [Tooltip("Touch only. How close the ship has to get to collect it.")]
     public float pickupRadius = 4f;
+    [Tooltip("Touch only. Measured from the ship's position plus this, e.g. the visible body's offset from the ship's origin.")]
+    public Vector3 shipOffset;
     [Tooltip("Seconds before it disappears uncollected. 0 = never.")]
     public float lifetime = 10f;
     public float spinSpeed = 90f;
@@ -38,7 +40,7 @@ public class PowerUpPickup : MonoBehaviour, IShootable
 
         PlayerHealth ship = PlayerHealth.Instance;
         if (collectBy == CollectBy.Touch && ship != null
-            && ChartTarget.DistanceToSegment(ship.transform.position, last, transform.position) <= pickupRadius)
+            && ChartTarget.DistanceToSegment(ship.transform.position + shipOffset, last, transform.position) <= pickupRadius)
         {
             Collect();
             return;
