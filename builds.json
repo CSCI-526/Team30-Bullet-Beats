@@ -1,5 +1,11 @@
 [
   {
+    "id": "2026-11-01-90dca26",
+    "date": "2026-11-01 00:33 UTC",
+    "sha": "90dca26",
+    "message": "Merge pull request #71 from CSCI-526/fix/crosshair-lock-marker"
+  },
+  {
     "id": "2026-10-31-c9396b0",
     "date": "2026-10-31 23:30 UTC",
     "sha": "c9396b0",
