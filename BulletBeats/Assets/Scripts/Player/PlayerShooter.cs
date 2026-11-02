@@ -120,15 +120,32 @@ public class PlayerShooter : MonoBehaviour
 
     void ApplyAimAssist(Vector2 cursor)
     {
+        shotScreenPosition = cursor;
+        // Aiming right at a pickup: don't let a nearby rock pull the shot away from it.
+        if (CursorOverPickup(cursor))
+        {
+            LockedTarget = null;
+            return;
+        }
+
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
         float reach = aimAssist * aimAssistReach * aimCamera.pixelHeight;
         LockedTarget = ChartTarget.FindAimTarget(cursor, aimCamera, songTime, reach, LockedTarget);
 
-        shotScreenPosition = cursor;
         if (LockedTarget == null) return;
         AimPoint = LockedTarget.transform.position;
         shotScreenPosition = aimCamera.WorldToScreenPoint(AimPoint);
+    }
+
+    bool CursorOverPickup(Vector2 cursor)
+    {
+        Ray ray = aimCamera.ScreenPointToRay(cursor);
+        int count = Physics.SphereCastNonAlloc(ray, hitscanRadius, hits, aimDistance,
+            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
+        for (int i = 0; i < count; i++)
+            if (hits[i].collider.GetComponentInParent<PowerUpPickup>() != null) return true;
+        return false;
     }
 
     Vector3 FindAimPoint(Vector2 screenPosition)
@@ -165,7 +182,7 @@ public class PlayerShooter : MonoBehaviour
             IShootable target = LockedTarget;
             Vector3 hitPoint = AimPoint;
             if (LockedTarget == null) target = FindHitscanTarget(aimCamera.ScreenPointToRay(AimScreenPosition), out hitPoint);
-            connected = target is ChartTarget;
+            connected = target is ChartTarget || target is PowerUpPickup;
             if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
             FireHitscan(origin, judgment, target, hitPoint);
         }
