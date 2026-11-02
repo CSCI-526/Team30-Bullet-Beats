@@ -58,11 +58,22 @@ public class ChartTargetSpawner : MonoBehaviour
     public Color turboColor = new Color(1f, 0.45f, 0.1f);
     int spawnCount;
 
+    [Header("Big asteroid")]
+    [Tooltip("Every Nth spawned target is a big, indestructible asteroid. 0 = off.")]
+    [Min(0)] public int bigEveryN = 16;
+    public float bigScale = 3f;
+    [Tooltip("How close the asteroid must pass to hit the ship.")]
+    public float bigHitRadius = 7f;
+    public Color bigColor = new Color(1f, 0.15f, 0.15f);
+
     readonly List<ChartNote> notes = new List<ChartNote>();
     readonly List<Vector2> liveViewports = new List<Vector2>();
     int nextIndex;
 
     public IReadOnlyList<ChartNote> Notes => notes;
+
+    /// <summary>Raised for every target right after it spawns (and after it is made turbo).</summary>
+    public event System.Action<ChartTarget> Spawned;
 
     public void SetNotes(List<ChartNote> chartNotes)
     {
@@ -135,7 +146,8 @@ public class ChartTargetSpawner : MonoBehaviour
         BeatClock clock = BeatClock.Instance;
         if (clock == null || notes.Count == 0) return;
 
-        if (!clock.IsMusicPlaying) return;
+        // With a song, wait for it to play; without one (e.g. the tutorial) follow the scene clock.
+        if (clock.HasMusic && !clock.IsMusicPlaying) return;
 
         float songTime = clock.SongTime;
         float quarter = clock.SecondsPerBeat;
@@ -201,8 +213,12 @@ public class ChartTargetSpawner : MonoBehaviour
         target.SetLifetime(quarter, lead, viewport);
 
         spawnCount++;
-        if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
+        if (bigEveryN > 0 && spawnCount % bigEveryN == 0)
+            target.MakeBig(bigScale, bigHitRadius, bigColor);
+        else if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
             target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+
+        Spawned?.Invoke(target);
     }
 
     // A primitive made from code gets the built-in default material, whose shader the URP web build
@@ -234,11 +250,12 @@ public class ChartTargetSpawner : MonoBehaviour
 
     Vector2 PickViewport(NoteLane lane)
     {
-        bool left = lane == NoteLane.LeftUpper;
+        bool left = lane == NoteLane.LeftUpper || lane == NoteLane.LeftLower;
+        bool upper = lane == NoteLane.LeftUpper || lane == NoteLane.RightUpper;
         float xMin = left ? quadrantMargin : 0.5f + quadrantMargin;
         float xMax = left ? 0.5f - quadrantMargin : 1f - quadrantMargin;
-        float yMin = 0.5f + quadrantMargin;
-        float yMax = 1f - quadrantMargin;
+        float yMin = upper ? 0.5f + quadrantMargin : quadrantMargin;
+        float yMax = upper ? 1f - quadrantMargin : 0.5f - quadrantMargin;
 
         Vector2 best = new Vector2((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f);
         float bestDist = -1f;
