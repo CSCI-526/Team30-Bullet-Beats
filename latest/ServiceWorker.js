@@ -1,4 +1,4 @@
-const cacheName = "DefaultCompany-BulletBeats-0.0.67";
+const cacheName = "DefaultCompany-BulletBeats-0.0.69";
 const contentToCache = [
     "Build/BulletBeats.loader.js",
     "Build/BulletBeats.framework.js",
