@@ -52,6 +52,7 @@ public class Tutorial : MonoBehaviour
     GameObject canvasObject, banner;
     Text bannerTitle, bannerBody, countdown;
     Font font;
+    PowerUpSpawner powerUps;
 
     float SongTime => clock != null ? clock.SongTime : Time.time;
     float Beat => clock != null ? clock.SecondsPerBeat : 1f;
@@ -77,6 +78,8 @@ public class Tutorial : MonoBehaviour
         {
             spawner.noteStride = 1;
             spawner.turboEveryN = 0; // turbo asteroids only where a step asks for one
+            powerUps = FindFirstObjectByType<PowerUpSpawner>();
+            if(powerUps != null) powerUps.enabled = false; //tutorial will spawn own pickups
             spawner.Spawned += OnSpawned;
         }
 
@@ -117,6 +120,7 @@ public class Tutorial : MonoBehaviour
         yield return PerfectStep();
         yield return DodgeStep();
         yield return TurboStep();
+        yield return PowerUpStep();
         yield return PracticeStep();
 
         CurrentStep = "done";
@@ -298,6 +302,8 @@ public class Tutorial : MonoBehaviour
     {
         foreach (ChartTarget t in FindObjectsByType<ChartTarget>(FindObjectsSortMode.None))
             Destroy(t.gameObject);
+        foreach (PowerUpPickup p in FindObjectsByType<PowerUpPickup>(FindObjectsSortMode.None))
+            Destroy(p.gameObject);
         spawner?.SetNotes(new List<ChartNote>());
     }
 
@@ -349,6 +355,74 @@ public class Tutorial : MonoBehaviour
         HideBanner();
     }
 
+    IEnumerator PowerUpStep()
+    {
+        yield return ShowFor("POWER-UPS", "Shields block hits for you. Here are two kinds.", 2.5f);
+        yield return BasicShieldStep();
+        yield return MovingShieldStep();
+    }
+
+    IEnumerator BasicShieldStep()
+    {
+        CurrentStep = "powerup_basic";
+        BasicShield basic = health != null ? health.GetComponent<BasicShield>() : null;
+        if (powerUps == null || basic == null) yield break;
+
+        for (int attempt = 0; attempt < maxTries; attempt++)
+        {
+            PowerUpPickup pickup = powerUps.SpawnBasic(health);
+            if (pickup == null) yield break;
+
+            ShowBanner("SHIELD PICKUP", "A glowing shield is flying in");
+            float start = Time.time;
+            yield return new WaitUntil(() => pickup == null || Time.time - start >= powerUps.basicFlightSeconds * 0.4f);
+
+            if (pickup != null)
+            {
+                ShowBanner("SHOOT THE SHIELD!", "Click it to collect.");
+                yield return SlowDown();
+                yield return new WaitUntil(() => pickup == null);
+            }
+
+            bool got = basic.Active;
+            if (got) ShowBanner("SHIELD UP!", "It takes the next hit for you", goodColor);
+            else ShowBanner("ALMOST!", "Click the shield before it reaches you");
+            yield return SpeedUp();
+            yield return HideAfter(got ? 2.5f : 1.5f);
+            if (got) yield break;
+        }
+    }
+
+    IEnumerator MovingShieldStep()
+    {
+        CurrentStep = "powerup_moving";
+        DirectionalShield shield = health != null ? health.GetComponent<DirectionalShield>() : null;
+        if (powerUps == null || shield == null) yield break;
+
+        for (int attempt = 0; attempt < maxTries && !shield.Active; attempt++)
+        {
+            PowerUpPickup pickup = powerUps.SpawnMoving(health);
+            if (pickup == null) yield break;
+            pickup.lifetime = 0f; 
+
+            ShowBanner("MOVING SHIELD", "Press W A S D to go pick up the shield!");
+            float giveUp = Time.unscaledTime + 12f;
+            yield return new WaitUntil(() => shield.Active || pickup == null || Time.unscaledTime > giveUp);
+            if (pickup != null) Destroy(pickup.gameObject);
+        }
+
+        if (!shield.Active) { HideBanner(); yield break; }
+
+        ShowBanner("AIM IT", "This shield faces where you shoot! Aim at the incoming asteroids!", goodColor);
+        var targets = new List<ChartTarget>();
+        yield return SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (3.5f, NoteLane.RightUpper, false) }, targets);
+        yield return WaitUntilCleared(targets, 0.5f);
+
+        bool blocked = shield.BlocksLeft < shield.maxBlocks;
+        if (blocked) ShowBanner("BLOCKED!", "The shield stops asteroids in the direction you aim", goodColor);
+        else ShowBanner("NICE!", "Aim toward an asteroid and the shield turns with you");
+        yield return HideAfter(2.5f);
+    }
     void BuildCanvas()
     {
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
