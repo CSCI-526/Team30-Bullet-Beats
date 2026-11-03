@@ -4,8 +4,9 @@ using UnityEngine;
 /// Makes a <see cref="PowerUpPickup"/> look like a glowing star in its power-up's color (the
 /// prefab's own mesh is hidden; its collider stays for shooting). <see cref="FlyTo"/> can also fly it
 /// in from the middle of the screen to a W/A/S/D spot so it lands on a beat, with a shrinking ring
-/// for the last beat like an asteroid's. The flight runs on <see cref="BeatClock.SongTime"/>, so slow
-/// motion slows it too. Built from code, so it needs no art assets.
+/// for the last beat like an asteroid's. It can't be shot while flying (it crosses the middle of the
+/// screen, where the player aims at asteroids). The flight runs on <see cref="BeatClock.SongTime"/>,
+/// so slow motion slows it too. Built from code, so it needs no art assets.
 /// </summary>
 [RequireComponent(typeof(PowerUpPickup))]
 public class PickupStar : MonoBehaviour
@@ -22,7 +23,7 @@ public class PickupStar : MonoBehaviour
     LineRenderer ring;
     float pulseSeed;
 
-    bool flying;
+    bool flying, shootable = true;
     Vector3 start, target;
     float startTime, landTime;
 
@@ -70,6 +71,7 @@ public class PickupStar : MonoBehaviour
         this.target = target;
         start = cam.transform.position + cam.transform.forward * (Vector3.Distance(cam.transform.position, target) + flightDistance);
         flying = true;
+        SetShootable(false);
         ring = NewRing();
         Place(0f);
         return true;
@@ -87,6 +89,7 @@ public class PickupStar : MonoBehaviour
         float now = SongTime;
         float t = Mathf.InverseLerp(startTime, landTime, now);
         Place(t);
+        if (t >= 1f) SetShootable(true);
         UpdateRing(landTime - now);
         if (now > landTime + lingerSeconds) Destroy(gameObject);
     }
@@ -108,6 +111,14 @@ public class PickupStar : MonoBehaviour
     void OnDestroy()
     {
         if (ring != null) Destroy(ring.gameObject);
+    }
+
+    // Off while flying, so shots and aim assist go to the asteroids it passes in front of.
+    void SetShootable(bool on)
+    {
+        if (shootable == on) return;
+        shootable = on;
+        foreach (Collider c in GetComponents<Collider>()) c.enabled = on;
     }
 
     void Place(float t) => transform.position = Vector3.LerpUnclamped(start, target, Mathf.Min(t, 1f));
