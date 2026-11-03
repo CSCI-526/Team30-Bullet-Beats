@@ -506,7 +506,7 @@ public class Tutorial : MonoBehaviour
             if (pickup == null) yield break;
             pickup.lifetime = 0f;
 
-            ShowBanner("SLOW-MO", "Press W A S D to grab the <color=#7df>BLUE</color> ball!");
+            ShowBanner("SLOW-MO", "Press W A S D to grab the <color=#7df>BLUE</color> star!");
             float giveUp = Time.unscaledTime + 12f;
             yield return new WaitUntil(() => slowMo.Active || pickup == null || Time.unscaledTime > giveUp);
             if (pickup != null) Destroy(pickup.gameObject);
