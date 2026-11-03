@@ -137,7 +137,7 @@ public class Tutorial : MonoBehaviour
 
         CurrentStep = "done";
         Analytics.Instance?.LogTutorial("complete", CurrentStep);
-        yield return ShowFor("YOUR GOAL: SURVIVE THE SONG!", "Keep at least 1 life until the music ends.  Next up: the first level on Easy", 3.5f, goodColor);
+        yield return ShowFor("YOUR GOAL: SURVIVE THE SONG!", "Keep at least 1 life till the end", 3.5f, goodColor);
         yield return CountdownThenFinish();
     }
 
@@ -147,12 +147,12 @@ public class Tutorial : MonoBehaviour
         for (int attempt = 0; attempt < maxTries; attempt++)
         {
             ChartTarget target = null;
-            yield return SpawnOne(NoteLane.RightUpper, false, t => target = t);
+            yield return SpawnOne(NoteLane.RightLower, false, t => target = t);
             yield return new WaitUntil(() => target == null || RingShowing(target));
 
             lastShot = BeatJudgment.Miss;
             ShowBanner("SHOOT!", "Aim at the asteroid and click when the ring turns <color=#fe5>YELLOW</color>");
-            yield return SlowDown();
+            yield return SlowTo(slowScale * 1.5f);
             // The ring is yellow (the PERFECT window) for only a moment before it closes, so crawl
             // through it: slow further once it turns orange, then speed up when the ring is gone.
             yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - GoodWindow);
@@ -204,11 +204,13 @@ public class Tutorial : MonoBehaviour
     {
         CurrentStep = "perfect";
         ShowBanner("PERFECT = +1 LIFE", "PERFECT shots give you a life");
+        ShowLivesHighlight(true);
         yield return SlowTo(0.45f);
         var targets = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (3.5f, NoteLane.RightUpper, false), (5f, NoteLane.LeftUpper, false) }, targets);
+        yield return SpawnWave(new[] { (2f, NoteLane.LeftLower, false), (3.5f, NoteLane.RightLower, false), (5f, NoteLane.LeftLower, false) }, targets);
         yield return WaitUntilCleared(targets, 0.5f);
         yield return SpeedUp();
+        ShowLivesHighlight(false);
         HideBanner();
     }
 
@@ -243,7 +245,7 @@ public class Tutorial : MonoBehaviour
         for (int attempt = 0; attempt < maxTries; attempt++)
         {
             ChartTarget target = null;
-            yield return SpawnOne(NoteLane.RightUpper, true, t => target = t);
+            yield return SpawnOne(NoteLane.RightLower, true, t => target = t);
             yield return new WaitUntil(() => target == null || RingShowing(target));
 
             lastShot = BeatJudgment.Miss;
@@ -350,6 +352,15 @@ public class Tutorial : MonoBehaviour
     }
 
     void OnDashed(PlayerMovement.Spot _) => dashed = true;
+
+    /// <summary>A (left) or D (right), whichever the ship isn't on: the top spot sits under the banner.</summary>
+    PlayerMovement.Spot SideSpot()
+    {
+        PlayerMovement.Spot current = movement != null ? movement.Current : PlayerMovement.Spot.Bottom;
+        if (current == PlayerMovement.Spot.Left) return PlayerMovement.Spot.Right;
+        if (current == PlayerMovement.Spot.Right) return PlayerMovement.Spot.Left;
+        return Random.value < 0.5f ? PlayerMovement.Spot.Left : PlayerMovement.Spot.Right;
+    }
     void OnShotFired(BeatJudgment judgment) => lastShot = judgment;
 
     bool RingShowing(ChartTarget target) => SongTime >= target.hitTime - Beat;
@@ -460,7 +471,7 @@ public class Tutorial : MonoBehaviour
 
         for (int attempt = 0; attempt < maxTries && !shield.Active; attempt++)
         {
-            PowerUpPickup pickup = powerUps.SpawnMoving(health);
+            PowerUpPickup pickup = powerUps.SpawnMoving(health, null, SideSpot());
             if (pickup == null) yield break;
             pickup.lifetime = 0f; 
 
@@ -490,7 +501,7 @@ public class Tutorial : MonoBehaviour
 
         for (int attempt = 0; attempt < maxTries && !slowMo.Active; attempt++)
         {
-            PowerUpPickup pickup = powerUps.SpawnSlowMo(health);
+            PowerUpPickup pickup = powerUps.SpawnSlowMo(health, SideSpot());
             if (pickup == null) yield break;
             pickup.lifetime = 0f;
 
@@ -552,7 +563,7 @@ public class Tutorial : MonoBehaviour
     void BuildLivesHighlight()
     {
         // HealthHUD: hearts 42 wide with a 6 gap, 38 tall, 32 in from the top-left corner, same canvas scaling.
-        const float pad = 12f, thickness = 4f;
+        const float pad = 14f, thickness = 7f;
         int hearts = health != null ? health.maxHealth : 5;
         Vector2 size = new Vector2(hearts * 48f - 6f + pad * 2f, 38f + pad * 2f);
 
@@ -579,12 +590,13 @@ public class Tutorial : MonoBehaviour
         Bar(new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(thickness, 0f));
         Bar(new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(thickness, 0f));
 
-        Text label = AddText(root, 30, FontStyle.Bold, Vector2.zero);
+        Text label = AddText(root, 44, FontStyle.Bold, Vector2.zero);
         label.rectTransform.anchorMin = label.rectTransform.anchorMax = label.rectTransform.pivot = new Vector2(0f, 0.5f);
         label.rectTransform.anchoredPosition = new Vector2(size.x + 16f, 0f);
-        label.rectTransform.sizeDelta = new Vector2(400f, 50f);
+        label.rectTransform.sizeDelta = new Vector2(600f, 60f);
         label.alignment = TextAnchor.MiddleLeft;
-        label.text = "<  YOUR LIVES";
+        label.text = "<<  YOUR LIVES";
+        label.gameObject.AddComponent<Outline>().effectDistance = new Vector2(2f, -2f);
         parts.Add(label);
 
         livesHighlightParts = parts.ToArray();
@@ -600,7 +612,9 @@ public class Tutorial : MonoBehaviour
     {
         if (livesHighlight == null || !livesHighlight.activeSelf) return;
         Color c = goodColor;
-        c.a = Mathf.Lerp(0.35f, 1f, 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f));
+        float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f);
+        c.a = Mathf.Lerp(0.5f, 1f, pulse);
+        livesHighlight.transform.localScale = Vector3.one * Mathf.Lerp(1f, 1.06f, pulse);
         foreach (Graphic g in livesHighlightParts) g.color = c;
     }
 

@@ -86,13 +86,18 @@ public class PowerUpSpawner : MonoBehaviour
         return pickup;
     }
 
-    public PowerUpPickup SpawnMoving(PlayerHealth ship, PowerUpPickup prefab = null)
+    /// <param name="at">Spot to park it on; random (not the ship's own spot) when left out.</param>
+    public PowerUpPickup SpawnMoving(PlayerHealth ship, PowerUpPickup prefab = null, PlayerMovement.Spot? at = null)
     {
         if (!ship.TryGetComponent(out PlayerMovement movement)) return null;
 
         PlayerMovement.Spot spot;
-        do spot = (PlayerMovement.Spot)Random.Range(0, 4);
-        while (spot == movement.Current);
+        if (at.HasValue) spot = at.Value;
+        else
+        {
+            do spot = (PlayerMovement.Spot)Random.Range(0, 4);
+            while (spot == movement.Current);
+        }
 
         // Put it where the ship's body will be, not its origin, which sits off to the side of the mesh.
         Vector3 bodyOffset = ShipCenter(ship) - ship.transform.position;
@@ -104,9 +109,9 @@ public class PowerUpSpawner : MonoBehaviour
         return pickup;
     }
 
-    public PowerUpPickup SpawnSlowMo(PlayerHealth ship)
+    public PowerUpPickup SpawnSlowMo(PlayerHealth ship, PlayerMovement.Spot? at = null)
     {
-        PowerUpPickup pickup = SpawnMoving(ship, slowMoPrefab != null ? slowMoPrefab : movingShieldPrefab);
+        PowerUpPickup pickup = SpawnMoving(ship, slowMoPrefab != null ? slowMoPrefab : movingShieldPrefab, at);
         if (pickup == null) return null;
         pickup.kind = PowerUpPickup.Kind.SlowMo;
         if (slowMoPrefab == null)
