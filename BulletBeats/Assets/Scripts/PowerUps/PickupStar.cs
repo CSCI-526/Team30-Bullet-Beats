@@ -3,9 +3,10 @@ using UnityEngine;
 /// <summary>
 /// Makes a <see cref="PowerUpPickup"/> look like a glowing star in its power-up's color (the
 /// prefab's own mesh is hidden; its collider stays for shooting). <see cref="FlyTo"/> can also fly it
-/// in from the distance to a W/A/S/D spot so it lands on a beat, with a shrinking ring for the last
-/// beat like an asteroid's (not used yet: an idea to try with the team). The flight runs on <see cref="BeatClock.SongTime"/>, so slow motion
-/// slows it too. Built from code, so it needs no art assets.
+/// in from the middle of the screen to a W/A/S/D spot so it lands on a beat, with a shrinking ring
+/// for the last beat like an asteroid's. It can't be shot while flying (it crosses the middle of the
+/// screen, where the player aims at asteroids). The flight runs on <see cref="BeatClock.SongTime"/>,
+/// so slow motion slows it too. Built from code, so it needs no art assets.
 /// </summary>
 [RequireComponent(typeof(PowerUpPickup))]
 public class PickupStar : MonoBehaviour
@@ -15,16 +16,15 @@ public class PickupStar : MonoBehaviour
     [Tooltip("How far behind its spot (world units) the star starts its flight.")]
     public float flightDistance = 140f;
     [Tooltip("Song seconds the star waits at its spot after landing before it's gone.")]
-    public float lingerSeconds = 0.6f;
+    public float lingerSeconds = 3f;
 
     Color color = Color.white;
     Transform star, glow;
     LineRenderer ring;
     float pulseSeed;
 
-    bool flying;
-    Vector3 origin, direction;
-    float startDistance, endDistance;
+    bool flying, shootable = true;
+    Vector3 start, target;
     float startTime, landTime;
 
     static Mesh starMesh, quadMesh;
@@ -66,13 +66,12 @@ public class PickupStar : MonoBehaviour
             landTime = Clock.firstBeatOffset + Mathf.Ceil((landTime - Clock.firstBeatOffset) / beat) * beat;
         }
 
-        // Come straight down the camera's line of sight to the spot, so the star sits over the spot
-        // it's heading for the whole way in and just grows as it gets close.
-        origin = cam.transform.position;
-        direction = (target - origin).normalized;
-        endDistance = Vector3.Distance(origin, target);
-        startDistance = endDistance + flightDistance;
+        // Start far away in the middle of the screen (where the asteroids come from) and travel out
+        // to the spot, so the player sees it heading for that spot.
+        this.target = target;
+        start = cam.transform.position + cam.transform.forward * (Vector3.Distance(cam.transform.position, target) + flightDistance);
         flying = true;
+        SetShootable(false);
         ring = NewRing();
         Place(0f);
         return true;
@@ -90,6 +89,7 @@ public class PickupStar : MonoBehaviour
         float now = SongTime;
         float t = Mathf.InverseLerp(startTime, landTime, now);
         Place(t);
+        if (t >= 1f) SetShootable(true);
         UpdateRing(landTime - now);
         if (now > landTime + lingerSeconds) Destroy(gameObject);
     }
@@ -113,12 +113,15 @@ public class PickupStar : MonoBehaviour
         if (ring != null) Destroy(ring.gameObject);
     }
 
-    // Moves at a steady on-screen growth rate, like the asteroids (interpolating 1/distance).
-    void Place(float t)
+    // Off while flying, so shots and aim assist go to the asteroids it passes in front of.
+    void SetShootable(bool on)
     {
-        float inverse = Mathf.Lerp(1f / startDistance, 1f / Mathf.Max(0.01f, endDistance), t);
-        transform.position = origin + direction / inverse;
+        if (shootable == on) return;
+        shootable = on;
+        foreach (Collider c in GetComponents<Collider>()) c.enabled = on;
     }
+
+    void Place(float t) => transform.position = Vector3.LerpUnclamped(start, target, Mathf.Min(t, 1f));
 
     void UpdateRing(float untilLand)
     {
