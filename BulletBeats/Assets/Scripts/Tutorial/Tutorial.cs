@@ -88,11 +88,7 @@ public class Tutorial : MonoBehaviour
             spawner.bigEveryN = 0;
             spawner.maxViewportY = 0.68f; // keep asteroids under the instruction banner
             powerUps = FindFirstObjectByType<PowerUpSpawner>();
-            if(powerUps != null)
-            {
-                powerUps.enabled = false; //tutorial will spawn own pickups
-                powerUps.flyInStars = false; //and they wait at their spot, so there's time to read the step
-            }
+            if(powerUps != null) powerUps.enabled = false; //tutorial will spawn own pickups
             spawner.Spawned += OnSpawned;
         }
 
@@ -368,6 +364,14 @@ public class Tutorial : MonoBehaviour
     }
     void OnShotFired(BeatJudgment judgment) => lastShot = judgment;
 
+    // Spot stars fly in like in a level, but then wait at their spot until grabbed
+    // (the step still gives up and sends a new one after a while).
+    static void KeepUntilGrabbed(PowerUpPickup pickup)
+    {
+        pickup.lifetime = 0f;
+        if (pickup.TryGetComponent(out PickupStar star)) star.lingerSeconds = float.PositiveInfinity;
+    }
+
     bool RingShowing(ChartTarget target) => SongTime >= target.hitTime - Beat;
     float PerfectWindow => clock != null ? clock.perfectWindow : 0.07f;
     float GoodWindow => clock != null ? clock.goodWindow : 0.15f;
@@ -478,10 +482,10 @@ public class Tutorial : MonoBehaviour
         {
             PowerUpPickup pickup = powerUps.SpawnMoving(health, null, SideSpot());
             if (pickup == null) yield break;
-            pickup.lifetime = 0f; 
+            KeepUntilGrabbed(pickup);
 
-            ShowBanner("MOVING SHIELD", "Press W A S D to go pick up the shield!");
-            float giveUp = Time.unscaledTime + 12f;
+            ShowBanner("MOVING SHIELD", "Watch where the star lands, then press W A S D to grab it!");
+            float giveUp = Time.unscaledTime + 18f; // room for the flight in, then time to grab it
             yield return new WaitUntil(() => shield.Active || pickup == null || Time.unscaledTime > giveUp);
             if (pickup != null) Destroy(pickup.gameObject);
         }
@@ -508,10 +512,10 @@ public class Tutorial : MonoBehaviour
         {
             PowerUpPickup pickup = powerUps.SpawnSlowMo(health, SideSpot());
             if (pickup == null) yield break;
-            pickup.lifetime = 0f;
+            KeepUntilGrabbed(pickup);
 
-            ShowBanner("SLOW-MO", "Press W A S D to grab the <color=#7df>BLUE</color> star!");
-            float giveUp = Time.unscaledTime + 12f;
+            ShowBanner("SLOW-MO", "Watch where the <color=#7df>BLUE</color> star lands, then press W A S D to grab it!");
+            float giveUp = Time.unscaledTime + 18f; // room for the flight in, then time to grab it
             yield return new WaitUntil(() => slowMo.Active || pickup == null || Time.unscaledTime > giveUp);
             if (pickup != null) Destroy(pickup.gameObject);
         }
