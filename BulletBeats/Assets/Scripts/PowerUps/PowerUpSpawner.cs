@@ -104,7 +104,7 @@ public class PowerUpSpawner : MonoBehaviour
         return pickup;
     }
 
-    PowerUpPickup SpawnSlowMo(PlayerHealth ship)
+    public PowerUpPickup SpawnSlowMo(PlayerHealth ship)
     {
         PowerUpPickup pickup = SpawnMoving(ship, slowMoPrefab != null ? slowMoPrefab : movingShieldPrefab);
         if (pickup == null) return null;
