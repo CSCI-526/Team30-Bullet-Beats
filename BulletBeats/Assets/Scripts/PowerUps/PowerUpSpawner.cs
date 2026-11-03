@@ -53,7 +53,7 @@ public class PowerUpSpawner : MonoBehaviour
         live = pickMoving ? SpawnMoving(ship) : SpawnBasic(ship);
     }
 
-    PowerUpPickup SpawnBasic(PlayerHealth ship)
+    public PowerUpPickup SpawnBasic(PlayerHealth ship)
     {
         Camera cam = DisplayCamera.Find();
         if (cam == null) return null;
@@ -71,7 +71,7 @@ public class PowerUpSpawner : MonoBehaviour
         return pickup;
     }
 
-    PowerUpPickup SpawnMoving(PlayerHealth ship)
+    public PowerUpPickup SpawnMoving(PlayerHealth ship)
     {
         if (!ship.TryGetComponent(out PlayerMovement movement)) return null;
 
