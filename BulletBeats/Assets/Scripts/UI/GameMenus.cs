@@ -14,13 +14,11 @@ using UnityEngine.UI;
 public class GameMenus : MonoBehaviour
 {
     public string gameTitle = "BULLET BEATS";
-    public string tagline = "A 3D rhythm-based bullet hell";
     public Color accentColor = new Color(0.3f, 0.9f, 1f);
     public Color winColor = new Color(1f, 0.85f, 0.2f);
     public Color loseColor = new Color(1f, 0.4f, 0.4f);
     public Color backdropColor = new Color(0.02f, 0.01f, 0.06f, 0.82f);
 
-    const string ControlsHint = "W A S D  jump between spots      Mouse  aim      Left click  shoot when the ring closes";
     const float WideButton = 860f;
 
     GameFlow flow;
@@ -134,7 +132,6 @@ public class GameMenus : MonoBehaviour
     {
         titlePanel = NewPanel("Title");
         AddText(titlePanel, gameTitle, 120, accentColor, 220f, FontStyle.Bold);
-        AddText(titlePanel, tagline, 30, Color.white, 120f);
 
         titleFirst = AddButton(titlePanel, "PLAY", -10f, flow.Play);
         AddButton(titlePanel, "TUTORIAL", -100f, flow.StartTutorial);
@@ -143,7 +140,6 @@ public class GameMenus : MonoBehaviour
         AddButton(titlePanel, "QUIT", -280f, flow.Quit);
 #endif
         BuildAimAssistSlider();
-        AddText(titlePanel, ControlsHint, 22, new Color(1f, 1f, 1f, 0.6f), -490f);
     }
 
     void BuildAimAssistSlider()

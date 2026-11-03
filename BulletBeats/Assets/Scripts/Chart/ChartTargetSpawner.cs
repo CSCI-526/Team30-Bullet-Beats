@@ -35,6 +35,8 @@ public class ChartTargetSpawner : MonoBehaviour
     [Header("Screen quadrants")]
     [Tooltip("Inset so targets stay inside the quarter and off the center cross.")]
     public float quadrantMargin = 0.08f;
+    [Tooltip("Highest point on screen (0-1) an asteroid aims for, e.g. to keep them under a banner. 1 = no limit.")]
+    [Range(0.5f, 1f)] public float maxViewportY = 1f;
     [Tooltip("Minimum viewport distance between two live targets.")]
     public float minViewportSeparation = 0.14f;
 
@@ -229,6 +231,8 @@ public class ChartTargetSpawner : MonoBehaviour
         float xMax = left ? 0.5f - quadrantMargin : 1f - quadrantMargin;
         float yMin = upper ? 0.5f + quadrantMargin : quadrantMargin;
         float yMax = upper ? 1f - quadrantMargin : 0.5f - quadrantMargin;
+        yMax = Mathf.Min(yMax, maxViewportY);
+        yMin = Mathf.Min(yMin, yMax);
 
         Vector2 best = new Vector2((xMin + xMax) * 0.5f, (yMin + yMax) * 0.5f);
         float bestDist = -1f;

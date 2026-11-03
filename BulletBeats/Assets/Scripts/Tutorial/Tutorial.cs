@@ -7,8 +7,10 @@ using UnityEngine.UI;
 /// <summary>
 /// Level 0: a guided run that plays like the real game. Asteroids fly in, and when one needs the
 /// player to act, time slows almost to a stop and an instruction appears; it speeds back up once
-/// they do it. Steps: shoot on the ring, PERFECT heals, dodge, turbo asteroids, then a short run at
-/// full speed. Ends with a 3-2-1 countdown into the first level on Easy. The ship can't die here.
+/// they do it. Steps: shoot when the ring turns yellow, take a hit to see the hearts, PERFECT heals,
+/// dodge a big asteroid, turbo asteroids, shield and slow-mo power-ups, then a short run at full speed.
+/// Ends with the goal (survive the song) and a 3-2-1 countdown into the first level on Easy. The ship
+/// can't die here.
 /// ESC or the Skip button jumps straight to the countdown.
 /// Added by <see cref="GameFlow"/> for a tutorial run. It runs on the scene clock (no song), so
 /// slowing <see cref="Time.timeScale"/> slows the asteroids, rings and timing together.
@@ -29,6 +31,7 @@ public class Tutorial : MonoBehaviour
     [Header("Look")]
     public Color accentColor = new Color(0.3f, 0.9f, 1f);
     public Color goodColor = new Color(1f, 0.85f, 0.2f);
+    public Color warnColor = new Color(1f, 0.55f, 0.2f);
     public Color panelColor = new Color(0.02f, 0.01f, 0.06f, 0.78f);
 
     /// <summary>Name of the step being played, e.g. "shoot" or "dodge".</summary>
@@ -45,11 +48,14 @@ public class Tutorial : MonoBehaviour
 
     readonly List<ChartTarget> spawned = new List<ChartTarget>();
     readonly List<float> turboTimes = new List<float>();
+    readonly List<float> bigTimes = new List<float>();
     bool dashed;
+    BeatJudgment lastShot = BeatJudgment.Miss;
     float baseFixedDeltaTime;
     Coroutine ramp;
 
-    GameObject canvasObject, banner;
+    GameObject canvasObject, banner, livesHighlight;
+    Graphic[] livesHighlightParts;
     Text bannerTitle, bannerBody, countdown;
     Font font;
     PowerUpSpawner powerUps;
@@ -69,6 +75,7 @@ public class Tutorial : MonoBehaviour
 
         if (health != null) health.minHealth = 1;
         if (movement != null) movement.Dashed += OnDashed;
+        if (shooter != null) shooter.ShotFired += OnShotFired;
         if (clock != null)
         {
             clock.bpm = tutorialBpm;
@@ -77,7 +84,9 @@ public class Tutorial : MonoBehaviour
         if (spawner != null)
         {
             spawner.noteStride = 1;
-            spawner.turboEveryN = 0; // turbo asteroids only where a step asks for one
+            spawner.turboEveryN = 0; // turbo and big asteroids only where a step asks for one
+            spawner.bigEveryN = 0;
+            spawner.maxViewportY = 0.68f; // keep asteroids under the instruction banner
             powerUps = FindFirstObjectByType<PowerUpSpawner>();
             if(powerUps != null) powerUps.enabled = false; //tutorial will spawn own pickups
             spawner.Spawned += OnSpawned;
@@ -90,6 +99,7 @@ public class Tutorial : MonoBehaviour
     void OnDestroy()
     {
         if (movement != null) movement.Dashed -= OnDashed;
+        if (shooter != null) shooter.ShotFired -= OnShotFired;
         if (spawner != null) spawner.Spawned -= OnSpawned;
         Time.fixedDeltaTime = baseFixedDeltaTime;
         if (canvasObject != null) Destroy(canvasObject);
@@ -98,6 +108,7 @@ public class Tutorial : MonoBehaviour
     void Update()
     {
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
+        PulseLivesHighlight();
     }
 
     /// <summary>Ends the tutorial early: clears the asteroids and goes to the countdown.</summary>
@@ -105,6 +116,7 @@ public class Tutorial : MonoBehaviour
     {
         if (IsFinishing) return;
         StopAllCoroutines();
+        ShowLivesHighlight(false);
         ClearAsteroids();
         SetTimeScale(1f);
         Analytics.Instance?.LogTutorial("skipped", CurrentStep);
@@ -117,6 +129,7 @@ public class Tutorial : MonoBehaviour
     {
         yield return ShowFor("TUTORIAL", "Learn the basics in under a minute.  Press ESC to skip.", 2.5f);
         yield return ShootStep();
+        yield return HeartsStep();
         yield return PerfectStep();
         yield return DodgeStep();
         yield return TurboStep();
@@ -125,7 +138,7 @@ public class Tutorial : MonoBehaviour
 
         CurrentStep = "done";
         Analytics.Instance?.LogTutorial("complete", CurrentStep);
-        yield return ShowFor("YOU'RE READY!", "Next up: the first level on Easy", 2f, goodColor);
+        yield return ShowFor("YOUR GOAL: SURVIVE THE SONG!", "Keep at least 1 life till the end", 3.5f, goodColor);
         yield return CountdownThenFinish();
     }
 
@@ -138,16 +151,26 @@ public class Tutorial : MonoBehaviour
             yield return SpawnOne(NoteLane.RightUpper, false, t => target = t);
             yield return new WaitUntil(() => target == null || RingShowing(target));
 
-            ShowBanner("SHOOT!", "Aim at the asteroid and CLICK when the ring is smallest");
-            yield return SlowDown();
+            lastShot = BeatJudgment.Miss;
+            ShowBanner("SHOOT!", "Aim at the asteroid and click when the ring turns <color=#fe5>YELLOW</color>");
+            yield return SlowTo(slowScale * 1.5f);
+            // The ring is yellow (the PERFECT window) for only a moment before it closes, so crawl
+            // through it: slow further once it turns orange, then speed up when the ring is gone.
+            yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - GoodWindow);
+            if (target != null) yield return SlowTo(slowScale * 0.25f);
+            yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - PerfectWindow);
+            if (target != null) ShowBanner("CLICK NOW!", "The ring is YELLOW", goodColor);
+            yield return new WaitUntil(() => target == null || SongTime >= target.hitTime);
+            if (target != null) yield return SlowTo(0.5f);
             yield return new WaitUntil(() => target == null || SongTime > target.hitTime + 0.4f);
 
-            bool hit = target == null;
-            if (hit) ShowBanner("NICE SHOT!", "The closer to the ring's smallest point, the better", goodColor);
+            bool hit = target == null && lastShot != BeatJudgment.Miss;
+            if (hit && lastShot == BeatJudgment.Perfect) ShowBanner("PERFECT!", "Clicking on YELLOW is a PERFECT shot", goodColor);
+            else if (hit) ShowBanner("NICE SHOT!", "Wait for YELLOW next time for a PERFECT", goodColor);
             else
             {
-                Destroy(target.gameObject);
-                ShowBanner("ALMOST!", "Try again - click while the ring is showing");
+                if (target != null) Destroy(target.gameObject);
+                ShowBanner("ALMOST!", "Try again - wait for the ring to turn YELLOW, then click");
             }
             yield return SpeedUp();
             yield return HideAfter(hit ? 2f : 1.5f);
@@ -155,15 +178,40 @@ public class Tutorial : MonoBehaviour
         }
     }
 
+    IEnumerator HeartsStep()
+    {
+        CurrentStep = "hearts";
+        if (shooter != null) shooter.enabled = false; // this one has to land
+        ShowBanner("LIVES", "Your lives are in the top left.  Let this one hit you...");
+        ShowLivesHighlight(true);
+
+        if (health != null && health.Health <= health.minHealth) health.Heal(1); // keep a heart to lose
+        int before = health != null ? health.Health : 0;
+        ChartTarget target = null;
+        yield return SpawnOne(NoteLane.RightUpper, false, t => target = t);
+        yield return new WaitUntil(() => target == null || SongTime > target.hitTime + Beat);
+        // If the asteroid missed the ship (the player moved away), take the heart anyway for the demo.
+        if (health != null && health.Health >= before) health.TakeDamage(1);
+        if (target != null) Destroy(target.gameObject);
+
+        ShowBanner("-1 LIFE", "Your ship's color shows your lives:   <color=#59f>BLUE 3-5</color>    <color=#f93>ORANGE 2</color>    <color=#f44>RED 1</color>", warnColor);
+        yield return new WaitForSecondsRealtime(4f);
+        ShowLivesHighlight(false);
+        if (shooter != null) shooter.enabled = true;
+        HideBanner();
+    }
+
     IEnumerator PerfectStep()
     {
         CurrentStep = "perfect";
-        ShowBanner("PERFECT = +1 LIFE", "PERFECT shots (right as the ring closes) give you a life.  Hit these three!");
+        ShowBanner("PERFECT = +1 LIFE", "PERFECT shots give you a life");
+        ShowLivesHighlight(true);
         yield return SlowTo(0.45f);
         var targets = new List<ChartTarget>();
         yield return SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (3.5f, NoteLane.RightUpper, false), (5f, NoteLane.LeftUpper, false) }, targets);
         yield return WaitUntilCleared(targets, 0.5f);
         yield return SpeedUp();
+        ShowLivesHighlight(false);
         HideBanner();
     }
 
@@ -171,15 +219,15 @@ public class Tutorial : MonoBehaviour
     {
         CurrentStep = "dodge";
         if (shooter != null) shooter.enabled = false; // this one has to be dodged
-        ShowBanner("DODGE!", "You can't shoot everything.  Watch this one...");
+        ShowBanner("DODGE!", "<color=#f44>RED GIANTS</color> are too big to shoot.  Watch this one...");
 
         ChartTarget target = null;
-        yield return SpawnOne(NoteLane.LeftUpper, false, t => target = t);
+        yield return SpawnOne(NoteLane.LeftUpper, false, t => target = t, big: true);
         // Past its ring an asteroid rushes the ship, so slow down while it's still at the ring.
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - 0.6f * Beat);
 
         dashed = false;
-        ShowBanner("DODGE!", "Press  W  A  S  D  to jump to another spot");
+        ShowBanner("DODGE!", "Press  W  A  S  D  to jump out of its way");
         yield return SlowTo(slowScale * 0.6f);
         yield return new WaitUntil(() => dashed || target == null);
         ShowBanner("NICE MOVE!", "W top     A left     S bottom     D right", goodColor);
@@ -201,15 +249,16 @@ public class Tutorial : MonoBehaviour
             yield return SpawnOne(NoteLane.RightUpper, true, t => target = t);
             yield return new WaitUntil(() => target == null || RingShowing(target));
 
-            ShowBanner("TURBO ASTEROID", "Orange ones need 2 HITS.  Destroy it for +2 LIVES!");
+            lastShot = BeatJudgment.Miss;
+            ShowBanner("TURBO ASTEROID", "Orange ones need 2 HITS.  Destroy it for +2 LIVES");
             yield return SlowTo(slowScale * 1.5f);
             yield return new WaitUntil(() => target == null || SongTime > target.hitTime + 0.6f);
 
-            bool hit = target == null;
+            bool hit = target == null && lastShot != BeatJudgment.Miss;
             if (hit) ShowBanner("+2 LIVES!", "Turbo asteroids are worth the extra shot", goodColor);
             else
             {
-                Destroy(target.gameObject);
+                if (target != null) Destroy(target.gameObject);
                 ShowBanner("ALMOST!", "Click it twice while the ring is showing");
             }
             yield return SpeedUp();
@@ -221,7 +270,7 @@ public class Tutorial : MonoBehaviour
     IEnumerator PracticeStep()
     {
         CurrentStep = "practice";
-        yield return ShowFor("NOW ON YOUR OWN!", "Shoot on the ring, dodge what you can't hit", 2f, goodColor);
+        yield return ShowFor("NOW ON YOUR OWN!", "Shoot on YELLOW, dodge what you can't hit", 2f, goodColor);
         var targets = new List<ChartTarget>();
         yield return SpawnWave(new[]
         {
@@ -248,15 +297,16 @@ public class Tutorial : MonoBehaviour
 
     // ------------------------------------------------------------------ asteroids
 
-    IEnumerator SpawnOne(NoteLane lane, bool turbo, System.Action<ChartTarget> got)
+    IEnumerator SpawnOne(NoteLane lane, bool turbo, System.Action<ChartTarget> got, bool big = false)
     {
         var list = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (2f, lane, turbo) }, list);
+        yield return SpawnWave(new[] { (2f, lane, turbo) }, list, big);
         got(list.Count > 0 ? list[0] : null);
     }
 
-    /// <summary>Queues notes (beats from now, lane, turbo) and waits until they have all spawned.</summary>
-    IEnumerator SpawnWave((float beats, NoteLane lane, bool turbo)[] wave, List<ChartTarget> into)
+    /// <summary>Queues notes (beats from now, lane, turbo) and waits until they have all spawned.
+    /// With <paramref name="big"/>, every note in the wave is a big, unshootable asteroid.</summary>
+    IEnumerator SpawnWave((float beats, NoteLane lane, bool turbo)[] wave, List<ChartTarget> into, bool big = false)
     {
         if (spawner == null) yield break;
         var notes = new List<ChartNote>();
@@ -267,6 +317,7 @@ public class Tutorial : MonoBehaviour
             float time = now + beats * Beat;
             notes.Add(new ChartNote(time, 0, lane));
             if (turbo) turboTimes.Add(time);
+            if (big) bigTimes.Add(time);
             lastTime = Mathf.Max(lastTime, time);
         }
 
@@ -288,6 +339,13 @@ public class Tutorial : MonoBehaviour
     void OnSpawned(ChartTarget target)
     {
         spawned.Add(target);
+        int big = bigTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
+        if (big >= 0)
+        {
+            bigTimes.RemoveAt(big);
+            target.MakeBig(spawner.bigScale, spawner.bigHitRadius, spawner.bigColor);
+            return;
+        }
         int turbo = turboTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
         if (turbo < 0) return;
         turboTimes.RemoveAt(turbo);
@@ -296,7 +354,19 @@ public class Tutorial : MonoBehaviour
 
     void OnDashed(PlayerMovement.Spot _) => dashed = true;
 
+    /// <summary>A (left) or D (right), whichever the ship isn't on: the top spot sits under the banner.</summary>
+    PlayerMovement.Spot SideSpot()
+    {
+        PlayerMovement.Spot current = movement != null ? movement.Current : PlayerMovement.Spot.Bottom;
+        if (current == PlayerMovement.Spot.Left) return PlayerMovement.Spot.Right;
+        if (current == PlayerMovement.Spot.Right) return PlayerMovement.Spot.Left;
+        return Random.value < 0.5f ? PlayerMovement.Spot.Left : PlayerMovement.Spot.Right;
+    }
+    void OnShotFired(BeatJudgment judgment) => lastShot = judgment;
+
     bool RingShowing(ChartTarget target) => SongTime >= target.hitTime - Beat;
+    float PerfectWindow => clock != null ? clock.perfectWindow : 0.07f;
+    float GoodWindow => clock != null ? clock.goodWindow : 0.15f;
 
     void ClearAsteroids()
     {
@@ -360,6 +430,7 @@ public class Tutorial : MonoBehaviour
         yield return ShowFor("POWER-UPS", "Shields block hits for you. Here are two kinds.", 2.5f);
         yield return BasicShieldStep();
         yield return MovingShieldStep();
+        yield return SlowMoStep();
     }
 
     IEnumerator BasicShieldStep()
@@ -401,7 +472,7 @@ public class Tutorial : MonoBehaviour
 
         for (int attempt = 0; attempt < maxTries && !shield.Active; attempt++)
         {
-            PowerUpPickup pickup = powerUps.SpawnMoving(health);
+            PowerUpPickup pickup = powerUps.SpawnMoving(health, null, SideSpot());
             if (pickup == null) yield break;
             pickup.lifetime = 0f; 
 
@@ -423,6 +494,38 @@ public class Tutorial : MonoBehaviour
         else ShowBanner("NICE!", "Aim toward an asteroid and the shield turns with you");
         yield return HideAfter(2.5f);
     }
+    IEnumerator SlowMoStep()
+    {
+        CurrentStep = "powerup_slowmo";
+        SlowMo slowMo = health != null ? health.GetComponent<SlowMo>() : null;
+        if (powerUps == null || slowMo == null) yield break;
+
+        for (int attempt = 0; attempt < maxTries && !slowMo.Active; attempt++)
+        {
+            PowerUpPickup pickup = powerUps.SpawnSlowMo(health, SideSpot());
+            if (pickup == null) yield break;
+            pickup.lifetime = 0f;
+
+            ShowBanner("SLOW-MO", "Press W A S D to grab the <color=#7df>BLUE</color> star!");
+            float giveUp = Time.unscaledTime + 12f;
+            yield return new WaitUntil(() => slowMo.Active || pickup == null || Time.unscaledTime > giveUp);
+            if (pickup != null) Destroy(pickup.gameObject);
+        }
+
+        if (!slowMo.Active) { HideBanner(); yield break; }
+
+        // There's no song in the tutorial for slow-mo to slow, so slow the scene clock while it lasts.
+        ShowBanner("SLOW-MO!", "Everything moves at half speed for a few seconds", goodColor);
+        // Send the asteroids in right away (without waiting for them to spawn) so they arrive while it lasts.
+        var targets = new List<ChartTarget>();
+        StartCoroutine(SpawnWave(new[] { (1f, NoteLane.LeftUpper, false), (1.75f, NoteLane.RightUpper, false), (2.5f, NoteLane.LeftUpper, false) }, targets));
+        yield return SlowTo(slowMo.speed);
+        yield return new WaitUntil(() => !slowMo.Active || (targets.Count == 3 && targets.TrueForAll(t => t == null)));
+        yield return SpeedUp();
+        yield return WaitUntilCleared(targets, 0.5f);
+        HideBanner();
+    }
+
     void BuildCanvas()
     {
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -455,6 +558,66 @@ public class Tutorial : MonoBehaviour
         countdown.gameObject.SetActive(false);
 
         BuildSkipButton();
+        BuildLivesHighlight();
+    }
+
+    /// <summary>A frame around the lives in the top left (same layout as <see cref="HealthHUD"/>), with a label.</summary>
+    void BuildLivesHighlight()
+    {
+        // HealthHUD: hearts 42 wide with a 6 gap, 38 tall, 32 in from the top-left corner, same canvas scaling.
+        const float pad = 14f, thickness = 7f;
+        int hearts = health != null ? health.maxHealth : 5;
+        Vector2 size = new Vector2(hearts * 48f - 6f + pad * 2f, 38f + pad * 2f);
+
+        var root = new GameObject("LivesHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
+        root.SetParent(canvasObject.transform, false);
+        root.anchorMin = root.anchorMax = root.pivot = new Vector2(0f, 1f);
+        root.anchoredPosition = new Vector2(32f - pad, -32f + pad);
+        root.sizeDelta = size;
+        livesHighlight = root.gameObject;
+
+        var parts = new List<Graphic>();
+        void Bar(Vector2 min, Vector2 max, Vector2 sizeDelta)
+        {
+            var bar = new GameObject("Edge", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+            bar.rectTransform.SetParent(root, false);
+            bar.rectTransform.anchorMin = min;
+            bar.rectTransform.anchorMax = max;
+            bar.rectTransform.sizeDelta = sizeDelta;
+            bar.raycastTarget = false;
+            parts.Add(bar);
+        }
+        Bar(new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, thickness));
+        Bar(new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, thickness));
+        Bar(new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(thickness, 0f));
+        Bar(new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(thickness, 0f));
+
+        Text label = AddText(root, 44, FontStyle.Bold, Vector2.zero);
+        label.rectTransform.anchorMin = label.rectTransform.anchorMax = label.rectTransform.pivot = new Vector2(0f, 0.5f);
+        label.rectTransform.anchoredPosition = new Vector2(size.x + 16f, 0f);
+        label.rectTransform.sizeDelta = new Vector2(600f, 60f);
+        label.alignment = TextAnchor.MiddleLeft;
+        label.text = "<<  YOUR LIVES";
+        label.gameObject.AddComponent<Outline>().effectDistance = new Vector2(2f, -2f);
+        parts.Add(label);
+
+        livesHighlightParts = parts.ToArray();
+        livesHighlight.SetActive(false);
+    }
+
+    void ShowLivesHighlight(bool show)
+    {
+        if (livesHighlight != null) livesHighlight.SetActive(show);
+    }
+
+    void PulseLivesHighlight()
+    {
+        if (livesHighlight == null || !livesHighlight.activeSelf) return;
+        Color c = goodColor;
+        float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f);
+        c.a = Mathf.Lerp(0.5f, 1f, pulse);
+        livesHighlight.transform.localScale = Vector3.one * Mathf.Lerp(1f, 1.06f, pulse);
+        foreach (Graphic g in livesHighlightParts) g.color = c;
     }
 
     void BuildSkipButton()
