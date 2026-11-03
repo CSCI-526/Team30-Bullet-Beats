@@ -32,6 +32,12 @@ public class PowerUpSpawner : MonoBehaviour
     public Vector2 basicViewportMin = new Vector2(0.3f, 0.55f);
     public Vector2 basicViewportMax = new Vector2(0.7f, 0.8f);
     public float movingLifetime = 6f;
+    [Tooltip("Spot stars fly in from the middle of the screen and land on a beat, instead of appearing at their spot.")]
+    public bool flyInStars = true;
+    [Tooltip("Song seconds (at least) a spot star takes to fly in; it lands on the next beat after that.")]
+    public float starFlightSeconds = 2.5f;
+    [Tooltip("Song seconds a spot star waits at its spot after landing.")]
+    public float starLingerSeconds = 3f;
 
     float timer;
     PowerUpPickup live;
@@ -112,7 +118,14 @@ public class PowerUpSpawner : MonoBehaviour
         pickup.velocity = Vector3.zero;
         pickup.lifetime = movingLifetime;
         pickup.shipOffset = bodyOffset;
-        pickup.gameObject.AddComponent<PickupStar>().Init(color ?? movingShieldColor);
+        var star = pickup.gameObject.AddComponent<PickupStar>();
+        star.Init(color ?? movingShieldColor);
+        if (flyInStars)
+        {
+            // The star removes itself after it lands and lingers, so the pickup's own timer is off.
+            star.lingerSeconds = starLingerSeconds;
+            if (star.FlyTo(pickup.transform.position, starFlightSeconds)) pickup.lifetime = 0f;
+        }
         return pickup;
     }
 

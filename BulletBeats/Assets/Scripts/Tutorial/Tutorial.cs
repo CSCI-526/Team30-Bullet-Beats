@@ -88,7 +88,11 @@ public class Tutorial : MonoBehaviour
             spawner.bigEveryN = 0;
             spawner.maxViewportY = 0.68f; // keep asteroids under the instruction banner
             powerUps = FindFirstObjectByType<PowerUpSpawner>();
-            if(powerUps != null) powerUps.enabled = false; //tutorial will spawn own pickups
+            if(powerUps != null)
+            {
+                powerUps.enabled = false; //tutorial will spawn own pickups
+                powerUps.flyInStars = false; //and they wait at their spot, so there's time to read the step
+            }
             spawner.Spawned += OnSpawned;
         }
 
