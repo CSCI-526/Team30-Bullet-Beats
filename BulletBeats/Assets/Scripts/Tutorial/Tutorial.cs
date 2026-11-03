@@ -86,6 +86,7 @@ public class Tutorial : MonoBehaviour
             spawner.noteStride = 1;
             spawner.turboEveryN = 0; // turbo and big asteroids only where a step asks for one
             spawner.bigEveryN = 0;
+            spawner.maxViewportY = 0.68f; // keep asteroids under the instruction banner
             powerUps = FindFirstObjectByType<PowerUpSpawner>();
             if(powerUps != null) powerUps.enabled = false; //tutorial will spawn own pickups
             spawner.Spawned += OnSpawned;
@@ -147,7 +148,7 @@ public class Tutorial : MonoBehaviour
         for (int attempt = 0; attempt < maxTries; attempt++)
         {
             ChartTarget target = null;
-            yield return SpawnOne(NoteLane.RightLower, false, t => target = t);
+            yield return SpawnOne(NoteLane.RightUpper, false, t => target = t);
             yield return new WaitUntil(() => target == null || RingShowing(target));
 
             lastShot = BeatJudgment.Miss;
@@ -207,7 +208,7 @@ public class Tutorial : MonoBehaviour
         ShowLivesHighlight(true);
         yield return SlowTo(0.45f);
         var targets = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (2f, NoteLane.LeftLower, false), (3.5f, NoteLane.RightLower, false), (5f, NoteLane.LeftLower, false) }, targets);
+        yield return SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (3.5f, NoteLane.RightUpper, false), (5f, NoteLane.LeftUpper, false) }, targets);
         yield return WaitUntilCleared(targets, 0.5f);
         yield return SpeedUp();
         ShowLivesHighlight(false);
@@ -245,7 +246,7 @@ public class Tutorial : MonoBehaviour
         for (int attempt = 0; attempt < maxTries; attempt++)
         {
             ChartTarget target = null;
-            yield return SpawnOne(NoteLane.RightLower, true, t => target = t);
+            yield return SpawnOne(NoteLane.RightUpper, true, t => target = t);
             yield return new WaitUntil(() => target == null || RingShowing(target));
 
             lastShot = BeatJudgment.Miss;
