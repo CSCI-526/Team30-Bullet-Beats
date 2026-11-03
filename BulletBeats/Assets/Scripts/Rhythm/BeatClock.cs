@@ -40,6 +40,12 @@ public class BeatClock : MonoBehaviour
     bool musicStarted;
     float clipEndedAt = -1f;
 
+    // While the music's pitch is changed (slow motion), the web build reports the playback position
+    // wrong: too slow, then a jump forward once the pitch is back to 1. So while it's changed the
+    // clock counts time itself at the pitch's speed, until the real position catches up again.
+    bool counting;
+    float countedTime;
+
     public bool IsMusicPlaying => HasMusic && (music.isPlaying || (musicStarted && SongTime < SongLength));
 
     /// <summary>
@@ -56,11 +62,13 @@ public class BeatClock : MonoBehaviour
                     return music.clip.length + (Time.time - clipEndedAt);
                 if (holdUntilMusicPlays && !music.isPlaying && music.timeSamples == 0)
                     return 0f;
-                return (float)music.timeSamples / Mathf.Max(1, music.clip.frequency);
+                return counting ? countedTime : PlaybackTime;
             }
             return Time.time - startTime;
         }
     }
+
+    float PlaybackTime => (float)music.timeSamples / Mathf.Max(1, music.clip.frequency);
 
     /// <summary>Beats since the first beat; 12.25 is a quarter beat after beat 12.</summary>
     public float BeatPosition => (SongTime - firstBeatOffset) / SecondsPerBeat;
@@ -86,6 +94,7 @@ public class BeatClock : MonoBehaviour
         if (HasMusic && music.isPlaying) musicStarted = true;
         if (HasMusic && musicStarted && clipEndedAt < 0f && !music.isPlaying && !AudioListener.pause)
             clipEndedAt = Time.time;
+        if (HasMusic) CountWhilePitched();
 
         if (HasMusic && holdUntilMusicPlays && !musicStarted)
             return;
@@ -96,6 +105,23 @@ public class BeatClock : MonoBehaviour
         if (beat >= 0) Beat?.Invoke(beat);
     }
 
+    void CountWhilePitched()
+    {
+        bool pitched = musicStarted && clipEndedAt < 0f && !Mathf.Approximately(music.pitch, 1f);
+        if (!counting)
+        {
+            if (!pitched) return;
+            counting = true;
+            countedTime = PlaybackTime;
+            return;
+        }
+
+        if (music.isPlaying && !AudioListener.pause && Time.timeScale > 0f)
+            countedTime += Time.unscaledDeltaTime * music.pitch;
+        // Back at normal speed: hand back to the real position once it has caught up.
+        if (!pitched && PlaybackTime >= countedTime - 0.02f) counting = false;
+    }
+
     /// <summary>Call when music is (re)started so beat events resync from the song timeline.</summary>
     public void ResetBeatTracking()
     {
@@ -103,6 +129,7 @@ public class BeatClock : MonoBehaviour
         startTime = Time.time;
         musicStarted = false;
         clipEndedAt = -1f;
+        counting = false;
     }
 
     /// <summary>Judges an input made this frame against the nearest beat.</summary>

@@ -9,7 +9,7 @@ using UnityEngine;
 /// </summary>
 public class PowerUpPickup : MonoBehaviour, IShootable
 {
-    public enum Kind { BasicShield, MovingShield }
+    public enum Kind { BasicShield, MovingShield, SlowMo }
     public enum CollectBy { Shot, Touch }
 
     public Kind kind = Kind.BasicShield;
@@ -61,6 +61,7 @@ public class PowerUpPickup : MonoBehaviour, IShootable
         {
             if (kind == Kind.BasicShield && ship.TryGetComponent(out BasicShield basic)) basic.Grant();
             else if (kind == Kind.MovingShield && ship.TryGetComponent(out DirectionalShield moving)) moving.Grant();
+            else if (kind == Kind.SlowMo && ship.TryGetComponent(out SlowMo slowMo)) slowMo.Grant();
         }
         Destroy(gameObject);
     }
