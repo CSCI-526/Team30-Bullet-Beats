@@ -516,10 +516,11 @@ public class Tutorial : MonoBehaviour
 
         // There's no song in the tutorial for slow-mo to slow, so slow the scene clock while it lasts.
         ShowBanner("SLOW-MO!", "Everything moves at half speed for a few seconds", goodColor);
-        yield return SlowTo(slowMo.speed);
+        // Send the asteroids in right away (without waiting for them to spawn) so they arrive while it lasts.
         var targets = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (1f, NoteLane.LeftUpper, false), (2f, NoteLane.RightUpper, false), (3f, NoteLane.LeftUpper, false) }, targets);
-        yield return new WaitUntil(() => !slowMo.Active || targets.TrueForAll(t => t == null));
+        StartCoroutine(SpawnWave(new[] { (1f, NoteLane.LeftUpper, false), (1.75f, NoteLane.RightUpper, false), (2.5f, NoteLane.LeftUpper, false) }, targets));
+        yield return SlowTo(slowMo.speed);
+        yield return new WaitUntil(() => !slowMo.Active || (targets.Count == 3 && targets.TrueForAll(t => t == null)));
         yield return SpeedUp();
         yield return WaitUntilCleared(targets, 0.5f);
         HideBanner();
