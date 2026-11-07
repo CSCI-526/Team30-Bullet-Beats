@@ -51,6 +51,7 @@ public class Tutorial : MonoBehaviour
     readonly List<float> bigTimes = new List<float>();
     bool dashed;
     BeatJudgment lastShot = BeatJudgment.Miss;
+    int heldShots;
     float baseFixedDeltaTime;
     Coroutine ramp;
 
@@ -133,12 +134,13 @@ public class Tutorial : MonoBehaviour
         yield return PerfectStep();
         yield return DodgeStep();
         yield return TurboStep();
+        yield return HoldFireStep();
         yield return PowerUpStep();
         yield return PracticeStep();
 
         CurrentStep = "done";
         Analytics.Instance?.LogTutorial("complete", CurrentStep);
-        yield return ShowFor("YOUR GOAL: SURVIVE THE SONG!", "Keep at least 1 life till the end", 3.5f, goodColor);
+        ShowFor("YOUR GOAL: SURVIVE THE SONG!", "Keep at least 1 life till the end.  Tip: HOLD to machine gun!", 3.5f, goodColor);
         yield return CountdownThenFinish();
     }
 
@@ -267,10 +269,45 @@ public class Tutorial : MonoBehaviour
         }
     }
 
+    IEnumerator HoldFireStep()
+    {
+        CurrentStep = "hold_fire";
+        if (shooter == null || !shooter.holdToFire) yield break;
+
+        for (int attempt = 0; attempt < maxTries; attempt++)
+        {
+            heldShots = 0;
+            ShowBanner(attempt == 0 ? "MACHINE GUN!" : "KEEP HOLDING!",
+                "<color=#fe5>CLICK AND HOLD</color> the mouse button - don't let go!  Sweep across the asteroids");
+            yield return SlowTo(0.6f);
+            var targets = new List<ChartTarget>();
+            yield return SpawnWave(new[]
+            {
+                (2f, NoteLane.LeftUpper, false), (2.4f, NoteLane.RightUpper, false),
+                (2.8f, NoteLane.LeftUpper, false), (3.2f, NoteLane.RightUpper, false),
+                (3.6f, NoteLane.LeftUpper, false), (4f, NoteLane.RightUpper, false)
+            }, targets);
+            yield return new WaitUntil(() => heldShots >= 3
+                || targets.TrueForAll(t => t == null || SongTime > t.hitTime + Beat));
+            if (heldShots >= 3)
+                ShowBanner("THAT'S IT!", "Keep holding - the machine gun never runs out", goodColor);
+            yield return new WaitUntil(() => heldShots >= 10
+                || targets.TrueForAll(t => t == null || SongTime > t.hitTime + Beat));
+
+            bool success = heldShots >= 10;
+            if (success) ShowBanner("RAPID FIRE!", "Holding is the easiest way to clear a crowd.  Use it a lot!", goodColor);
+            else ShowBanner("HOLD IT DOWN!", "Don't tap - press and HOLD the mouse button to fire nonstop", warnColor);
+            yield return WaitUntilCleared(targets, 1f);
+            yield return SpeedUp();
+            yield return HideAfter(success ? 2f : 1.5f);
+            if (success) yield break;
+        }
+    }
+
     IEnumerator PracticeStep()
     {
         CurrentStep = "practice";
-        yield return ShowFor("NOW ON YOUR OWN!", "Shoot on YELLOW, dodge what you can't hit", 2f, goodColor);
+        ShowFor("NOW ON YOUR OWN!", "HOLD the mouse to machine gun, dodge what you can't hit", 2.5f, goodColor);
         var targets = new List<ChartTarget>();
         yield return SpawnWave(new[]
         {
@@ -362,7 +399,13 @@ public class Tutorial : MonoBehaviour
         if (current == PlayerMovement.Spot.Right) return PlayerMovement.Spot.Left;
         return Random.value < 0.5f ? PlayerMovement.Spot.Left : PlayerMovement.Spot.Right;
     }
-    void OnShotFired(BeatJudgment judgment) => lastShot = judgment;
+    void OnShotFired(BeatJudgment judgment)
+    {
+        lastShot = judgment;
+        Mouse mouse = Mouse.current;
+        // Counts shots fired while the button stays down (not new clicks).
+        if (mouse != null && mouse.leftButton.isPressed && !mouse.leftButton.wasPressedThisFrame) heldShots++;
+    }
 
     // Spot stars fly in like in a level, but then wait at their spot until grabbed
     // (the step still gives up and sends a new one after a while).

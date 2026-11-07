@@ -45,6 +45,10 @@ public class PlayerShooter : MonoBehaviour
     public float tracerSpeed = 1500f;
     [Tooltip("Clicks closer together than this many seconds are ignored.")]
     public float minShotInterval = 0.08f;
+    [Tooltip("Hold the button to keep firing.")]
+    public bool holdToFire = true;
+    [Tooltip("Shots per second while the button is held.")]
+    [Min(1f)] public float holdFireRate = 12f;
 
     [Header("Projectile")]
     [FormerlySerializedAs("missDamage")]
@@ -114,7 +118,11 @@ public class PlayerShooter : MonoBehaviour
             if (look.sqrMagnitude > 0.01f) gunPivot.rotation = Quaternion.LookRotation(look, transform.up);
         }
 
-        if (mouse.leftButton.wasPressedThisFrame && !CornerMute.Contains(cursor) && Time.time - lastShotTime >= minShotInterval)
+        if (CornerMute.Contains(cursor)) return;
+        float interval = Mathf.Max(minShotInterval, 1f / holdFireRate);
+        bool pressed = mouse.leftButton.wasPressedThisFrame && Time.time - lastShotTime >= minShotInterval;
+        bool held = holdToFire && mouse.leftButton.isPressed && Time.time - lastShotTime >= interval;
+        if (pressed || held)
             Fire();
     }
 

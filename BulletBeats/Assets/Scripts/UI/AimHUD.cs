@@ -116,6 +116,7 @@ public class AimHUD : MonoBehaviour
 
     void ShowJudgment(BeatJudgment judgment)
     {
+        if (judgment == BeatJudgment.Miss) return;
         judgmentLabel.text = judgment.ToString().ToUpperInvariant();
         judgmentColor = shooter.ColorFor(judgment);
         judgmentLabel.color = judgmentColor;

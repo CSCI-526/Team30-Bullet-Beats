@@ -8,7 +8,7 @@ using UnityEngine.UI;
 /// </summary>
 public class CornerMute : MonoBehaviour
 {
-    public static bool Muted { get; private set; } = true;
+    public static bool Muted { get; private set; } = false;
 
     const float CornerWidth = 0.2f;
     const float CornerHeight = 0.18f;

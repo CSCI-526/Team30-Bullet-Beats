@@ -38,6 +38,7 @@ public class RhythmSession : MonoBehaviour
     public MetronomeClick metronome;
 
     AudioSource musicSource;
+    AsteroidChoreography choreography;
 
     void Awake()
     {
@@ -190,8 +191,12 @@ public class RhythmSession : MonoBehaviour
         {
             metronome.mode = metronomeMode;
             metronome.playOnStart = metronomeOn;
-            metronome.enabled = metronomeOn || countInBeats > 0;
+            metronome.enabled = metronomeOn;
         }
+
+        choreography = spawner != null ? spawner.choreography : null;
+        if (choreography != null)
+            yield return choreography.Load(level);
 
         yield return StartCoroutine(CountInThenPlay());
     }
@@ -222,7 +227,7 @@ public class RhythmSession : MonoBehaviour
 
         for (int i = 0; i < beats; i++)
         {
-            if (metronome != null) metronome.PlayCountInClick();
+            if (metronome != null && metronomeOn) metronome.PlayCountInClick();
             yield return WaitDsp(quarter);
         }
 
@@ -237,6 +242,8 @@ public class RhythmSession : MonoBehaviour
             beatClock.ResetBeatTracking();
             if (metronome != null) metronome.RewindNotes();
             musicSource.Play();
+            if (choreography != null && spawner != null)
+                choreography.Play(musicSource, spawner, spawner.LeadTime);
             Debug.Log($"RhythmSession: playing {musicSource.clip.name} (listeners {CountEnabledListeners()}, pause {AudioListener.pause}).", this);
         }
     }

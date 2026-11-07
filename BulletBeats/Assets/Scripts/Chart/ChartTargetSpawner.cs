@@ -39,6 +39,11 @@ public class ChartTargetSpawner : MonoBehaviour
     [Range(0.5f, 1f)] public float maxViewportY = 1f;
     [Tooltip("Minimum viewport distance between two live targets.")]
     public float minViewportSeparation = 0.14f;
+    [Tooltip("Most asteroids allowed on screen at once. Notes beyond this are skipped. 0 = no limit.")]
+    [Min(0)] public int maxLiveAsteroids = 4;
+
+    [Tooltip("Picks the screen section for each note over the song. Empty = found or added on Awake.")]
+    public AsteroidChoreography choreography;
 
     [Header("Prefab")]
     [Tooltip("Optional. Empty = spawn a simple cube placeholder.")]
@@ -124,6 +129,8 @@ public class ChartTargetSpawner : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        if (choreography == null) choreography = GetComponent<AsteroidChoreography>();
+        if (choreography == null) choreography = gameObject.AddComponent<AsteroidChoreography>();
     }
 
     void OnDestroy()
@@ -153,8 +160,11 @@ public class ChartTargetSpawner : MonoBehaviour
 
         float songTime = clock.SongTime;
         float quarter = clock.SecondsPerBeat;
-        float planetLead = Mathf.Max(planetLeadSeconds, quarter);
+        float planetLead = LeadTime;
         SharedLeadTime = planetLead;
+
+        // Stems are spawning the asteroids (AsteroidChoreography), so the chart is not used.
+        if (StemsDriving) return;
 
         // Only spawn when that planet's fly-in actually begins. Notes whose flight
         // would have started before the song are skipped, so the count-in does not
@@ -170,11 +180,48 @@ public class ChartTargetSpawner : MonoBehaviour
         }
     }
 
-    void Spawn(ChartNote note, float quarter, float lead)
+    /// <summary>Seconds from spawn to the hit point: at least one quarter note.</summary>
+    public float LeadTime
+    {
+        get
+        {
+            BeatClock clock = BeatClock.Instance;
+            float quarter = clock != null ? clock.SecondsPerBeat : 0.5f;
+            return Mathf.Max(planetLeadSeconds, quarter);
+        }
+    }
+
+    bool StemsDriving => choreography != null && choreography.enabled && choreography.HasLoadedStems;
+
+    /// <summary>
+    /// Spawns an asteroid that reaches the ship at noteTime, aimed at a random point inside
+    /// area (viewport 0-1). Used by AsteroidChoreography.
+    /// </summary>
+    public bool SpawnInArea(float noteTime, Rect area, bool centered = false, bool ignoreCap = false)
+    {
+        if (!ignoreCap && maxLiveAsteroids > 0 && liveViewports.Count >= maxLiveAsteroids) return false;
+        BeatClock clock = BeatClock.Instance;
+        float quarter = clock != null ? clock.SecondsPerBeat : 0.5f;
+        var note = new ChartNote(noteTime, 0, NoteLane.LeftUpper);
+        Vector2 viewport = centered
+            ? new Vector2(area.center.x, Mathf.Min(area.center.y, maxViewportY))
+            : PickInArea(area.xMin, area.xMax, area.yMin, area.yMax);
+        SpawnAt(note, quarter, LeadTime, viewport);
+        return true;
+    }
+
+    void Spawn(ChartNote note, float quarter, float lead) => Spawn(note, quarter, lead, PickViewport(note.lane));
+
+    void Spawn(ChartNote note, float quarter, float lead, Vector2 viewport)
+    {
+        if (maxLiveAsteroids > 0 && liveViewports.Count >= maxLiveAsteroids) return;
+        SpawnAt(note, quarter, lead, viewport);
+    }
+
+    void SpawnAt(ChartNote note, float quarter, float lead, Vector2 viewport)
     {
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
-        Vector2 viewport = PickViewport(note.lane);
         float spawnDistance = Mathf.Max(spawnDistanceFromCamera * Mathf.Max(1f, spawnDistanceMultiplier), distanceFromCamera + 1f);
         if (cam != null && cam.farClipPlane < spawnDistance + 50f)
             cam.farClipPlane = spawnDistance + 50f;
@@ -258,6 +305,11 @@ public class ChartTargetSpawner : MonoBehaviour
         float xMax = left ? 0.5f - quadrantMargin : 1f - quadrantMargin;
         float yMin = upper ? 0.5f + quadrantMargin : quadrantMargin;
         float yMax = upper ? 1f - quadrantMargin : 0.5f - quadrantMargin;
+        return PickInArea(xMin, xMax, yMin, yMax);
+    }
+
+    Vector2 PickInArea(float xMin, float xMax, float yMin, float yMax)
+    {
         yMax = Mathf.Min(yMax, maxViewportY);
         yMin = Mathf.Min(yMin, yMax);
 

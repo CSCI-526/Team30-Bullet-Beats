@@ -34,7 +34,7 @@ public class ScoreKeeper : MonoBehaviour
     [Header("Difficulty: one asteroid every N chart notes")]
     [Min(1)] public int easyNoteStride = 7;
     [Min(1)] public int mediumNoteStride = 5;
-    [Min(1)] public int difficultNoteStride = 3;
+    [Min(1)] public int difficultNoteStride = 2;
 
     public int Score { get; private set; }
     /// <summary>Perfect and Good shots in a row; a Miss or getting hit resets it, Fine leaves it.</summary>

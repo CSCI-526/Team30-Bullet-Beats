@@ -38,6 +38,13 @@ public class GameFlow : MonoBehaviour
         public float bpm;
         [Tooltip("Seconds from the start of the file to beat 1. 0 if the downbeat is at the start.")]
         public float firstBeatOffset;
+
+        [Header("Stems (optional)")]
+        [Tooltip("Isolated parts of the song. When any are set, AsteroidChoreography spawns asteroids from them.")]
+        public AudioClip drumsStem;
+        public AudioClip otherStem;
+        public AudioClip vocalsStem;
+        public AudioClip bassStem;
     }
 
     public static GameFlow Instance { get; private set; }
@@ -46,8 +53,8 @@ public class GameFlow : MonoBehaviour
     [Tooltip("Level length in seconds while BeatClock has no song. 0 = never ends by time.")]
     public float levelLengthSeconds = 90f;
     [Tooltip("If off, running out of health does not end the level (for testing).")]
-    //public bool endOnDeath = false;
-    public bool endOnDeath = true;
+    public bool endOnDeath = false;
+    //public bool endOnDeath = true;
     [Tooltip("Turned off outside of play. Empty = the player's shooter, dash, aim HUD and health.")]
     public Behaviour[] playerControls;
 

@@ -192,9 +192,9 @@ public class GameMenus : MonoBehaviour
     void BuildLevelPanel()
     {
         levelPanel = NewPanel("LevelSelect");
-        AddText(levelPanel, "SELECT LEVEL", 72, accentColor, 300f, FontStyle.Bold);
+        AddText(levelPanel, "SELECT LEVEL", 72, accentColor, 470f, FontStyle.Bold);
 
-        float y = 210f;
+        float y = 380f;
         foreach (GameFlow.Level level in flow.levels)
         {
             bool playable = GameFlow.CanLoad(level);
@@ -202,14 +202,13 @@ public class GameMenus : MonoBehaviour
             Button button = AddButton(levelPanel, label, y, () => ShowDifficultySelect(level), WideButton);
             button.interactable = playable;
             if (playable && levelFirst == null) levelFirst = button;
-            y -= 90f;
+            y -= 72f;
         }
 
         AddText(levelPanel, "OR LOAD A FILE", 22, new Color(0.95f, 0.78f, 0.35f), y + 8f);
-        yourSongButton = AddFilePicker(levelPanel, y - 58f);
-        y -= 150f;
+        yourSongButton = AddFilePicker(levelPanel, y - 50f);
 
-        Button back = AddButton(levelPanel, "BACK", y - 20f, flow.ShowTitle);
+        Button back = AddButton(levelPanel, "BACK", y - 125f, flow.ShowTitle);
         if (levelFirst == null) levelFirst = back;
     }
 
