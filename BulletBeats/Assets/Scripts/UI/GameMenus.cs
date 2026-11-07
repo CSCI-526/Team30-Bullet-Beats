@@ -192,24 +192,59 @@ public class GameMenus : MonoBehaviour
     void BuildLevelPanel()
     {
         levelPanel = NewPanel("LevelSelect");
-        AddText(levelPanel, "SELECT LEVEL", 72, accentColor, 300f, FontStyle.Bold);
+        AddText(levelPanel, "SELECT LEVEL", 72, accentColor, 460f, FontStyle.Bold);
 
-        float y = 210f;
+        var viewport = new GameObject("SongList", typeof(RectTransform), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
+        var viewportRect = viewport.GetComponent<RectTransform>();
+        viewportRect.SetParent(levelPanel.transform, false);
+        viewportRect.sizeDelta = new Vector2(920f, 560f);
+        viewportRect.anchoredPosition = new Vector2(0f, 16f);
+        AddRankHeader(levelPanel, 324f);
+        var viewportImage = viewport.GetComponent<Image>();
+        viewportImage.color = new Color(0f, 0f, 0f, 0.01f);
+        viewportImage.raycastTarget = true;
+
+        var content = new GameObject("Content", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+        var contentRect = content.GetComponent<RectTransform>();
+        contentRect.SetParent(viewportRect, false);
+        contentRect.anchorMin = new Vector2(0.5f, 1f);
+        contentRect.anchorMax = new Vector2(0.5f, 1f);
+        contentRect.pivot = new Vector2(0.5f, 1f);
+        contentRect.anchoredPosition = Vector2.zero;
+        contentRect.sizeDelta = new Vector2(WideButton, 0f);
+
+        var layout = content.GetComponent<VerticalLayoutGroup>();
+        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.spacing = 16f;
+        layout.padding = new RectOffset(0, 0, 8, 8);
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        var fitter = content.GetComponent<ContentSizeFitter>();
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var scroll = viewport.GetComponent<ScrollRect>();
+        scroll.content = contentRect;
+        scroll.viewport = viewportRect;
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 40f;
+
         foreach (GameFlow.Level level in flow.levels)
         {
             bool playable = GameFlow.CanLoad(level);
-            string label = playable ? LevelLabel(level) : $"{level.displayName}  (not in build)";
-            Button button = AddButton(levelPanel, label, y, () => ShowDifficultySelect(level), WideButton);
+            Button button = AddSongButton(content, level, playable, () => ShowDifficultySelect(level));
             button.interactable = playable;
             if (playable && levelFirst == null) levelFirst = button;
-            y -= 90f;
         }
 
-        AddText(levelPanel, "OR LOAD A FILE", 22, new Color(0.95f, 0.78f, 0.35f), y + 8f);
-        yourSongButton = AddFilePicker(levelPanel, y - 58f);
-        y -= 150f;
-
-        Button back = AddButton(levelPanel, "BACK", y - 20f, flow.ShowTitle);
+        AddText(levelPanel, "OR LOAD A FILE", 22, new Color(0.95f, 0.78f, 0.35f), -340f);
+        yourSongButton = AddFilePicker(levelPanel, -406f);
+        Button back = AddButton(levelPanel, "BACK", -500f, flow.ShowTitle);
         if (levelFirst == null) levelFirst = back;
     }
 
@@ -270,10 +305,59 @@ public class GameMenus : MonoBehaviour
         return button;
     }
 
-    static string LevelLabel(GameFlow.Level level) =>
-        ScoreKeeper.TryGetBestHighScore(level, out int best, out Difficulty difficulty)
-            ? $"{level.displayName}      HIGH SCORE  {ScoreKeeper.FormatPoints(best)}  ({ScoreKeeper.DifficultyName(difficulty)})"
-            : $"{level.displayName}      HIGH SCORE  -";
+    // Rank columns share one x so the header and every song line up. x is from the center of an 860-wide row.
+    static readonly float[] RankColumnX = { 70f, 210f, 350f };
+
+    void AddRankHeader(GameObject panel, float y)
+    {
+        string[] titles = { "EASY", "MEDIUM", "HARD" };
+        for (int i = 0; i < titles.Length; i++)
+        {
+            var label = new GameObject(titles[i], typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+            label.rectTransform.SetParent(panel.transform, false);
+            label.rectTransform.sizeDelta = new Vector2(140f, 32f);
+            label.rectTransform.anchoredPosition = new Vector2(RankColumnX[i], y);
+            label.font = font;
+            label.fontSize = 18;
+            label.fontStyle = FontStyle.Bold;
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = accentColor;
+            label.raycastTarget = false;
+            label.text = titles[i];
+        }
+    }
+
+    Button AddSongButton(GameObject panel, GameFlow.Level level, bool playable, UnityEngine.Events.UnityAction onClick)
+    {
+        Button button = AddButton(panel, "", 0f, onClick, WideButton);
+        button.name = level.displayName;
+        Text title = button.GetComponentInChildren<Text>();
+        title.alignment = TextAnchor.MiddleLeft;
+        title.rectTransform.anchorMin = new Vector2(0f, 0f);
+        title.rectTransform.anchorMax = new Vector2(0f, 1f);
+        title.rectTransform.pivot = new Vector2(0f, 0.5f);
+        title.rectTransform.anchoredPosition = new Vector2(28f, 0f);
+        title.rectTransform.sizeDelta = new Vector2(380f, 0f);
+        title.horizontalOverflow = HorizontalWrapMode.Overflow;
+        title.text = playable ? level.displayName : $"{level.displayName}  (not in build)";
+
+        int[] ranks = { level.easyLevel, level.mediumLevel, level.hardLevel };
+        for (int i = 0; i < ranks.Length; i++)
+        {
+            var rank = new GameObject("Rank", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+            rank.rectTransform.SetParent(button.transform, false);
+            rank.rectTransform.sizeDelta = new Vector2(120f, 70f);
+            rank.rectTransform.anchoredPosition = new Vector2(RankColumnX[i], 0f);
+            rank.font = font;
+            rank.fontSize = 30;
+            rank.fontStyle = FontStyle.Bold;
+            rank.alignment = TextAnchor.MiddleCenter;
+            rank.color = Color.white;
+            rank.raycastTarget = false;
+            rank.text = ranks[i] > 0 ? ranks[i].ToString() : "-";
+        }
+        return button;
+    }
 
     void BuildDifficultyPanel()
     {
@@ -305,8 +389,10 @@ public class GameMenus : MonoBehaviour
         {
             var difficulty = (Difficulty)i;
             int high = ScoreKeeper.GetHighScore(level, difficulty);
+            int chartLevel = level.ChartLevel(difficulty);
+            string rating = chartLevel > 0 ? $"LV {chartLevel}      " : "";
             difficultyButtons[i].GetComponentInChildren<Text>().text =
-                $"{ScoreKeeper.DifficultyName(difficulty)}      HIGH SCORE  {(high >= 0 ? ScoreKeeper.FormatPoints(high) : "-")}";
+                $"{ScoreKeeper.DifficultyName(difficulty)}  {rating}HIGH SCORE  {(high >= 0 ? ScoreKeeper.FormatPoints(high) : "-")}";
         }
 
         Button selected = difficultyButtons[(int)ScoreKeeper.SelectedDifficulty];
@@ -412,6 +498,10 @@ public class GameMenus : MonoBehaviour
         label.alignment = TextAnchor.MiddleCenter;
         label.raycastTarget = false;
         label.text = text;
+
+        var element = image.gameObject.AddComponent<LayoutElement>();
+        element.preferredHeight = 70f;
+        element.minHeight = 70f;
         return button;
     }
 

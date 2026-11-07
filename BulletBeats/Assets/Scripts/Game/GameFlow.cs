@@ -38,6 +38,17 @@ public class GameFlow : MonoBehaviour
         public float bpm;
         [Tooltip("Seconds from the start of the file to beat 1. 0 if the downbeat is at the start.")]
         public float firstBeatOffset;
+        [Tooltip("Chart rating, 1 to 10, for the Easy / Medium / Hard charts of this song.")]
+        public int easyLevel;
+        public int mediumLevel;
+        public int hardLevel;
+
+        public int ChartLevel(Difficulty difficulty) => difficulty switch
+        {
+            Difficulty.Easy => easyLevel,
+            Difficulty.Difficult => hardLevel,
+            _ => mediumLevel
+        };
     }
 
     public static GameFlow Instance { get; private set; }
