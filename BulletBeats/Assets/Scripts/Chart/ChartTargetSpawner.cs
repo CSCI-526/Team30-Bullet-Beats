@@ -39,6 +39,39 @@ public class ChartTargetSpawner : MonoBehaviour
     [Range(0.5f, 1f)] public float maxViewportY = 1f;
     [Tooltip("Minimum viewport distance between two live targets.")]
     public float minViewportSeparation = 0.14f;
+    [Tooltip("No asteroid aims inside this viewport radius around the ship. 0 = off.")]
+    [Min(0f)] public float shipKeepOutRadius = 0.12f;
+    [Tooltip("Hard-ban aim points under the ship (same X band, lower on screen) so rocks can't hide below it.")]
+    public bool banBelowShip = true;
+    [Tooltip("How wide the below-ship ban is, as a fraction of screen width (each side of the ship).")]
+    [Range(0.05f, 0.5f)] public float belowShipHalfWidth = 0.28f;
+    [Tooltip("Extra viewport lift above the ship before an aim point is allowed.")]
+    [Min(0f)] public float belowShipPadding = 0.04f;
+    [Tooltip("Most asteroids allowed on screen at once. Notes beyond this are skipped. 0 = no limit.")]
+    [Min(0)] public int maxLiveAsteroids = 4;
+
+    [Header("Shape bursts")]
+    [Tooltip("When this many (or more) chart notes share nearly the same time, place them on a shape instead of random quadrants. Uses that count only — no extras.")]
+    public bool shapeBursts = true;
+    [Tooltip("Minimum notes in one time cluster to trigger a shape.")]
+    [Min(3)] public int shapeMinCount = 3;
+    [Tooltip("Notes within this many seconds of the first note count as the same burst.")]
+    [Min(0f)] public float shapeClusterWindow = 0.08f;
+    [Tooltip("Shape asteroids ignore the on-screen cap so the figure always completes.")]
+    public bool shapeIgnoreCap = true;
+    [Tooltip("Gap from screen edges for circle / X (viewport 0-0.5).")]
+    [Range(0.02f, 0.3f)] public float shapeEdgeMargin = 0.12f;
+    [Tooltip("Figure-8 vertical reach above/below center.")]
+    [Range(0.02f, 0.5f)] public float shapeFigure8Height = 0.18f;
+    public enum BurstShape { Circle, X, Figure8 }
+    [Tooltip("Preferred shape. With Mix Shapes on, cycles Circle → X → Figure8.")]
+    public BurstShape preferredShape = BurstShape.Circle;
+    [Tooltip("Cycle shapes instead of always using Preferred Shape.")]
+    public bool mixShapes = true;
+    int shapeCycle;
+
+    [Tooltip("Stem-driven spawn path. Empty = found or added on Awake. Only runs when the level has stems.")]
+    public AsteroidChoreography choreography;
 
     [Header("Prefab")]
     [Tooltip("Optional. Empty = spawn a simple cube placeholder.")]
@@ -100,6 +133,7 @@ public class ChartTargetSpawner : MonoBehaviour
             notes.AddRange(thinned);
         }
         nextIndex = 0;
+        shapeCycle = 0;
     }
 
     /// <summary>Seconds into the current note window for HUD (0 = just after note, 1 = next note).</summary>
@@ -124,6 +158,8 @@ public class ChartTargetSpawner : MonoBehaviour
     void Awake()
     {
         Instance = this;
+        if (choreography == null) choreography = GetComponent<AsteroidChoreography>();
+        if (choreography == null) choreography = gameObject.AddComponent<AsteroidChoreography>();
     }
 
     void OnDestroy()
@@ -152,29 +188,157 @@ public class ChartTargetSpawner : MonoBehaviour
         if (clock.HasMusic && !clock.IsMusicPlaying) return;
 
         float songTime = clock.SongTime;
-        float quarter = clock.SecondsPerBeat;
-        float planetLead = Mathf.Max(planetLeadSeconds, quarter);
+        float planetLead = LeadTime;
         SharedLeadTime = planetLead;
+
+        // Stems are spawning the asteroids (AsteroidChoreography), so the chart is not used.
+        if (StemsDriving) return;
 
         // Only spawn when that planet's fly-in actually begins. Notes whose flight
         // would have started before the song are skipped, so the count-in does not
         // dump the first several seconds of planets into the air at once.
         const float spawnSlack = 0.08f;
+        float quarter = clock.SecondsPerBeat;
         while (nextIndex < notes.Count && notes[nextIndex].time - planetLead <= songTime)
         {
             float spawnAt = notes[nextIndex].time - planetLead;
             bool onTime = songTime - spawnAt <= spawnSlack && songTime <= notes[nextIndex].time;
-            if (onTime)
+            if (!onTime)
+            {
+                nextIndex++;
+                continue;
+            }
+
+            // Peek ahead: notes that hit at nearly the same time form one burst.
+            float clusterTime = notes[nextIndex].time;
+            int end = nextIndex + 1;
+            while (end < notes.Count && notes[end].time - clusterTime <= shapeClusterWindow)
+                end++;
+            int count = end - nextIndex;
+
+            if (shapeBursts && count >= shapeMinCount)
+            {
+                BurstShape shape = NextBurstShape();
+                for (int i = 0; i < count; i++)
+                    Spawn(notes[nextIndex + i], quarter, planetLead, ShapePoint(shape, i, count), shapeIgnoreCap);
+                nextIndex = end;
+            }
+            else
+            {
                 Spawn(notes[nextIndex], quarter, planetLead);
-            nextIndex++;
+                nextIndex++;
+            }
         }
     }
 
-    void Spawn(ChartNote note, float quarter, float lead)
+    /// <summary>Seconds from spawn to the hit point: at least one quarter note.</summary>
+    public float LeadTime
     {
+        get
+        {
+            BeatClock clock = BeatClock.Instance;
+            float quarter = clock != null ? clock.SecondsPerBeat : 0.5f;
+            return Mathf.Max(planetLeadSeconds, quarter);
+        }
+    }
+
+    bool StemsDriving => choreography != null && choreography.enabled && choreography.HasLoadedStems;
+
+    /// <summary>
+    /// Spawns an asteroid that reaches the ship at noteTime, aimed at a point inside
+    /// area (viewport 0-1). Used by AsteroidChoreography.
+    /// </summary>
+    public bool SpawnInArea(float noteTime, Rect area, bool centered = false, bool ignoreCap = false)
+    {
+        if (!ignoreCap && maxLiveAsteroids > 0 && liveViewports.Count >= maxLiveAsteroids) return false;
+        BeatClock clock = BeatClock.Instance;
+        float quarter = clock != null ? clock.SecondsPerBeat : 0.5f;
+        var note = new ChartNote(noteTime, 0, NoteLane.LeftUpper);
+        Vector2 viewport = centered
+            ? new Vector2(area.center.x, Mathf.Min(area.center.y, maxViewportY))
+            : PickInArea(area.xMin, area.xMax, area.yMin, area.yMax);
+        SpawnAt(note, quarter, LeadTime, viewport);
+        return true;
+    }
+
+    void Spawn(ChartNote note, float quarter, float lead) => Spawn(note, quarter, lead, PickViewport(note.lane), false);
+
+    void Spawn(ChartNote note, float quarter, float lead, Vector2 viewport, bool ignoreCap = false)
+    {
+        if (!ignoreCap && maxLiveAsteroids > 0 && liveViewports.Count >= maxLiveAsteroids) return;
+        SpawnAt(note, quarter, lead, viewport);
+    }
+
+    BurstShape NextBurstShape()
+    {
+        if (!mixShapes) return preferredShape;
+        BurstShape shape = (BurstShape)(shapeCycle % 3);
+        shapeCycle++;
+        return shape;
+    }
+
+    /// <summary>
+    /// Viewport point <paramref name="index"/> of <paramref name="count"/> along a shape.
+    /// Count is the burst size — no padding to a fixed step count.
+    /// </summary>
+    Vector2 ShapePoint(BurstShape shape, int index, int count)
+    {
+        count = Mathf.Max(1, count);
+        index = ((index % count) + count) % count;
+        float margin = Mathf.Clamp(shapeEdgeMargin, 0.02f, 0.3f);
+        Vector2 point;
+        switch (shape)
+        {
+            case BurstShape.X:
+                point = XPoint(index, count, margin);
+                break;
+            case BurstShape.Figure8:
+                point = Figure8Point(index, count, margin);
+                break;
+            default:
+                point = CirclePoint(index, count, margin);
+                break;
+        }
+        point.y = Mathf.Min(point.y, maxViewportY);
+        return point;
+    }
+
+    static Vector2 CirclePoint(int index, int count, float margin)
+    {
+        float angle = (270f + index * 360f / count) * Mathf.Deg2Rad;
+        float r = 0.5f - margin;
+        return new Vector2(0.5f + Mathf.Cos(angle) * r, 0.5f + Mathf.Sin(angle) * r);
+    }
+
+    static Vector2 XPoint(int index, int count, float margin)
+    {
+        // Split the burst across the two diagonals (no extra points).
+        int firstLine = (count + 1) / 2;
+        bool line0 = index < firstLine;
+        int lineCount = line0 ? firstLine : count - firstLine;
+        int lineIndex = line0 ? index : index - firstLine;
+        float t = lineCount <= 1 ? 0.5f : lineIndex / (float)(lineCount - 1);
+        float lo = margin, hi = 1f - margin;
+        Vector2 start = line0 ? new Vector2(lo, hi) : new Vector2(hi, hi);
+        Vector2 end = line0 ? new Vector2(hi, lo) : new Vector2(lo, lo);
+        return Vector2.Lerp(start, end, t);
+    }
+
+    Vector2 Figure8Point(int index, int count, float margin)
+    {
+        float t = index / (float)count * 2f * Mathf.PI;
+        float halfWidth = 0.5f - margin;
+        float y = Mathf.Clamp(shapeFigure8Height, 0.02f, 0.5f);
+        return new Vector2(0.5f + Mathf.Sin(t) * halfWidth, 0.5f + Mathf.Sin(2f * t) * y);
+    }
+
+    void SpawnAt(ChartNote note, float quarter, float lead, Vector2 viewport)
+    {
+        viewport = AwayFromShip(viewport);
+        viewport.y = Mathf.Min(viewport.y, maxViewportY);
+
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
-        Vector2 viewport = PickViewport(note.lane);
         float spawnDistance = Mathf.Max(spawnDistanceFromCamera * Mathf.Max(1f, spawnDistanceMultiplier), distanceFromCamera + 1f);
         if (cam != null && cam.farClipPlane < spawnDistance + 50f)
             cam.farClipPlane = spawnDistance + 50f;
@@ -258,6 +422,11 @@ public class ChartTargetSpawner : MonoBehaviour
         float xMax = left ? 0.5f - quadrantMargin : 1f - quadrantMargin;
         float yMin = upper ? 0.5f + quadrantMargin : quadrantMargin;
         float yMax = upper ? 1f - quadrantMargin : 0.5f - quadrantMargin;
+        return PickInArea(xMin, xMax, yMin, yMax);
+    }
+
+    Vector2 PickInArea(float xMin, float xMax, float yMin, float yMax)
+    {
         yMax = Mathf.Min(yMax, maxViewportY);
         yMin = Mathf.Min(yMin, yMax);
 
@@ -266,6 +435,7 @@ public class ChartTargetSpawner : MonoBehaviour
         for (int attempt = 0; attempt < 10; attempt++)
         {
             Vector2 candidate = new Vector2(Random.Range(xMin, xMax), Random.Range(yMin, yMax));
+            if (BlockedByShip(candidate)) continue;
             float nearest = float.MaxValue;
             for (int i = 0; i < liveViewports.Count; i++)
                 nearest = Mathf.Min(nearest, Vector2.Distance(candidate, liveViewports[i]));
@@ -276,7 +446,84 @@ public class ChartTargetSpawner : MonoBehaviour
                 best = candidate;
             }
         }
-        return best;
+        return AwayFromShip(best);
+    }
+
+    bool BlockedByShip(Vector2 viewport)
+    {
+        if (!TryGetShipViewport(out Vector2 ship)) return false;
+        if (banBelowShip && IsBelowShip(viewport, ship)) return true;
+        return shipKeepOutRadius > 0f && Vector2.Distance(viewport, ship) < shipKeepOutRadius;
+    }
+
+    bool IsBelowShip(Vector2 viewport, Vector2 ship)
+    {
+        if (viewport.y >= ship.y + belowShipPadding) return false;
+        return Mathf.Abs(viewport.x - ship.x) <= belowShipHalfWidth;
+    }
+
+    /// <summary>
+    /// Lifts points out from under the ship, then pushes them off the keep-out ring.
+    /// Never leaves an aim point in the below-ship ban.
+    /// </summary>
+    Vector2 AwayFromShip(Vector2 viewport)
+    {
+        if (!TryGetShipViewport(out Vector2 ship)) return viewport;
+
+        if (banBelowShip && IsBelowShip(viewport, ship))
+        {
+            viewport.y = Mathf.Min(maxViewportY, ship.y + Mathf.Max(belowShipPadding, shipKeepOutRadius));
+            // If still inside the X band and keep-out, nudge sideways too.
+            if (shipKeepOutRadius > 0f && Vector2.Distance(viewport, ship) < shipKeepOutRadius)
+            {
+                float side = viewport.x >= ship.x ? 1f : -1f;
+                viewport.x = Mathf.Clamp01(ship.x + side * shipKeepOutRadius);
+            }
+        }
+
+        if (shipKeepOutRadius > 0f)
+        {
+            Vector2 delta = viewport - ship;
+            float dist = delta.magnitude;
+            if (dist < shipKeepOutRadius)
+            {
+                if (dist < 0.0001f) delta = Vector2.up;
+                else delta /= dist;
+                // Prefer not to push further under the ship.
+                if (banBelowShip && delta.y < 0f) delta.y = Mathf.Abs(delta.y);
+                if (delta.sqrMagnitude < 0.0001f) delta = Vector2.up;
+                else delta.Normalize();
+                viewport = ship + delta * shipKeepOutRadius;
+            }
+        }
+
+        viewport.x = Mathf.Clamp01(viewport.x);
+        viewport.y = Mathf.Clamp(viewport.y, 0f, maxViewportY);
+        if (banBelowShip && IsBelowShip(viewport, ship))
+            viewport.y = Mathf.Min(maxViewportY, ship.y + Mathf.Max(belowShipPadding, 0.02f));
+        return viewport;
+    }
+
+    static bool TryGetShipViewport(out Vector2 viewport)
+    {
+        viewport = default;
+        Camera cam = DisplayCamera.Find();
+        if (cam == null) cam = Camera.main;
+        if (cam == null) return false;
+
+        Transform ship = null;
+        if (PlayerHealth.Instance != null) ship = PlayerHealth.Instance.transform;
+        else
+        {
+            PlayerMovement move = FindFirstObjectByType<PlayerMovement>();
+            if (move != null) ship = move.transform;
+        }
+        if (ship == null) return false;
+
+        Vector3 point = cam.WorldToViewportPoint(ship.position);
+        if (point.z <= 0f) return false;
+        viewport = new Vector2(point.x, point.y);
+        return true;
     }
 
     public void ReleaseViewport(Vector2 viewport)

@@ -43,6 +43,13 @@ public class GameFlow : MonoBehaviour
         public int mediumLevel;
         public int hardLevel;
 
+        [Header("Stems (optional)")]
+        [Tooltip("Isolated parts of the song. When any are set, AsteroidChoreography spawns from them instead of the spectrum/MIDI chart.")]
+        public AudioClip drumsStem;
+        public AudioClip otherStem;
+        public AudioClip vocalsStem;
+        public AudioClip bassStem;
+
         public int ChartLevel(Difficulty difficulty) => difficulty switch
         {
             Difficulty.Easy => easyLevel,

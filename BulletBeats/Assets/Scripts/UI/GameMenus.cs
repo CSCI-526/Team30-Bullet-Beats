@@ -140,6 +140,7 @@ public class GameMenus : MonoBehaviour
         AddButton(titlePanel, "QUIT", -280f, flow.Quit);
 #endif
         BuildAimAssistSlider();
+        BuildHoldToFireToggle();
     }
 
     void BuildAimAssistSlider()
@@ -188,6 +189,94 @@ public class GameMenus : MonoBehaviour
     }
 
     static string AimAssistLabel(float value) => $"AIM ASSIST  {Mathf.RoundToInt(value * 100f)}%";
+
+    void BuildHoldToFireToggle()
+    {
+        PlayerShooter shooter = FindFirstObjectByType<PlayerShooter>();
+        bool on = PlayerShooter.HoldToFireEnabled;
+        if (shooter != null) shooter.SetHoldToFire(on);
+
+        var row = new GameObject("HoldToFire", typeof(RectTransform)).GetComponent<RectTransform>();
+        row.SetParent(titlePanel.transform, false);
+        row.sizeDelta = new Vector2(460f, 56f);
+        row.anchoredPosition = new Vector2(0f, -500f);
+
+        var label = new GameObject("Label", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+        label.rectTransform.SetParent(row, false);
+        label.rectTransform.anchorMin = new Vector2(0f, 0f);
+        label.rectTransform.anchorMax = new Vector2(1f, 1f);
+        label.rectTransform.offsetMin = Vector2.zero;
+        label.rectTransform.offsetMax = new Vector2(-120f, 0f);
+        label.font = font;
+        label.fontSize = 26;
+        label.fontStyle = FontStyle.Bold;
+        label.color = Color.white;
+        label.alignment = TextAnchor.MiddleLeft;
+        label.raycastTarget = false;
+        label.text = "HOLD TO FIRE";
+
+        const float trackW = 96f, trackH = 40f, knobSize = 32f;
+        var switchRoot = new GameObject("Switch", typeof(RectTransform), typeof(Image), typeof(Button)).GetComponent<RectTransform>();
+        switchRoot.SetParent(row, false);
+        switchRoot.anchorMin = switchRoot.anchorMax = new Vector2(1f, 0.5f);
+        switchRoot.pivot = new Vector2(1f, 0.5f);
+        switchRoot.sizeDelta = new Vector2(trackW, trackH);
+        switchRoot.anchoredPosition = Vector2.zero;
+
+        var hit = switchRoot.GetComponent<Image>();
+        hit.color = new Color(1f, 1f, 1f, 0.001f);
+        hit.raycastTarget = true;
+
+        var track = new GameObject("Track", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        Stretch(track.rectTransform, switchRoot);
+        track.raycastTarget = false;
+
+        var state = new GameObject("State", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
+        Stretch(state.rectTransform, switchRoot);
+        state.font = font;
+        state.fontSize = 16;
+        state.fontStyle = FontStyle.Bold;
+        state.alignment = TextAnchor.MiddleCenter;
+        state.raycastTarget = false;
+
+        var knob = new GameObject("Knob", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        knob.rectTransform.SetParent(switchRoot, false);
+        knob.rectTransform.sizeDelta = new Vector2(knobSize, knobSize);
+        knob.color = Color.white;
+        knob.raycastTarget = false;
+
+        void Paint(bool enabled)
+        {
+            track.color = enabled
+                ? accentColor
+                : new Color(0.18f, 0.18f, 0.28f, 0.95f);
+            state.text = enabled ? "ON" : "OFF";
+            state.color = enabled
+                ? new Color(0.05f, 0.08f, 0.12f, 0.9f)
+                : new Color(0.75f, 0.78f, 0.85f, 0.9f);
+            float x = enabled ? (trackW - knobSize) * 0.5f - 4f : -(trackW - knobSize) * 0.5f + 4f;
+            knob.rectTransform.anchoredPosition = new Vector2(x, 0f);
+        }
+
+        Paint(on);
+
+        var button = switchRoot.GetComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(0.9f, 0.95f, 1f, 1f);
+        colors.pressedColor = new Color(0.75f, 0.85f, 0.95f, 1f);
+        colors.selectedColor = colors.highlightedColor;
+        button.colors = colors;
+        button.targetGraphic = hit;
+        button.onClick.AddListener(() =>
+        {
+            bool next = !PlayerShooter.HoldToFireEnabled;
+            if (shooter == null) shooter = FindFirstObjectByType<PlayerShooter>();
+            if (shooter != null) shooter.SetHoldToFire(next);
+            else PlayerShooter.HoldToFireEnabled = next;
+            Paint(next);
+        });
+    }
 
     void BuildLevelPanel()
     {
