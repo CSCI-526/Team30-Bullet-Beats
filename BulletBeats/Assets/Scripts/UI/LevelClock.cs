@@ -5,7 +5,7 @@ using UnityEngine.UI;
 /// Time left in the level, top right ("0:41"). It counts down on the song clock, so it slows down
 /// with Freeze. In the last <see cref="warningSeconds"/> it turns orange, then red, and pulses once
 /// as each second ticks over (no faster, so it stays flash-safe). Hidden outside play and in the
-/// tutorial. Builds its own overlay canvas, so it needs no scene setup.
+/// tutorial, and while the <see cref="LevelIntroCard"/> is up. Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(GameFlow))]
 public class LevelClock : MonoBehaviour
@@ -24,6 +24,8 @@ public class LevelClock : MonoBehaviour
     const float PulseSeconds = 0.25f;
 
     GameFlow flow;
+    LevelIntroCard intro;
+    RhythmSession session;
     GameObject canvasObject;
     Text label;
 
@@ -33,6 +35,8 @@ public class LevelClock : MonoBehaviour
     void Awake()
     {
         flow = GetComponent<GameFlow>();
+        intro = GetComponent<LevelIntroCard>();
+        session = FindFirstObjectByType<RhythmSession>();
         Instance = this;
         BuildCanvas();
     }
@@ -46,7 +50,9 @@ public class LevelClock : MonoBehaviour
     void LateUpdate()
     {
         float left = 0f;
-        bool show = flow.State == GameState.Playing && !flow.IsTutorial && TryGetTimeLeft(out left);
+        if (intro == null) intro = GetComponent<LevelIntroCard>();
+        bool show = flow.State == GameState.Playing && !flow.IsTutorial && (intro == null || !intro.IsShowing)
+                    && TryGetTimeLeft(out left);
         canvasObject.SetActive(show);
         if (!show) return;
 
@@ -75,7 +81,8 @@ public class LevelClock : MonoBehaviour
             left = Mathf.Max(0f, clock.SongLength - clock.SongTime);
             return true;
         }
-        if (flow.levelLengthSeconds > 0f)
+        // No song in this scene at all: the level runs on GameFlow's fixed length.
+        if (session == null && flow.levelLengthSeconds > 0f)
         {
             left = Mathf.Max(0f, flow.levelLengthSeconds - flow.TimePlayed);
             return true;

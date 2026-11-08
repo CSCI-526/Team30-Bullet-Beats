@@ -51,6 +51,10 @@ static class GameBootstrap
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<ScoreKeeper>();
         if (Object.FindFirstObjectByType<LevelClock>() == null)
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<LevelClock>();
+        if (Object.FindFirstObjectByType<LevelIntroCard>() == null)
+            Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<LevelIntroCard>();
+        if (Object.FindFirstObjectByType<PauseMenu>() == null)
+            Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<PauseMenu>();
         if (Object.FindFirstObjectByType<CornerMute>() == null)
             new GameObject("CornerMute", typeof(CornerMute));
     }
