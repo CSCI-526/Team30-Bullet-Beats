@@ -47,6 +47,11 @@ public class ChartTarget : MonoBehaviour, IShootable
     Color bigWarnColor;
     Renderer[] bigRenderers;
 
+    /// <summary>Indestructible: it has to be dodged.</summary>
+    public bool IsBig => isBig;
+    /// <summary>Shots still needed to break it (turbo asteroids start with more than one).</summary>
+    public int HitsLeft => hitsLeft;
+
     void OnEnable() => active.Add(this);
 
     void OnDisable() => active.Remove(this);
