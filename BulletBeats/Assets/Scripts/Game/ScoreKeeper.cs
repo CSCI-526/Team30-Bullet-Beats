@@ -10,7 +10,7 @@ public enum Difficulty
 
 /// <summary>
 /// Scores the current run Guitar Hero style and keeps a high score per level and difficulty.
-/// Each Perfect / Good / Fine shot scores its points times the streak multiplier; a Miss or a hit
+/// Each Perfect / Good shot scores its points times the streak multiplier; a Miss or a hit
 /// on the ship resets the streak. Runs that end in death count too. High scores live in
 /// PlayerPrefs, so they survive reloads (and on WebGL stay in the player's browser).
 /// Also applies the chosen <see cref="Difficulty"/> to the asteroid spawn rate when play starts.
@@ -24,7 +24,6 @@ public class ScoreKeeper : MonoBehaviour
     [Header("Points per shot")]
     public int perfectPoints = 100;
     public int goodPoints = 50;
-    public int finePoints = 10;
 
     [Header("Streak multiplier")]
     [Tooltip("Streak needed for each step of the multiplier: x2 at this streak, x3 at twice it, ...")]
@@ -37,7 +36,7 @@ public class ScoreKeeper : MonoBehaviour
     [Min(1)] public int difficultNoteStride = 3;
 
     public int Score { get; private set; }
-    /// <summary>Perfect and Good shots in a row; a Miss or getting hit resets it, Fine leaves it.</summary>
+    /// <summary>Perfect and Good shots in a row; a Miss or getting hit resets it.</summary>
     public int Streak { get; private set; }
     public int Multiplier => 1 + Mathf.Min(maxMultiplier - 1, Streak / streakPerStep);
     /// <summary>High score before this run; -1 if this level and difficulty were never played.</summary>
@@ -154,7 +153,6 @@ public class ScoreKeeper : MonoBehaviour
         {
             BeatJudgment.Perfect => perfectPoints,
             BeatJudgment.Good => goodPoints,
-            BeatJudgment.Fine => finePoints,
             _ => 0
         };
         Score += points * Multiplier;

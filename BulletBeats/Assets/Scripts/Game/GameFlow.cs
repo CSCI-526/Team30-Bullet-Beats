@@ -80,7 +80,6 @@ public class GameFlow : MonoBehaviour
     public int PerfectCount { get; private set; }
     public int GoodCount { get; private set; }
     public int MissCount { get; private set; }
-    public int FineCount { get; private set; }
     public PlayerHealth PlayerHealth => health;
     /// <summary>Id of a song the player picked from disk. One high-score slot for whatever they loaded last.</summary>
     public const string CustomLevelId = "custom";
@@ -308,7 +307,7 @@ public class GameFlow : MonoBehaviour
         started = true;
         IsTutorial = tutorial;
         TimePlayed = 0f;
-        PerfectCount = GoodCount = MissCount = FineCount = 0;
+        PerfectCount = GoodCount = MissCount = 0;
         // Difficulty sets the spawn stride from this state change, before the chart is built.
         SetState(GameState.Playing);
         // The tutorial runs on the scene clock with its own asteroids, so the song never starts.
@@ -332,7 +331,6 @@ public class GameFlow : MonoBehaviour
         {
             case BeatJudgment.Perfect: PerfectCount++; break;
             case BeatJudgment.Good: GoodCount++; break;
-            case BeatJudgment.Fine: FineCount++; break;
             default: MissCount++; break;
         }
     }

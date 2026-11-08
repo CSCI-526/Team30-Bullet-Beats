@@ -3,7 +3,9 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Crosshair that stays exactly on the mouse. Timing is shown by the ring on each chart target, not here.
-/// Shows PERFECT / GOOD / MISS under the crosshair after each shot, and lock-on brackets around
+/// After each shot at an asteroid it shows PERFECT / GOOD / MISS next to it, with a small line under it:
+/// on the beat, slightly early/late, too early/late. A shot at empty space shows nothing.
+/// Also draws lock-on brackets around
 /// the rock the next shot goes to when aim assist has locked one (<see cref="PlayerShooter.LockedTarget"/>).
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
@@ -37,7 +39,8 @@ public class AimHUD : MonoBehaviour
     readonly RectTransform[] corners = new RectTransform[4];
     ChartTarget markedTarget;
     float lockInTimer;
-    Text judgmentLabel;
+    RectTransform judgment;
+    Text judgmentLabel, judgmentDetail;
     Color judgmentColor;
     float judgmentTimer;
 
@@ -79,6 +82,7 @@ public class AimHUD : MonoBehaviour
             Color c = judgmentColor;
             c.a = Mathf.Clamp01(judgmentTimer / (judgmentShowTime * 0.5f));
             judgmentLabel.color = c;
+            judgmentDetail.color = new Color(1f, 1f, 1f, c.a * 0.85f);
         }
 
         UpdateLockMarker();
@@ -114,12 +118,31 @@ public class AimHUD : MonoBehaviour
             corners[i].anchoredPosition = CornerDirections[i] * distance;
     }
 
-    void ShowJudgment(BeatJudgment judgment)
+    void ShowJudgment(BeatJudgment result)
     {
-        judgmentLabel.text = judgment.ToString().ToUpperInvariant();
-        judgmentColor = shooter.ColorFor(judgment);
+        // A MISS at empty space says nothing about timing, so it isn't shown.
+        if (shooter.LastShotTarget == null) return;
+
+        judgmentLabel.text = result.ToString().ToUpperInvariant();
+        judgmentDetail.text = Detail(result, shooter.LastShotOffset);
+        judgmentColor = shooter.ColorFor(result);
         judgmentLabel.color = judgmentColor;
         judgmentTimer = judgmentShowTime;
+
+        // Next to the asteroid, just above it.
+        float scale = canvas.scaleFactor;
+        if (shooter.LastShotTarget.TryGetScreenCircle(shooter.aimCamera, out Vector2 center, out float radius))
+            judgment.position = center + Vector2.up * (radius + 34f * scale);
+        else
+            judgment.position = shooter.AimScreenPosition + Vector2.down * (tickGap + TickLength + 30f) * scale;
+    }
+
+    static string Detail(BeatJudgment result, float offset)
+    {
+        if (result == BeatJudgment.Perfect) return "on the beat";
+        bool early = offset < 0f;
+        if (result == BeatJudgment.Good) return early ? "slightly early" : "slightly late";
+        return early ? "too early" : "too late";
     }
 
     void BuildCanvas()
@@ -152,17 +175,24 @@ public class AimHUD : MonoBehaviour
             ticks[i] = AddImage("Tick", vertical ? new Vector2(TickWidth, TickLength) : new Vector2(TickLength, TickWidth), crosshair, crosshairColor);
         }
 
-        judgmentLabel = new GameObject("Judgment", typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
-        var labelRect = judgmentLabel.rectTransform;
-        labelRect.SetParent(crosshair, false);
-        labelRect.sizeDelta = new Vector2(300f, 40f);
-        labelRect.anchoredPosition = new Vector2(0f, -(tickGap + TickLength + 24f));
-        judgmentLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        judgmentLabel.fontSize = 28;
-        judgmentLabel.fontStyle = FontStyle.Bold;
-        judgmentLabel.alignment = TextAnchor.MiddleCenter;
-        judgmentLabel.raycastTarget = false;
-        judgmentLabel.text = "";
+        judgment = AddGroup("Judgment", canvasObject.transform);
+        judgmentLabel = AddText("Result", judgment, 28, FontStyle.Bold, 0f);
+        judgmentDetail = AddText("Detail", judgment, 18, FontStyle.Normal, -24f);
+    }
+
+    static Text AddText(string name, Transform parent, int size, FontStyle style, float y)
+    {
+        var text = new GameObject(name, typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
+        text.rectTransform.SetParent(parent, false);
+        text.rectTransform.sizeDelta = new Vector2(300f, size * 1.4f);
+        text.rectTransform.anchoredPosition = new Vector2(0f, y);
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = size;
+        text.fontStyle = style;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.raycastTarget = false;
+        text.text = "";
+        return text;
     }
 
     static RectTransform AddGroup(string name, Transform parent)

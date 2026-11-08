@@ -49,6 +49,8 @@ static class GameBootstrap
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<AnalyticsHooks>();
         if (Object.FindFirstObjectByType<ScoreKeeper>() == null)
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<ScoreKeeper>();
+        if (Object.FindFirstObjectByType<LevelClock>() == null)
+            Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<LevelClock>();
         if (Object.FindFirstObjectByType<CornerMute>() == null)
             new GameObject("CornerMute", typeof(CornerMute));
     }

@@ -70,18 +70,24 @@ public class PlayerShooter : MonoBehaviour
 
     public Color perfectColor = new Color(1f, 0.85f, 0.2f);
     public Color goodColor = new Color(0.3f, 0.9f, 1f);
-    public Color fineColor = new Color(0.35f, 0.95f, 0.45f);
 
-    /// <summary>Timing feedback only; projectile flight and collision are independent of the judgment.</summary>
+    /// <summary>
+    /// A shot at an asteroid, judged against that asteroid's beat (a shot at nothing is a Miss).
+    /// A Miss doesn't break the asteroid. Shots that collect a pickup aren't judged and don't raise this.
+    /// </summary>
     public event Action<BeatJudgment> ShotFired;
 
     public Color ColorFor(BeatJudgment judgment) => judgment switch
     {
         BeatJudgment.Perfect => perfectColor,
         BeatJudgment.Good => goodColor,
-        BeatJudgment.Fine => fineColor,
         _ => missColor
     };
+
+    /// <summary>The asteroid the last shot was aimed at; null if it was aimed at nothing.</summary>
+    public ChartTarget LastShotTarget { get; private set; }
+    /// <summary>Seconds between the last shot and its asteroid's beat: negative = early, positive = late. NaN without an asteroid.</summary>
+    public float LastShotOffset { get; private set; } = float.NaN;
 
     /// <summary>World point the gun is aiming at.</summary>
     public Vector3 AimPoint { get; private set; }
@@ -194,32 +200,30 @@ public class PlayerShooter : MonoBehaviour
     void Fire()
     {
         lastShotTime = Time.time;
-        BeatClock clock = BeatClock.Instance;
-        BeatJudgment judgment = ChartTarget.JudgeUnderCursor(
-            shotScreenPosition, aimCamera,
-            clock != null ? clock.SongTime : Time.time,
-            clock != null ? clock.perfectWindow : 0.07f,
-            clock != null ? clock.goodWindow : 0.15f);
         Vector3 origin = muzzle != null ? muzzle.position : transform.position;
-        bool connected = LockedTarget != null;
 
-        if (hitscan)
-        {
-            // The marker is a promise: a locked shot always lands on the marked rock.
-            IShootable target = LockedTarget;
-            Vector3 hitPoint = AimPoint;
-            if (LockedTarget == null) target = FindHitscanTarget(aimCamera.ScreenPointToRay(AimScreenPosition), out hitPoint);
-            connected = target is ChartTarget || target is PowerUpPickup;
-            if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
-            FireHitscan(origin, judgment, target, hitPoint);
-        }
-        else
-        {
-            if (connected && judgment == BeatJudgment.Miss) judgment = BeatJudgment.Fine;
-            FireProjectile(origin, judgment);
-        }
+        // The marker is a promise: a locked shot always goes to the marked rock.
+        IShootable target = LockedTarget;
+        Vector3 hitPoint = AimPoint;
+        if (LockedTarget == null) target = FindHitscanTarget(aimCamera.ScreenPointToRay(AimScreenPosition), out hitPoint);
+        BeatJudgment judgment = Judge(target as ChartTarget);
 
-        ShotFired?.Invoke(judgment);
+        if (hitscan) FireHitscan(origin, judgment, target, hitPoint);
+        else FireProjectile(origin, judgment);
+
+        if (target == null || target is ChartTarget) ShotFired?.Invoke(judgment);
+    }
+
+    BeatJudgment Judge(ChartTarget rock)
+    {
+        LastShotTarget = rock;
+        LastShotOffset = float.NaN;
+        BeatClock clock = BeatClock.Instance;
+        if (rock == null || clock == null) return BeatJudgment.Miss;
+
+        BeatJudgment judgment = clock.JudgeAtSongTime(rock.hitTime, out float offset);
+        LastShotOffset = offset;
+        return judgment;
     }
 
     void FireProjectile(Vector3 origin, BeatJudgment judgment)
