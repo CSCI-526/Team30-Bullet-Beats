@@ -38,6 +38,7 @@ public class RhythmSession : MonoBehaviour
     public MetronomeClick metronome;
 
     AudioSource musicSource;
+    AsteroidChoreography choreography;
 
     void Awake()
     {
@@ -143,24 +144,35 @@ public class RhythmSession : MonoBehaviour
 
         float chartEnd = 0f;
         beatClock.bpm = bpm;
+        bool stemsLevel = AsteroidChoreography.HasStems(level);
         List<ChartNote> notes = null;
-        if (chartFromAudio)
+
+        // Stem levels are driven by AsteroidChoreography at runtime. Skip the spectrum/MIDI chart
+        // so the two systems stay independent.
+        if (!stemsLevel)
         {
-            if (musicClip == null)
-                Debug.LogError("RhythmSession: Chart From Audio is on, but Music Clip is empty.", this);
-            else
+            if (chartFromAudio)
             {
-                notes = AudioSpectrumChart.Build(musicClip, out float heardBpm);
-                if (!keepBpm && heardBpm > 1f) bpm = heardBpm;
+                if (musicClip == null)
+                    Debug.LogError("RhythmSession: Chart From Audio is on, but Music Clip is empty.", this);
+                else
+                {
+                    notes = AudioSpectrumChart.Build(musicClip, out float heardBpm);
+                    if (!keepBpm && heardBpm > 1f) bpm = heardBpm;
+                    beatClock.bpm = bpm;
+                    string source = keepBpm ? "level" : "estimated";
+                    Debug.Log($"RhythmSession: {level?.displayName ?? musicClip.name} — {notes.Count} notes @ {bpm:0.#} BPM ({source}).", this);
+                }
+            }
+            else if (MidiChartReader.TryLoadStreamingChart(midiFileName, out notes, out float fileBpm))
+            {
+                if (!keepBpm && fileBpm > 1f) bpm = fileBpm;
                 beatClock.bpm = bpm;
-                string source = keepBpm ? "level" : "estimated";
-                Debug.Log($"RhythmSession: {level?.displayName ?? musicClip.name} — {notes.Count} notes @ {bpm:0.#} BPM ({source}).", this);
             }
         }
-        else if (MidiChartReader.TryLoadStreamingChart(midiFileName, out notes, out float fileBpm))
+        else
         {
-            if (!keepBpm && fileBpm > 1f) bpm = fileBpm;
-            beatClock.bpm = bpm;
+            Debug.Log($"RhythmSession: {level?.displayName} — stem choreography (no spectrum/MIDI chart).", this);
         }
 
         if (notes != null && notes.Count > 0 && spawner != null)
@@ -169,6 +181,8 @@ public class RhythmSession : MonoBehaviour
             if (metronome != null) metronome.SetChartNotes(spawner.Notes);
             chartEnd = notes[notes.Count - 1].time + chartOffsetSeconds + 2f;
         }
+        if (stemsLevel && musicClip != null)
+            chartEnd = Mathf.Max(chartEnd, musicClip.length + 2f);
         beatClock.songLength = chartEnd;
         if (musicClip == null && chartEnd > 0f)
         {
@@ -192,6 +206,10 @@ public class RhythmSession : MonoBehaviour
             metronome.playOnStart = metronomeOn;
             metronome.enabled = metronomeOn || countInBeats > 0;
         }
+
+        choreography = spawner != null ? spawner.choreography : null;
+        if (choreography != null)
+            yield return choreography.Load(level);
 
         yield return StartCoroutine(CountInThenPlay());
     }
@@ -237,6 +255,8 @@ public class RhythmSession : MonoBehaviour
             beatClock.ResetBeatTracking();
             if (metronome != null) metronome.RewindNotes();
             musicSource.Play();
+            if (choreography != null && spawner != null)
+                choreography.Play(musicSource, spawner, spawner.LeadTime);
             Debug.Log($"RhythmSession: playing {musicSource.clip.name} (listeners {CountEnabledListeners()}, pause {AudioListener.pause}).", this);
         }
     }

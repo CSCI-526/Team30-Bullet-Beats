@@ -9,7 +9,9 @@ using UnityEngine.InputSystem;
 ///   A (left)   S (bottom)   D (right)
 /// </code>
 /// The ship starts at S, dashes quickly to the spot of the key pressed and stays there until
-/// another key is pressed. It is invulnerable while dashing and shortly after.
+/// another key is pressed. Crossing the full width (A↔D) stops at S first: Left+D or Right+A
+/// goes to Bottom, then the same key again reaches the far side.
+/// It is invulnerable while dashing and shortly after.
 /// Only the sideways offset is driven here, so other scripts can still move the ship
 /// (e.g. auto-scroll) at the same time.
 /// </summary>
@@ -56,8 +58,11 @@ public class PlayerMovement : MonoBehaviour
     void Update()
     {
         Keyboard keyboard = Keyboard.current;
-        if (keyboard != null && TryReadPress(keyboard, out Spot pressed) && pressed != Current)
-            DashTo(pressed);
+        if (keyboard != null && TryReadPress(keyboard, out Spot pressed))
+        {
+            Spot target = ResolveTarget(Current, pressed);
+            if (target != Current) DashTo(target);
+        }
 
         if (IsDashing)
         {
@@ -78,6 +83,16 @@ public class PlayerMovement : MonoBehaviour
         else if (keyboard.dKey.wasPressedThisFrame) spot = Spot.Right;
         else return false;
         return true;
+    }
+
+    /// <summary>
+    /// Left↔Right is two steps through Bottom. Every other key still goes straight there.
+    /// </summary>
+    static Spot ResolveTarget(Spot from, Spot pressed)
+    {
+        if (from == Spot.Left && pressed == Spot.Right) return Spot.Bottom;
+        if (from == Spot.Right && pressed == Spot.Left) return Spot.Bottom;
+        return pressed;
     }
 
     void DashTo(Spot spot)
