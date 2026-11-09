@@ -126,8 +126,6 @@ public class PlayerHealth : MonoBehaviour
             return;
         }
 
-        if (judgment == BeatJudgment.Fine) return;
-
         SetStreak(Streak + 1);
         if (judgment == BeatJudgment.Perfect)
             Heal(healAmount);

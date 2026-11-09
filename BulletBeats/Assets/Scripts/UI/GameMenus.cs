@@ -30,6 +30,10 @@ public class GameMenus : MonoBehaviour
     Button yourSongButton;
     readonly Button[] difficultyButtons = new Button[3];
     GameFlow.Level difficultyLevel;
+    Text endReason, endHint;
+    readonly Image[] endStars = new Image[3];
+    Button endNext, endLevelSelect;
+    static Sprite starSprite;
 
     void Awake()
     {
@@ -71,33 +75,111 @@ public class GameMenus : MonoBehaviour
 
     void FillEndScreen()
     {
-        endHeading.text = flow.Won ? "LEVEL COMPLETE" : "GAME OVER";
-        endHeading.color = flow.Won ? winColor : loseColor;
+        bool won = flow.Won;
+        endHeading.text = won ? "LEVEL COMPLETE" : "GAME OVER";
+        endHeading.color = won ? winColor : loseColor;
+        endReason.text = won ? "" : "OUT OF HEALTH";
 
-        int shots = flow.PerfectCount + flow.GoodCount + flow.FineCount + flow.MissCount;
-        int onBeat = flow.PerfectCount + flow.GoodCount;
-        string accuracy = shots > 0 ? $"{Mathf.RoundToInt(100f * onBeat / shots)}%" : "-";
-        int seconds = Mathf.FloorToInt(flow.TimePlayed);
         int bestStreak = flow.PlayerHealth != null ? flow.PlayerHealth.BestStreak : 0;
-
-        string scoreLines = "";
+        string level = $"{flow.CurrentLevel?.displayName ?? "Level"}  -  {ScoreKeeper.DifficultyName(ScoreKeeper.SelectedDifficulty)}";
+        int stars = 0;
         ScoreKeeper keeper = GetComponent<ScoreKeeper>();
         if (keeper != null)
         {
             keeper.RecordResult();
+            stars = keeper.Stars(won);
             string best = keeper.IsNewHighScore
                 ? $"<color=#{ColorUtility.ToHtmlStringRGB(winColor)}>NEW HIGH SCORE!</color>"
                 : $"High score  {ScoreKeeper.FormatPoints(Mathf.Max(keeper.Score, keeper.PreviousHighScore))}";
-            scoreLines = $"Score  {ScoreKeeper.FormatPoints(keeper.Score)}\n{best}\n";
+            endStats.text = $"{level}\n\nScore  {ScoreKeeper.FormatPoints(keeper.Score)}\n{best}\n" +
+                            $"Perfect  {Percent(keeper.PerfectShare)}     Best streak  {bestStreak}";
+            endHint.text = won ? StarHint(keeper, stars) : "";
+        }
+        else
+        {
+            endStats.text = $"{level}\n\nBest streak  {bestStreak}";
+            endHint.text = "";
         }
 
-        endStats.text =
-            $"{flow.CurrentLevel?.displayName ?? "Level"}  -  {ScoreKeeper.DifficultyName(ScoreKeeper.SelectedDifficulty)}\n\n" +
-            scoreLines +
-            $"Time  {seconds / 60}:{seconds % 60:00}\n" +
-            $"Perfect  {flow.PerfectCount}     Good  {flow.GoodCount}     Fine  {flow.FineCount}     Miss  {flow.MissCount}\n" +
-            $"On-beat accuracy  {accuracy}\n" +
-            $"Best streak  {bestStreak}";
+        for (int i = 0; i < endStars.Length; i++)
+        {
+            endStars[i].gameObject.SetActive(won);
+            endStars[i].color = i < stars ? winColor : new Color(1f, 1f, 1f, 0.18f);
+        }
+
+        GameFlow.Level next = won ? NextLevel() : null;
+        endNext.gameObject.SetActive(next != null);
+        endNext.onClick.RemoveAllListeners();
+        if (next != null) endNext.onClick.AddListener(() => flow.StartLevel(next));
+        // Level select moves up into the free slot when there is no next level.
+        ((RectTransform)endLevelSelect.transform).anchoredPosition = new Vector2(0f, next != null ? -360f : -270f);
+    }
+
+    static string Percent(float share) => $"{Mathf.RoundToInt(share * 100f)}%";
+
+    /// <summary>How the stars were earned, and what the next one takes.</summary>
+    static string StarHint(ScoreKeeper keeper, int stars)
+    {
+        string onBeat = $"{Percent(keeper.OnBeatShare)} of the asteroids hit on the beat";
+        if (stars >= 3) return onBeat;
+        float goal = stars <= 1 ? keeper.twoStarShare : keeper.threeStarShare;
+        return $"{onBeat}. {Percent(goal)} for {stars + 1} stars.";
+    }
+
+    GameFlow.Level NextLevel()
+    {
+        GameFlow.Level current = flow.CurrentLevel;
+        int i = current != null ? System.Array.IndexOf(flow.levels, current) : -1;
+        if (i < 0 || i + 1 >= flow.levels.Length) return null;
+        return GameFlow.CanLoad(flow.levels[i + 1]) ? flow.levels[i + 1] : null;
+    }
+
+    Image AddStar(GameObject panel, float x, float y, float size)
+    {
+        var star = new GameObject("Star", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        star.rectTransform.SetParent(panel.transform, false);
+        star.rectTransform.sizeDelta = Vector2.one * size;
+        star.rectTransform.anchoredPosition = new Vector2(x, y);
+        star.sprite = StarSprite();
+        star.raycastTarget = false;
+        return star;
+    }
+
+    /// <summary>A white five-pointed star drawn in code (no image asset), tinted per use.</summary>
+    static Sprite StarSprite()
+    {
+        if (starSprite != null) return starSprite;
+        const int size = 128;
+        var corners = new Vector2[10];
+        for (int i = 0; i < corners.Length; i++)
+        {
+            float angle = Mathf.PI * 0.5f + i * Mathf.PI / 5f;
+            float radius = (i % 2 == 0 ? 0.48f : 0.19f) * size;
+            corners[i] = new Vector2(size * 0.5f + Mathf.Cos(angle) * radius, size * 0.5f + Mathf.Sin(angle) * radius);
+        }
+
+        var pixels = new Color32[size * size];
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+                pixels[y * size + x] = new Color32(255, 255, 255, (byte)(Inside(corners, new Vector2(x + 0.5f, y + 0.5f)) ? 255 : 0));
+
+        var texture = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        texture.SetPixels32(pixels);
+        texture.Apply();
+        starSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f));
+        return starSprite;
+    }
+
+    static bool Inside(Vector2[] polygon, Vector2 point)
+    {
+        bool inside = false;
+        for (int i = 0, j = polygon.Length - 1; i < polygon.Length; j = i++)
+        {
+            if ((polygon[i].y > point.y) != (polygon[j].y > point.y) &&
+                point.x < (polygon[j].x - polygon[i].x) * (point.y - polygon[i].y) / (polygon[j].y - polygon[i].y) + polygon[i].x)
+                inside = !inside;
+        }
+        return inside;
     }
 
     static void EnsureEventSystem()
@@ -524,13 +606,17 @@ public class GameMenus : MonoBehaviour
     void BuildEndPanel()
     {
         endPanel = NewPanel("End");
-        endHeading = AddText(endPanel, "", 96, Color.white, 260f, FontStyle.Bold);
-        endStats = AddText(endPanel, "", 30, Color.white, 50f);
-        endStats.rectTransform.sizeDelta = new Vector2(1200f, 340f);
+        endHeading = AddText(endPanel, "", 96, Color.white, 300f, FontStyle.Bold);
+        endReason = AddText(endPanel, "", 40, loseColor, 215f, FontStyle.Bold);
+        for (int i = 0; i < endStars.Length; i++)
+            endStars[i] = AddStar(endPanel, (i - 1) * 110f, 205f, 90f);
+        endStats = AddText(endPanel, "", 30, Color.white, 40f);
+        endStats.rectTransform.sizeDelta = new Vector2(1200f, 250f);
+        endHint = AddText(endPanel, "", 24, accentColor, -95f);
 
-        endFirst = AddButton(endPanel, "RETRY", -170f, flow.Retry);
-        AddButton(endPanel, "LEVEL SELECT", -260f, flow.ShowLevelSelect);
-        AddButton(endPanel, "MAIN MENU", -350f, flow.ShowTitle);
+        endFirst = AddButton(endPanel, "RETRY", -180f, flow.Retry);
+        endNext = AddButton(endPanel, "NEXT LEVEL", -270f, () => { });
+        endLevelSelect = AddButton(endPanel, "LEVEL SELECT", -360f, flow.ShowLevelSelect);
     }
 
     GameObject NewPanel(string name)

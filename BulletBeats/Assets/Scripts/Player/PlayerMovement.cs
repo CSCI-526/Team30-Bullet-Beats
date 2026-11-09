@@ -27,6 +27,12 @@ public class PlayerMovement : MonoBehaviour
     [Tooltip("Left/right and up/down follow this transform's axes, usually the gameplay camera. Empty = the camera drawn on screen.")]
     public Transform axesFrom;
 
+    [Header("Size")]
+    [Tooltip("Ship size relative to the prefab. The asteroids' hit radius around the ship shrinks with it.")]
+    [Range(0.3f, 1f)] public float shipScale = 0.7f;
+    [Tooltip("At A and D the whole ship stays this far inside the screen edge (share of the screen width). On narrow screens A and D move in.")]
+    [Range(0f, 0.2f)] public float screenMargin = 0.02f;
+
     [Header("Dash")]
     [Min(0.01f)] public float dashDuration = 0.12f;
     [Tooltip("Stays invulnerable for this long after a dash ends.")]
@@ -41,9 +47,18 @@ public class PlayerMovement : MonoBehaviour
     /// <summary>Raised when a dash to a new spot starts.</summary>
     public event Action<Spot> Dashed;
 
+    /// <summary>Size of the ship in this scene relative to the prefab (1 = prefab size).</summary>
+    public static float SizeScale { get; private set; } = 1f;
+
     Vector2 offset, appliedOffset, dashFrom, dashTo;
     float dashTime = float.MaxValue;
     float invulnerableUntil = float.NegativeInfinity;
+
+    void Awake()
+    {
+        transform.localScale *= shipScale;
+        SizeScale = shipScale;
+    }
 
     void Start()
     {
@@ -108,10 +123,49 @@ public class PlayerMovement : MonoBehaviour
     Vector2 OffsetOf(Spot spot) => spot switch
     {
         Spot.Center => center,
-        Spot.Left => left,
-        Spot.Right => right,
+        Spot.Left => new Vector2(Mathf.Max(left.x, -SideLimit(-1f)), left.y),
+        Spot.Right => new Vector2(Mathf.Min(right.x, SideLimit(1f)), right.y),
         _ => bottom
     };
+
+    /// <summary>
+    /// How far right (<paramref name="side"/> 1) or left (-1) of S the ship can go and still be fully on
+    /// screen in the current window.
+    /// </summary>
+    float SideLimit(float side)
+    {
+        Camera cam = DisplayCamera.Find();
+        if (cam == null) return float.MaxValue;
+
+        Vector3 rightAxis = axesFrom != null ? axesFrom.right : Vector3.right;
+        Vector3 upAxis = axesFrom != null ? axesFrom.up : Vector3.up;
+        Vector3 toS = -(rightAxis * appliedOffset.x + upAxis * appliedOffset.y);
+        // Moving sideways at a fixed depth moves the ship linearly on screen, so two samples give the limit.
+        float atS = Reach(cam, toS, side);
+        float perUnit = Reach(cam, toS + rightAxis * side, side) - atS;
+        return perUnit > 0f ? Mathf.Max(0f, (1f - screenMargin - atS) / perUnit) : float.MaxValue;
+    }
+
+    /// <summary>
+    /// How close the ship's meshes, moved by <paramref name="shift"/>, come to the right (<paramref name="side"/> 1)
+    /// or left (-1) screen edge, as a share of the screen width (1 = touching it).
+    /// </summary>
+    float Reach(Camera cam, Vector3 shift, float side)
+    {
+        float reach = 0f;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>())
+        {
+            if (!(r is MeshRenderer) && !(r is SkinnedMeshRenderer)) continue;
+            Bounds b = r.bounds;
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = new Vector3((i & 1) == 0 ? -1f : 1f, (i & 2) == 0 ? -1f : 1f, (i & 4) == 0 ? -1f : 1f);
+                float x = cam.WorldToViewportPoint(b.center + Vector3.Scale(b.extents, corner) + shift).x;
+                reach = Mathf.Max(reach, side > 0f ? x : 1f - x);
+            }
+        }
+        return reach;
+    }
 
     /// <summary>World position of a spot, e.g. to park a pickup the ship has to dash to.</summary>
     public Vector3 WorldPositionOf(Spot spot)

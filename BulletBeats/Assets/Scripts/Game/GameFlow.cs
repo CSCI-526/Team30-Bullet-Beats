@@ -80,7 +80,6 @@ public class GameFlow : MonoBehaviour
     public int PerfectCount { get; private set; }
     public int GoodCount { get; private set; }
     public int MissCount { get; private set; }
-    public int FineCount { get; private set; }
     public PlayerHealth PlayerHealth => health;
     /// <summary>Id of a song the player picked from disk. One high-score slot for whatever they loaded last.</summary>
     public const string CustomLevelId = "custom";
@@ -122,6 +121,10 @@ public class GameFlow : MonoBehaviour
     }
     /// <summary>True while this run is the tutorial rather than a level.</summary>
     public bool IsTutorial { get; private set; }
+    /// <summary>True while a level is paused (<see cref="PauseMenu"/>): time, the song and the controls are stopped.</summary>
+    public bool IsPaused { get; private set; }
+    /// <summary>Raised when <see cref="IsPaused"/> changes.</summary>
+    public event Action<bool> PausedChanged;
 
     /// <summary>True once the player has finished or skipped the tutorial (saved in PlayerPrefs).</summary>
     public static bool TutorialDone
@@ -142,6 +145,9 @@ public class GameFlow : MonoBehaviour
     RhythmSession session;
     bool started;
     bool musicStarted;
+    float timeScaleBeforePause = 1f;
+    /// <summary>Keeps the controls off while the intro card is up.</summary>
+    bool holdControls;
 
     void Awake()
     {
@@ -197,7 +203,7 @@ public class GameFlow : MonoBehaviour
 
     void Update()
     {
-        if (State != GameState.Playing) return;
+        if (State != GameState.Playing || IsPaused) return;
 
         TimePlayed += Time.deltaTime;
         if (IsTutorial) return; // the tutorial decides when it's over
@@ -308,16 +314,54 @@ public class GameFlow : MonoBehaviour
         started = true;
         IsTutorial = tutorial;
         TimePlayed = 0f;
-        PerfectCount = GoodCount = MissCount = FineCount = 0;
+        PerfectCount = GoodCount = MissCount = 0;
         // Difficulty sets the spawn stride from this state change, before the chart is built.
         SetState(GameState.Playing);
         // The tutorial runs on the scene clock with its own asteroids, so the song never starts.
         if (session != null && !tutorial)
         {
             session.enabled = true;
-            session.Begin(CurrentLevel);
+            StartCoroutine(BeginSongAfterIntro(CurrentLevel));
         }
         if (tutorial && GetComponent<Tutorial>() == null) gameObject.AddComponent<Tutorial>();
+    }
+
+    /// <summary>Shows the level's intro card with the controls off, then starts the song's count-in.</summary>
+    IEnumerator BeginSongAfterIntro(Level level)
+    {
+        LevelIntroCard intro = GetComponent<LevelIntroCard>();
+        if (intro != null)
+        {
+            holdControls = true;
+            SetControlsEnabled(false);
+            yield return intro.Show(level);
+            holdControls = false;
+            SetControlsEnabled(true);
+        }
+        session.Begin(level);
+    }
+
+    /// <summary>Pauses or resumes a level. Pausing only works once the song is playing, and never in the tutorial.</summary>
+    public void SetPaused(bool paused)
+    {
+        if (paused == IsPaused) return;
+        if (paused && (State != GameState.Playing || IsTutorial || !musicStarted)) return;
+
+        IsPaused = paused;
+        if (paused)
+        {
+            timeScaleBeforePause = Time.timeScale;
+            Time.timeScale = 0f;
+            AudioListener.pause = true;
+            SetControlsEnabled(false);
+        }
+        else
+        {
+            Time.timeScale = timeScaleBeforePause;
+            AudioListener.pause = false;
+            StartCoroutine(EnableControlsNextFrame());
+        }
+        PausedChanged?.Invoke(paused);
     }
 
     void OnPlayerDied()
@@ -332,7 +376,6 @@ public class GameFlow : MonoBehaviour
         {
             case BeatJudgment.Perfect: PerfectCount++; break;
             case BeatJudgment.Good: GoodCount++; break;
-            case BeatJudgment.Fine: FineCount++; break;
             default: MissCount++; break;
         }
     }
@@ -348,6 +391,7 @@ public class GameFlow : MonoBehaviour
     void SetState(GameState state)
     {
         State = state;
+        IsPaused = false;
         bool playing = state == GameState.Playing;
         Time.timeScale = playing ? 1f : 0f;
         AudioListener.pause = !playing;
@@ -364,7 +408,7 @@ public class GameFlow : MonoBehaviour
     {
         SetControlsEnabled(false);
         yield return null;
-        SetControlsEnabled(true);
+        SetControlsEnabled(!holdControls);
     }
 
     void SetControlsEnabled(bool enabled)

@@ -47,29 +47,14 @@ public class ChartTarget : MonoBehaviour, IShootable
     Color bigWarnColor;
     Renderer[] bigRenderers;
 
+    /// <summary>Indestructible: it has to be dodged.</summary>
+    public bool IsBig => isBig;
+    /// <summary>Shots still needed to break it (turbo asteroids start with more than one).</summary>
+    public int HitsLeft => hitsLeft;
+
     void OnEnable() => active.Add(this);
 
     void OnDisable() => active.Remove(this);
-
-    /// <summary>Read-only timing feedback; never claims, freezes, or destroys a target.</summary>
-    public static BeatJudgment JudgeUnderCursor(Vector2 screenPoint, Camera cam, float songTime,
-        float perfectWindow, float goodWindow)
-    {
-        if (cam == null) return BeatJudgment.Miss;
-
-        float bestError = float.MaxValue;
-        for (int i = 0; i < active.Count; i++)
-        {
-            ChartTarget candidate = active[i];
-            if (!candidate.RingContains(screenPoint, cam, songTime)) continue;
-            float error = Mathf.Abs(songTime - candidate.hitTime);
-            if (error < bestError) bestError = error;
-        }
-
-        if (bestError <= perfectWindow) return BeatJudgment.Perfect;
-        if (bestError <= goodWindow) return BeatJudgment.Good;
-        return BeatJudgment.Miss;
-    }
 
     /// <summary>
     /// The rock a shot from <paramref name="cursor"/> goes to: the closest one within
@@ -136,6 +121,8 @@ public class ChartTarget : MonoBehaviour, IShootable
     {
         if (isBig) return; // indestructible: force player to dodge
         if (dying) return;
+        // A shot off the beat (outside the Good window) doesn't break it; it keeps flying.
+        if (bullet != null && bullet.Judgment == BeatJudgment.Miss) return;
 
         hitsLeft--;
         if(hitsLeft > 0)
@@ -218,18 +205,6 @@ public class ChartTarget : MonoBehaviour, IShootable
         if (ring != null) Destroy(ring.gameObject);
     }
 
-    bool RingContains(Vector2 screenPoint, Camera cam, float songTime)
-    {
-        if (!RingIsShowing(songTime, out float untilHit)) return false;
-
-        Vector3 center = cam.WorldToScreenPoint(transform.position);
-        if (center.z <= 0f) return false;
-
-        Vector3 edge = cam.WorldToScreenPoint(transform.position + cam.transform.right * RingRadius(untilHit));
-        float pixelRadius = Vector2.Distance(new Vector2(center.x, center.y), new Vector2(edge.x, edge.y));
-        return Vector2.Distance(screenPoint, new Vector2(center.x, center.y)) <= pixelRadius;
-    }
-
     bool RingIsShowing(float songTime, out float untilHit)
     {
         untilHit = hitTime - songTime;
@@ -286,7 +261,7 @@ public class ChartTarget : MonoBehaviour, IShootable
             }
         }
 
-        if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius)
+        if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius * PlayerMovement.SizeScale)
         {
             ship.TakeDamage(1);
             Destroy(gameObject);

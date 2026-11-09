@@ -71,6 +71,9 @@ public class RhythmSession : MonoBehaviour
 
     bool begun;
 
+    /// <summary>Raised on each count-in beat with the beats left (3, 2, 1).</summary>
+    public event System.Action<int> CountInBeat;
+
     /// <summary>
     /// Loads <paramref name="level"/>'s clip and chart, then starts the count-in.
     /// A level BPM above 0 is kept. 0 estimates the tempo from the clip.
@@ -240,6 +243,7 @@ public class RhythmSession : MonoBehaviour
 
         for (int i = 0; i < beats; i++)
         {
+            CountInBeat?.Invoke(beats - i);
             if (metronome != null) metronome.PlayCountInClick();
             yield return WaitDsp(quarter);
         }

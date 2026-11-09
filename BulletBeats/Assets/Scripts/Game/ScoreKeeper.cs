@@ -10,7 +10,7 @@ public enum Difficulty
 
 /// <summary>
 /// Scores the current run Guitar Hero style and keeps a high score per level and difficulty.
-/// Each Perfect / Good / Fine shot scores its points times the streak multiplier; a Miss or a hit
+/// Each Perfect / Good shot scores its points times the streak multiplier; a Miss or a hit
 /// on the ship resets the streak. Runs that end in death count too. High scores live in
 /// PlayerPrefs, so they survive reloads (and on WebGL stay in the player's browser).
 /// Also applies the chosen <see cref="Difficulty"/> to the asteroid spawn rate when play starts.
@@ -24,12 +24,15 @@ public class ScoreKeeper : MonoBehaviour
     [Header("Points per shot")]
     public int perfectPoints = 100;
     public int goodPoints = 50;
-    public int finePoints = 10;
 
     [Header("Streak multiplier")]
     [Tooltip("Streak needed for each step of the multiplier: x2 at this streak, x3 at twice it, ...")]
     [Min(1)] public int streakPerStep = 10;
     [Min(1)] public int maxMultiplier = 4;
+
+    [Header("Stars: share of the needed hits that landed on the beat")]
+    [Range(0f, 1f)] public float twoStarShare = 0.6f;
+    [Range(0f, 1f)] public float threeStarShare = 0.85f;
 
     [Header("Difficulty: one asteroid every N chart notes")]
     [Min(1)] public int easyNoteStride = 7;
@@ -37,17 +40,30 @@ public class ScoreKeeper : MonoBehaviour
     [Min(1)] public int difficultNoteStride = 3;
 
     public int Score { get; private set; }
-    /// <summary>Perfect and Good shots in a row; a Miss or getting hit resets it, Fine leaves it.</summary>
+    /// <summary>Perfect and Good shots in a row; a Miss or getting hit resets it.</summary>
     public int Streak { get; private set; }
     public int Multiplier => 1 + Mathf.Min(maxMultiplier - 1, Streak / streakPerStep);
     /// <summary>High score before this run; -1 if this level and difficulty were never played.</summary>
     public int PreviousHighScore { get; private set; } = -1;
     /// <summary>True if this run beat an earlier score (never on the first run).</summary>
     public bool IsNewHighScore { get; private set; }
+    /// <summary>Shots needed to break every asteroid that came this run (turbo ones count each hit, big ones don't count).</summary>
+    public int HitsNeeded { get; private set; }
+    public int PerfectHits { get; private set; }
+    public int GoodHits { get; private set; }
+    /// <summary>Share of <see cref="HitsNeeded"/> that landed on the beat (Perfect or Good), 0 to 1.</summary>
+    public float OnBeatShare => HitsNeeded > 0 ? Mathf.Clamp01((PerfectHits + GoodHits) / (float)HitsNeeded) : 0f;
+    /// <summary>Share of <see cref="HitsNeeded"/> that were Perfect, 0 to 1.</summary>
+    public float PerfectShare => HitsNeeded > 0 ? Mathf.Clamp01(PerfectHits / (float)HitsNeeded) : 0f;
+
+    /// <summary>1 to 3 stars for a finished level by <see cref="OnBeatShare"/>; 0 when the ship died.</summary>
+    public int Stars(bool won) =>
+        !won ? 0 : 1 + (OnBeatShare >= twoStarShare ? 1 : 0) + (OnBeatShare >= threeStarShare ? 1 : 0);
 
     GameFlow flow;
     PlayerShooter shooter;
     PlayerHealth health;
+    ChartTargetSpawner spawner;
     bool recorded = true;
 
     void Awake()
@@ -55,6 +71,7 @@ public class ScoreKeeper : MonoBehaviour
         flow = GetComponent<GameFlow>();
         shooter = FindFirstObjectByType<PlayerShooter>();
         health = FindFirstObjectByType<PlayerHealth>();
+        spawner = FindFirstObjectByType<ChartTargetSpawner>();
     }
 
     void OnEnable()
@@ -62,6 +79,7 @@ public class ScoreKeeper : MonoBehaviour
         flow.StateChanged += OnStateChanged;
         if (shooter != null) shooter.ShotFired += OnShotFired;
         if (health != null) health.Damaged += OnDamaged;
+        if (spawner != null) spawner.Spawned += OnSpawned;
     }
 
     void OnDisable()
@@ -69,6 +87,7 @@ public class ScoreKeeper : MonoBehaviour
         flow.StateChanged -= OnStateChanged;
         if (shooter != null) shooter.ShotFired -= OnShotFired;
         if (health != null) health.Damaged -= OnDamaged;
+        if (spawner != null) spawner.Spawned -= OnSpawned;
     }
 
     public int NoteStrideFor(Difficulty difficulty) => difficulty switch
@@ -137,13 +156,16 @@ public class ScoreKeeper : MonoBehaviour
         Streak = 0;
         PreviousHighScore = -1;
         IsNewHighScore = false;
+        HitsNeeded = PerfectHits = GoodHits = 0;
         recorded = false;
 
         // The session loads the chart (and applies the stride) when it starts, right after this.
-        ChartTargetSpawner spawner = ChartTargetSpawner.Instance != null
-            ? ChartTargetSpawner.Instance
-            : FindFirstObjectByType<ChartTargetSpawner>();
         if (spawner != null) spawner.noteStride = NoteStrideFor(SelectedDifficulty);
+    }
+
+    void OnSpawned(ChartTarget rock)
+    {
+        if (flow.State == GameState.Playing && !flow.IsTutorial && !rock.IsBig) HitsNeeded += rock.HitsLeft;
     }
 
     void OnShotFired(BeatJudgment judgment)
@@ -154,10 +176,11 @@ public class ScoreKeeper : MonoBehaviour
         {
             BeatJudgment.Perfect => perfectPoints,
             BeatJudgment.Good => goodPoints,
-            BeatJudgment.Fine => finePoints,
             _ => 0
         };
         Score += points * Multiplier;
+        if (judgment == BeatJudgment.Perfect) PerfectHits++;
+        else if (judgment == BeatJudgment.Good) GoodHits++;
 
         if (judgment == BeatJudgment.Perfect || judgment == BeatJudgment.Good) Streak++;
         else if (judgment == BeatJudgment.Miss) Streak = 0;
