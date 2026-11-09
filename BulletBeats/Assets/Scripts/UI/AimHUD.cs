@@ -44,6 +44,9 @@ public class AimHUD : MonoBehaviour
     Color judgmentColor;
     float judgmentTimer;
 
+    [Tooltip("Draw the white lock-on brackets here. Off: the timing brackets on the asteroid show the lock instead.")]
+    public bool showLockBrackets = false;
+
     void Awake()
     {
         shooter = GetComponent<PlayerShooter>();
@@ -90,6 +93,12 @@ public class AimHUD : MonoBehaviour
 
     void UpdateLockMarker()
     {
+        if (!showLockBrackets)
+        {
+            lockMarker.gameObject.SetActive(false);
+            markedTarget = null;
+            return;
+        }
         ChartTarget target = shooter.LockedTarget;
         Vector2 center = default;
         float radius = 0f;
