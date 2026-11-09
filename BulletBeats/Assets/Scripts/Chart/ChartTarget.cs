@@ -33,10 +33,29 @@ public class ChartTarget : MonoBehaviour, IShootable
     int healOnDestroy;
     bool dying;
     bool shieldChecked;
-    LineRenderer ring;
-    const int RingSegments = 48;
-    const float RingMinRadius = 3f;
-    const float RingMaxRadius = 14f;
+    
+    [Header("Lock-on brackets")]
+    [Tooltip("Static corner ticks are this much bigger than the asteroid on screen.")]
+    [Min(1f)] public float tickPadding = 1.1f;
+    [Tooltip("Brackets start at this multiple of the tick size and close in to 1.")]
+    [Min(1.05f)] public float bracketStartScale = 1.7f;
+    [Tooltip("Beats before the hit that brackets show (capped by the flight time).")]
+    [Min(0.25f)] public float bracketBeats = 1f;
+    [Range(0.1f, 0.5f)] public float armLength = 0.28f;
+    public float tickPixels = 2f;
+    public float bracketPixels = 3.5f;
+    public float glowPixels = 7f;
+    public Color tickColor = new Color(1f, 1f, 1f, 0.8f);
+    public Color bracketColor = new Color(0.36f, 0.88f, 1f, 1f);
+    public Color glowColor = new Color(1f, 0.82f, 0.34f, 1f);
+    [Tooltip("Brightness of the second asteroid's brackets when several arrive together.")]
+    [Range(0f, 1f)] public float secondaryAlpha = 0.5f;
+
+    Transform lockRoot;
+    readonly LineRenderer[] tickLines = new LineRenderer[4];
+    readonly LineRenderer[] bracketLines = new LineRenderer[4];
+    static Material lineMaterial; 
+    static PlayerShooter shooterRef;
     /// <summary>A locked rock keeps the lock this much longer, so it doesn't flicker at the edge or between two rocks.</summary>
     const float LockHoldFactor = 1.3f;
     /// <summary>A rock whose ring is closing counts as this much closer: it's the one to hit now.</summary>
@@ -79,7 +98,7 @@ public class ChartTarget : MonoBehaviour, IShootable
             float distance = Vector2.Distance(cursor, center);
             float gap = Mathf.Max(0f, distance - radius);
             bool showing = candidate.RingIsShowing(songTime, out float untilHit);
-            bool inRing = showing && distance <= candidate.ScreenPixels(cam, center, candidate.RingRadius(untilHit)) * hold;
+            bool inRing = showing && distance <= candidate.ScreenPixels(cam, center, candidate.RingRadius(untilHit, cam)) * hold;
             if (gap > reachPixels * hold && !inRing) continue;
 
             float score = gap / hold * (showing ? RingLockPreference : 1f);
@@ -169,7 +188,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         foreach (Renderer r in GetComponentsInChildren<Renderer>())
             baseRadius = Mathf.Max(baseRadius, r.localBounds.extents.magnitude * r.transform.lossyScale.x);
         armed = true;
-        BuildRing();
+        BuildLockOn();
     }
 
     /// <summary>Ring is visible for one quarter note. <paramref name="lead"/> is the full fly-in.</summary>
@@ -202,19 +221,31 @@ public class ChartTarget : MonoBehaviour, IShootable
     {
         if (hasViewport && ChartTargetSpawner.Instance != null)
             ChartTargetSpawner.Instance.ReleaseViewport(viewport);
-        if (ring != null) Destroy(ring.gameObject);
+        if (lockRoot != null) Destroy(lockRoot.gameObject);
     }
+
+    float ShowSeconds => Mathf.Min(quarterSeconds * bracketBeats, approachSeconds);
+    float PerfectWindow { get { BeatClock c = BeatClock.Instance; return c != null ? c.perfectWindow : 0.12f; } }
+    float GoodWindow { get { BeatClock c = BeatClock.Instance; return c != null ? c.goodWindow : 0.25f; } }
 
     bool RingIsShowing(float songTime, out float untilHit)
     {
         untilHit = hitTime - songTime;
-        return armed && !isBig && untilHit <= quarterSeconds && untilHit >= 0f;
+        return armed && !isBig && untilHit <= ShowSeconds && untilHit >= -GoodWindow;
     }
 
-    float RingRadius(float untilHit)
+    /// <summary> Half-size of the static corner ticks in world units. Scaled by distance so they stay the same size on screen. </summary>
+    float TickHalfWorld (Camera cam)
     {
-        float approach = Mathf.Clamp01(untilHit / quarterSeconds);
-        return Mathf.Lerp(RingMinRadius, RingMaxRadius, approach);
+        float dist = Vector3.Dot(transform.position - cam.transform.position, cam.transform.forward);
+        float atHit = baseRadius * (transform.lossyScale.x / baseScale) * tickPadding;
+        return atHit * dist / Mathf.Max(0.01f, hitDistance);
+    }
+
+    float RingRadius(float untilHit, Camera cam)
+    {
+        float closing = Mathf.Clamp01(untilHit / Mathf.Max(0.01f, ShowSeconds));
+        return TickHalfWorld(cam) * Mathf.Lerp(1f, bracketStartScale, closing);
     }
 
     void Update()
@@ -228,7 +259,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         lastPosition = transform.position;
         transform.position = Vector3.LerpUnclamped(spawnPoint, hitPoint, Mathf.Max(0f, travel));
         transform.Rotate(spinAxis, spinSpeed * Time.deltaTime, Space.World);
-        UpdateRing(songTime);
+        UpdateLockOn(songTime);
         if (isBig) PulseWarning(songTime);
 
         //<<<<<<< Updated upstream
@@ -272,7 +303,6 @@ public class ChartTarget : MonoBehaviour, IShootable
         if (songTime >= hitTime && !passed)
         {
             passed = true;
-            if (ring != null) ring.enabled = false;
         }
 
         if (passed)
@@ -317,63 +347,115 @@ public class ChartTarget : MonoBehaviour, IShootable
         return cam.transform.position + dir.normalized / inv;
     }
 
-    void BuildRing()
+    static Material LineMaterial()
     {
-        var go = new GameObject("HitRing");
-        ring = go.AddComponent<LineRenderer>();
-        ring.useWorldSpace = false;
-        ring.loop = true;
-        ring.positionCount = RingSegments;
-        ring.widthMultiplier = 0.3f;
-        ring.numCornerVertices = 2;
-        ring.numCapVertices = 2;
-        ring.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-        ring.receiveShadows = false;
+        if (lineMaterial != null) return lineMaterial;
         Shader shader = Shader.Find("Sprites/Default");
         if (shader == null) shader = Shader.Find("Universal Render Pipeline/Unlit");
-        if (shader != null) ring.material = new Material(shader);
-        for (int i = 0; i < RingSegments; i++)
-        {
-            float a = i / (float)RingSegments * Mathf.PI * 2f;
-            ring.SetPosition(i, new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f));
-        }
+        lineMaterial = new Material(shader);
+        return lineMaterial;
     }
 
-    void UpdateRing(float songTime)
+    static float WorldPerPixel(Camera cam, float dist)
     {
-        if (ring == null) return;
+        float h = cam.orthographic ? cam.orthographicSize * 2f : 2f * dist * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        return h / Mathf.Max(1, cam.pixelHeight);
+    }
 
-        float untilHit = hitTime - songTime;
-        bool visible = !isBig && untilHit <= quarterSeconds && untilHit >= 0f;
-        ring.enabled = visible;
-        if (!visible) return;
+    void BuildLockOn()
+    {
+        lockRoot = new GameObject("LockOn").transform;
+        for (int i = 0; i < 4; i++)
+        {
+            tickLines[i] = MakeCorner(i);
+            bracketLines[i] = MakeCorner(i);
+        }
+        lockRoot.gameObject.SetActive(false);
+    }
 
-        float radius = RingRadius(untilHit);
+    LineRenderer MakeCorner(int index)
+    {
+        var go = new GameObject("Corner" + index);
+        go.transform.SetParent(lockRoot, false);
+        var lr = go.AddComponent<LineRenderer>();
+        lr.useWorldSpace = false;
+        lr.positionCount = 3;
+        lr.numCornerVertices = 2;
+        lr.numCapVertices = 2;
+        lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        lr.receiveShadows = false;
+        lr.sharedMaterial = LineMaterial();
+        return lr;
+    }
+
+    int LockOnRank(float songTime, float good)
+    {
+        int rank = 0;
+        for (int i = 0; i < active.Count; i++)
+        {
+            ChartTarget other = active[i];
+            if (other == this || !other.armed || other.isBig) continue;
+            if (other.hitTime >= hitTime) continue;
+            if (other.hitTime - songTime < -good) continue;
+            rank++;
+        }
+        return rank;
+    }
+
+    void UpdateLockOn(float songTime)
+    {
+        if (lockRoot == null) return;
+
+        bool showing = RingIsShowing(songTime, out float untilHit);
+        lockRoot.gameObject.SetActive(showing);
+        if(!showing) return;
 
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
-        Transform ringTransform = ring.transform;
-        ringTransform.position = transform.position;
-        if (cam != null)
-            ringTransform.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
-        ringTransform.localScale = Vector3.one * radius;
+        if (cam == null) return;
 
-        Color color = RingColor(untilHit);
-        ring.startColor = color;
-        ring.endColor = color;
+        float dist = Vector3.Dot(transform.position - cam.transform.position, cam.transform.forward);
+        if (dist <= 0.01f) { lockRoot.gameObject.SetActive(false); return; }
+
+        lockRoot.position = transform.position;
+        lockRoot.rotation = Quaternion.LookRotation(cam.transform.forward, cam.transform.up);
+
+        float perfect = PerfectWindow, good = GoodWindow;
+        bool landed = Mathf.Abs(untilHit) <= perfect;
+
+        if (shooterRef == null) shooterRef = FindFirstObjectByType<PlayerShooter>();
+        ChartTarget locked = shooterRef != null ? shooterRef.LockedTarget : null;
+        int rank = locked == this ? 0 : Mathf.Max(locked != null ? 1 : 0, LockOnRank(songTime, good));
+        float bracketFade = rank == 0 ? 1f : rank == 1 ? secondaryAlpha : 0f;
+        float tickFade = rank <= 1 ? 1f : 0.35f;
+
+        float show = ShowSeconds;
+        float fadeIn = Mathf.Clamp01((show - untilHit) / (show * 0.2f));
+        float fadeOut = untilHit < 0f ? Mathf.Clamp01(1f + untilHit / good) : 1f;
+        float a = fadeIn * fadeOut;
+
+        float px = WorldPerPixel(cam, dist);
+        SetCorners(tickLines, TickHalfWorld(cam), landed ? glowPixels : tickPixels, px, landed ? glowColor : tickColor, a * tickFade);
+        SetCorners(bracketLines, RingRadius(untilHit, cam), landed ? glowPixels : bracketPixels, px, landed ? glowColor : bracketColor, a * bracketFade);
     }
 
-    static Color RingColor(float untilHit)
+    void SetCorners(LineRenderer[] lines, float half, float pixels, float WorldPerPixel, Color color, float alpha)
     {
-        BeatClock clock = BeatClock.Instance;
-        float perfect = clock != null ? clock.perfectWindow : 0.07f;
-        float good = clock != null ? clock.goodWindow : 0.15f;
-        float abs = Mathf.Abs(untilHit);
-
-        if (untilHit < -perfect) return new Color(1f, 0.25f, 0.25f);
-        if (abs <= perfect) return new Color(1f, 0.92f, 0.35f);
-        if (abs <= good) return new Color(1f, 0.55f, 0.15f);
-        return new Color(0.35f, 0.85f, 1f);
+        color.a *= alpha;
+        float arm = armLength * 2f * half;
+        for (int i = 0; i < lines.Length; i++)
+        {
+            float sx = (i == 0 || i == 3) ? -1f : 1f;
+            float sy = i < 2 ? 1f : -1f;
+            LineRenderer lr = lines[i];
+            lr.enabled = color.a > 0.01f;
+            lr.widthMultiplier = pixels * WorldPerPixel;
+            lr.startColor = color;
+            lr.endColor = color;
+            lr.SetPosition(0, new Vector3(sx * half - sx * arm, sy * half, 0f));
+            lr.SetPosition(1, new Vector3(sx * half, sy * half, 0f));
+            lr.SetPosition(2, new Vector3(sx * half, sy * half - sy * arm, 0f));
+        }
     }
 
     void OnTriggerEnter(Collider other)
