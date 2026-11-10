@@ -109,6 +109,7 @@ public class PowerUpSpawner : MonoBehaviour
         Vector3 bodyOffset = ShipCenter(ship) - ship.transform.position;
         PowerUpPickup pickup = Instantiate(prefab, movement.WorldPositionOf(spot) + bodyOffset, Quaternion.identity);
         pickup.kind = kind;
+        pickup.spot = spot;
         pickup.velocity = Vector3.zero;
         pickup.lifetime = starLifetime;
         pickup.shipOffset = bodyOffset;
