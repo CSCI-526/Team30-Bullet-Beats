@@ -102,6 +102,9 @@ public class PlayerShooter : MonoBehaviour
 
     float lastShotTime = float.NegativeInfinity;
 
+    /// <summary>While true, clicks don't fire but the crosshair and aim assist keep working (the tutorial uses this).</summary>
+    [HideInInspector] public bool fireBlocked;
+
     void Awake()
     {
         if (SavedAimAssist >= 0f) aimAssist = SavedAimAssist;
@@ -145,8 +148,8 @@ public class PlayerShooter : MonoBehaviour
 
         if (CornerMute.Contains(cursor)) return;
         float interval = Mathf.Max(minShotInterval, 1f / holdFireRate);
-        bool pressed = mouse.leftButton.wasPressedThisFrame && Time.time - lastShotTime >= minShotInterval;
-        bool held = holdToFire && mouse.leftButton.isPressed && Time.time - lastShotTime >= interval;
+        bool pressed = !fireBlocked && mouse.leftButton.wasPressedThisFrame && Time.time - lastShotTime >= minShotInterval;
+        bool held = !fireBlocked && holdToFire && mouse.leftButton.isPressed && Time.time - lastShotTime >= interval;
         if (pressed || held)
             Fire();
     }

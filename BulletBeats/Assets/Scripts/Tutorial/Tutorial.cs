@@ -11,7 +11,7 @@ using UnityEngine.UI;
 /// does it. A step only passes once the player has really done it, and after every
 /// <see cref="failsBeforeDemo"/> fails the ghost shows it again. Prompts are one or two words; key caps,
 /// glowing spots, arrows and marks on the asteroids (<see cref="TutorialCues"/>) do the rest. After each
-/// step a check mark waits for NEXT (the button, Space or Enter).
+/// step a check mark waits for SPACE (or Enter).
 /// Steps, each with a big title and one line under it: shoot (3 in a row; SHOOT NOW shows when the
 /// brackets turn gold, which is PERFECT), move (W A S D), dodge big red asteroids (two ways), a turbo
 /// asteroid, the Shield star, the Freeze and Bomb stars, a practice run, then the goal and a 3-2-1
@@ -61,7 +61,7 @@ public class Tutorial : MonoBehaviour
     public bool CanPause => !CanSkip && !IsFinishing;
     /// <summary>The spot the player is being sent to right now (the glowing one), if any.</summary>
     public PlayerMovement.Spot? GoalSpot { get; private set; }
-    /// <summary>True while the check mark waits for NEXT.</summary>
+    /// <summary>True while the check mark waits for SPACE.</summary>
     public bool WaitingForNext => cues != null && cues.WaitingForNext;
 
     GameFlow flow;
@@ -163,7 +163,6 @@ public class Tutorial : MonoBehaviour
     {
         if (CanSkip && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
-        if (shooter != null && shooterLocked && shooter.enabled) shooter.enabled = false;
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
         PulseLivesHighlight();
         ghost.Update();
@@ -214,7 +213,7 @@ public class Tutorial : MonoBehaviour
 
     /// <summary>
     /// Plays a step until the player passes it: the ghost demo first, then tries; after every
-    /// <see cref="failsBeforeDemo"/> fails the demo plays again. Then the check mark waits for NEXT.
+    /// <see cref="failsBeforeDemo"/> fails the demo plays again. Then the check mark waits for SPACE.
     /// Logs the step's tries and seconds.
     /// </summary>
     IEnumerator RunStep(string step, Func<IEnumerator> demo, Func<Try, IEnumerator> attempt)
@@ -263,13 +262,10 @@ public class Tutorial : MonoBehaviour
     IEnumerator WaitForNext()
     {
         yield return SpeedUp();
-        bool wasLocked = shooterLocked;
-        LockShooter(true); // clicking NEXT shouldn't fire
-        cues.ShowPopup();
+        cues.ShowPopup(); // SPACE continues; the mouse and crosshair stay free
         yield return new WaitUntil(() => cues.NextPressed);
         cues.HidePopup();
         yield return null;
-        LockShooter(wasLocked);
     }
 
     // Step 3: W A S D, every spot once.
@@ -575,12 +571,13 @@ public class Tutorial : MonoBehaviour
         float nextWave = Time.unscaledTime;
 
         float giveUp = Time.unscaledTime + 45f;
+        float bothAt = -1f;
         cues.ShowKeys(true);
-        while (!(gotFreeze && gotBomb) && Time.unscaledTime < giveUp)
+        while (Time.unscaledTime < giveUp)
         {
             foreach (ChartTarget t in targets) if (t != null) t.shipHitRadius = -1f;
-            // Keep a few asteroids coming until the Bomb is taken, so it has something to clear.
-            if (!gotBomb && Time.unscaledTime >= nextWave)
+            // Keep a few asteroids coming, so the Bomb has something to clear and Freeze something to slow.
+            if (Time.unscaledTime >= nextWave)
             {
                 nextWave = Time.unscaledTime + 5f;
                 StartCoroutine(SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (2.7f, NoteLane.RightUpper, false), (3.4f, NoteLane.LeftUpper, false) }, targets));
@@ -598,6 +595,12 @@ public class Tutorial : MonoBehaviour
             }
             gotFreeze |= slowMo.Active;
             gotBomb |= bomb.Active;
+            if (gotFreeze && gotBomb)
+            {
+                // Both taken: a few more seconds of slowed asteroids, then on. No waiting for Freeze to run out.
+                if (bothAt < 0f) bothAt = Time.unscaledTime;
+                if (Time.unscaledTime - bothAt > 3.5f) break;
+            }
 
             // No song here for Freeze to slow, so slow the scene clock while it lasts.
             if (slowMo.Active && !slowed)
@@ -620,7 +623,8 @@ public class Tutorial : MonoBehaviour
         cues.ClearGuides();
         if (freezeStar != null) Destroy(freezeStar.gameObject);
         if (bombStar != null) Destroy(bombStar.gameObject);
-        yield return new WaitUntil(() => !slowMo.Active && !bomb.Active);
+        slowMo.Cancel();
+        yield return new WaitUntil(() => !bomb.Active);
         yield return SpeedUp();
         yield return WaitUntilCleared(targets, 0.5f);
         result.passed = gotFreeze && gotBomb;
@@ -632,28 +636,29 @@ public class Tutorial : MonoBehaviour
     IEnumerator PracticeTry(Try result)
     {
         ShowStep("practice");
-        yield return new WaitForSecondsRealtime(3f);
+        yield return new WaitForSecondsRealtime(2.5f);
         HideBanner();
-        int hitsBefore = damageTaken;
         var targets = new List<ChartTarget>();
+        // A short run on a timer: seven asteroids (one turbo), a big one and a star. It ends on time even if
+        // the spawner skips a note, because only four asteroids can be on screen at once.
         StartCoroutine(SpawnWave(new[]
         {
             (2f, NoteLane.LeftUpper, false), (4f, NoteLane.RightUpper, false), (6f, NoteLane.LeftUpper, false),
             (8f, NoteLane.RightUpper, true), (10f, NoteLane.LeftUpper, false), (12f, NoteLane.RightUpper, false),
-            (14f, NoteLane.LeftUpper, false), (16f, NoteLane.RightUpper, false), (18f, NoteLane.LeftUpper, false),
-            (20f, NoteLane.RightUpper, false), (22f, NoteLane.LeftUpper, false)
+            (14f, NoteLane.LeftUpper, false)
         }, targets));
         bool bigSent = false, starSent = false;
         float start = SongTime;
-        float giveUp = Time.unscaledTime + 60f;
-        while (!(targets.Count == 11 && targets.TrueForAll(t => t == null || SongTime > t.hitTime + Beat)) && Time.unscaledTime < giveUp)
+        float end = start + 17f * Beat;
+        float giveUp = Time.unscaledTime + 40f;
+        while (SongTime < end && Time.unscaledTime < giveUp)
         {
-            if (!bigSent && SongTime - start > 11f * Beat)
+            if (!bigSent && SongTime - start > 9f * Beat)
             {
                 bigSent = true;
                 StartCoroutine(SpawnWave(new[] { (2f, LaneToward(movement.Current), false) }, new List<ChartTarget>(), true));
             }
-            if (!starSent && SongTime - start > 6f * Beat)
+            if (!starSent && SongTime - start > 4f * Beat)
             {
                 starSent = true;
                 SpawnStar(PowerUpPickup.Kind.Shield, null);
@@ -662,11 +667,8 @@ public class Tutorial : MonoBehaviour
         }
         yield return WaitUntilCleared(targets, 0.5f);
 
-        // Losing 3 or more hearts plays it once more; after that the tutorial moves on either way.
-        bool rough = damageTaken - hitsBefore >= 3 && State("again") == 0;
-        SetState("again", 1);
-        result.passed = !rough;
-        result.failed = rough;
+        // Practice is just practice: no replay if it goes badly, since that only meant another empty wait.
+        result.passed = true;
     }
 
     // Step 8: where your lives and time are, and what the ship's colour means. One go, no NEXT.
@@ -896,7 +898,8 @@ public class Tutorial : MonoBehaviour
     void LockShooter(bool locked)
     {
         shooterLocked = locked;
-        if (shooter != null) shooter.enabled = !locked;
+        // Only the firing is blocked: the crosshair keeps following the mouse the whole time.
+        if (shooter != null) shooter.fireBlocked = locked;
     }
 
     void LockMovement(bool locked)

@@ -6,8 +6,8 @@ using UnityEngine.UI;
 /// The on-screen cues the <see cref="Tutorial"/> draws next to its words: W/A/S/D key caps at the
 /// spots (lit when that's the key to press), a glowing "go here" ring and an arrow between spots, a mouse
 /// with a pulsing button for shooting, hit pips and labels on asteroids and stars (TURBO, SHOOT NOW),
-/// short labels that float up, a heart row for the goal, and the check mark + NEXT pop-up after each step
-/// with an arrow cursor, since the crosshair is off while it waits.
+/// short labels that float up, a heart row for the goal, and the check mark + "press SPACE" pop-up after each
+/// step. The mouse and crosshair are never locked.
 /// Everything is drawn from code on the tutorial's canvas and animates on unscaled time.
 /// </summary>
 public class TutorialCues
@@ -45,9 +45,8 @@ public class TutorialCues
     readonly List<(Text text, Vector2 from, float start)> floaters = new List<(Text, Vector2, float)>();
 
     GameObject popup;
-    Button next;
     bool nextPressed;
-    RectTransform cursor;
+    RectTransform popupKey;
     RectTransform callout, calloutArrow;
     Text calloutText;
     bool calloutArrowLeft;
@@ -57,7 +56,7 @@ public class TutorialCues
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
 
-    static Sprite ring, disc, heart, pointer, triangle;
+    static Sprite ring, disc, heart, triangle;
 
     public TutorialCues(Canvas canvas, Font font, PlayerMovement movement, Color accent, Color good, Color warn)
     {
@@ -70,7 +69,7 @@ public class TutorialCues
         Build();
     }
 
-    /// <summary>True while the check mark pop-up waits for NEXT.</summary>
+    /// <summary>True while the check mark pop-up waits for SPACE.</summary>
     public bool WaitingForNext => popup != null && popup.activeSelf;
 
     // ---------------------------------------------------------------- keys, glows, arrow
@@ -228,7 +227,7 @@ public class TutorialCues
 
     // ---------------------------------------------------------------- pop-up
 
-    /// <summary>Shows the check mark with NEXT. <see cref="NextPressed"/> turns true on the button, Space or Enter.</summary>
+    /// <summary>Shows the check mark and "press SPACE". <see cref="NextPressed"/> turns true on Space or Enter.</summary>
     public void ShowPopup()
     {
         nextPressed = false;
@@ -293,7 +292,7 @@ public class TutorialCues
         UpdateMark(cam, scale);
         UpdateFloaters(scale);
         UpdateLabels(cam, scale, pulse);
-        UpdateCursor();
+        if (popup.activeSelf) popupKey.localScale = Vector3.one * Mathf.Lerp(1f, 1.08f, pulse);
         if (callout.gameObject.activeSelf)
             calloutArrow.anchoredPosition = new Vector2((calloutArrowLeft ? 28f : -28f) + (calloutArrowLeft ? -1f : 1f) * 8f * pulse, 0f);
 
@@ -337,15 +336,6 @@ public class TutorialCues
             at.x = Mathf.Clamp(at.x, half, Mathf.Max(half, Screen.width - half));
             text.rectTransform.position = at;
         }
-    }
-
-    /// <summary>While NEXT waits, the crosshair is off and the system cursor is hidden, so draw an arrow at the mouse.</summary>
-    void UpdateCursor()
-    {
-        var mouse = UnityEngine.InputSystem.Mouse.current;
-        bool show = popup.activeSelf && mouse != null;
-        cursor.gameObject.SetActive(show);
-        if (show) cursor.position = mouse.position.ReadValue();
     }
 
     void UpdateMark(Camera cam, float scale)
@@ -498,54 +488,39 @@ public class TutorialCues
         callout.gameObject.SetActive(false);
 
         BuildPopup();
-
-        // Drawn last so it sits over everything, with its tip on the mouse.
-        Image arrowImage = AddImage(canvas.transform, PointerSprite(), Vector2.one * 56f);
-        arrowImage.rectTransform.pivot = new Vector2(0.15f, 0.95f);
-        arrowImage.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
-        cursor = arrowImage.rectTransform;
-        cursor.gameObject.SetActive(false);
     }
 
     void BuildPopup()
     {
-        var panel = AddImage(canvas.transform, null, new Vector2(380f, 300f));
+        var panel = AddImage(canvas.transform, null, new Vector2(380f, 260f));
         panel.color = new Color(0.02f, 0.01f, 0.06f, 1f); // opaque, or the gold outline shows through
         panel.gameObject.AddComponent<Outline>().effectColor = good;
-        panel.raycastTarget = true;
         popup = panel.gameObject;
 
         // Check mark from two bars.
         Image shortArm = AddImage(panel.transform, null, new Vector2(16f, 50f));
-        shortArm.rectTransform.anchoredPosition = new Vector2(-28f, 78f);
+        shortArm.rectTransform.anchoredPosition = new Vector2(-28f, 70f);
         shortArm.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
         shortArm.color = good;
         Image longArm = AddImage(panel.transform, null, new Vector2(16f, 96f));
-        longArm.rectTransform.anchoredPosition = new Vector2(10f, 92f);
+        longArm.rectTransform.anchoredPosition = new Vector2(10f, 84f);
         longArm.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -38f);
         longArm.color = good;
 
-        var image = new GameObject("NEXT", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
-        image.rectTransform.SetParent(panel.transform, false);
-        image.rectTransform.sizeDelta = new Vector2(260f, 70f);
-        image.rectTransform.anchoredPosition = new Vector2(0f, -64f);
-        image.GetComponent<Outline>().effectColor = accent;
-        next = image.GetComponent<Button>();
-        ColorBlock colors = next.colors;
-        colors.normalColor = new Color(0.08f, 0.08f, 0.16f, 0.95f);
-        colors.highlightedColor = new Color(0.15f, 0.35f, 0.45f, 1f);
-        colors.selectedColor = colors.highlightedColor;
-        colors.pressedColor = accent;
-        next.colors = colors;
-        next.onClick.AddListener(() => nextPressed = true);
-        Text label = AddText(image.transform, 32, FontStyle.Bold, Color.white);
-        label.rectTransform.sizeDelta = image.rectTransform.sizeDelta;
-        label.text = "NEXT";
+        // CONTINUE sits in the box and "Press SPACE" under it. It is not a button, so the mouse is never needed.
+        Image cap = AddImage(panel.transform, null, new Vector2(250f, 68f));
+        cap.rectTransform.anchoredPosition = new Vector2(0f, -40f);
+        cap.color = new Color(0.08f, 0.08f, 0.16f, 1f);
+        cap.gameObject.AddComponent<Outline>().effectColor = accent;
+        Text keyLabel = AddText(cap.transform, 36, FontStyle.Bold, Color.white);
+        keyLabel.rectTransform.sizeDelta = cap.rectTransform.sizeDelta;
+        keyLabel.text = "CONTINUE";
+        popupKey = cap.rectTransform;
 
-        Text hint = AddText(panel.transform, 24, FontStyle.Normal, new Color(1f, 1f, 1f, 0.75f));
-        hint.rectTransform.anchoredPosition = new Vector2(0f, -122f);
+        Text hint = AddText(panel.transform, 26, FontStyle.Normal, new Color(1f, 1f, 1f, 0.85f));
+        hint.rectTransform.anchoredPosition = new Vector2(0f, -100f);
         hint.rectTransform.sizeDelta = new Vector2(340f, 36f);
-        hint.text = "or press SPACE";
+        hint.text = "Press SPACE";
 
         popup.SetActive(false);
     }
@@ -585,26 +560,6 @@ public class TutorialCues
     // ---------------------------------------------------------------- sprites drawn in code
 
     static Sprite RingSprite() => ring != null ? ring : ring = Shape(128, (x, y) => { float d = Mathf.Sqrt(x * x + y * y); return d <= 1f && d >= 0.8f; });
-
-    /// <summary>A mouse pointer (tip at the top left), drawn white.</summary>
-    static Sprite PointerSprite()
-    {
-        if (pointer != null) return pointer;
-        var outline = new[]
-        {
-            new Vector2(-0.7f, 0.9f), new Vector2(-0.7f, -0.65f), new Vector2(-0.3f, -0.3f), new Vector2(-0.05f, -0.9f),
-            new Vector2(0.2f, -0.8f), new Vector2(-0.02f, -0.22f), new Vector2(0.45f, -0.22f)
-        };
-        return pointer = Shape(64, (x, y) =>
-        {
-            bool inside = false;
-            for (int i = 0, j = outline.Length - 1; i < outline.Length; j = i++)
-                if ((outline[i].y > y) != (outline[j].y > y) &&
-                    x < (outline[j].x - outline[i].x) * (y - outline[i].y) / (outline[j].y - outline[i].y) + outline[i].x)
-                    inside = !inside;
-            return inside;
-        });
-    }
 
     /// <summary>A triangle pointing right.</summary>
     static Sprite TriangleSprite()
