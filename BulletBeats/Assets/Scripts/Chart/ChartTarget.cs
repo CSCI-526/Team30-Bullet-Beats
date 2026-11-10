@@ -64,6 +64,8 @@ public class ChartTarget : MonoBehaviour, IShootable
     bool isBig;
     bool isTurbo;
     Color bigWarnColor;
+    /// <summary>Keeps a big asteroid solid red instead of pulsing to white (the tutorial uses this).</summary>
+    [HideInInspector] public bool steadyWarning;
     Renderer[] bigRenderers;
 
     /// <summary>Indestructible: it has to be dodged.</summary>
@@ -371,7 +373,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         BeatClock clock = BeatClock.Instance;
         float beat = clock != null ? clock.SecondsPerBeat : 0.5f;
         float pulse = 0.5f + 0.5f * Mathf.Sin(songTime / Mathf.Max(0.05f, beat) * Mathf.PI * 2f);
-        Color c = Color.Lerp(bigWarnColor, Color.white, pulse);
+        Color c = steadyWarning ? bigWarnColor : Color.Lerp(bigWarnColor, Color.white, pulse);
         foreach (Renderer r in bigRenderers)
              if (r != null) r.material.color = c;
     }
