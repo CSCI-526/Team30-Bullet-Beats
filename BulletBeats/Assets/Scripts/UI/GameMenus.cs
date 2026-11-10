@@ -203,6 +203,7 @@ public class GameMenus : MonoBehaviour
     {
         titlePanel = NewPanel("Title");
         AddText(titlePanel, gameTitle, 120, accentColor, 220f, FontStyle.Bold);
+        AddText(titlePanel, "W A S D  move      Click  shoot      Esc  pause", 24, new Color(1f, 1f, 1f, 0.6f), 120f);
 
         titleFirst = AddButton(titlePanel, "PLAY", -10f, flow.Play);
         AddButton(titlePanel, "TUTORIAL", -100f, flow.StartTutorial);

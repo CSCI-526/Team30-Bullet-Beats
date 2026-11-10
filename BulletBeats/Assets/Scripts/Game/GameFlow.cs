@@ -341,11 +341,16 @@ public class GameFlow : MonoBehaviour
         session.Begin(level);
     }
 
-    /// <summary>Pauses or resumes a level. Pausing only works once the song is playing, and never in the tutorial.</summary>
+    /// <summary>
+    /// Pauses or resumes a level. In a level, pausing only works once the song is playing. In the tutorial
+    /// it works for first-time players only (<see cref="Tutorial.CanPause"/>); for returning players ESC skips it.
+    /// </summary>
     public void SetPaused(bool paused)
     {
         if (paused == IsPaused) return;
-        if (paused && (State != GameState.Playing || IsTutorial || !musicStarted)) return;
+        Tutorial tutorial = IsTutorial ? GetComponent<Tutorial>() : null;
+        bool allowed = IsTutorial ? tutorial != null && tutorial.CanPause : musicStarted;
+        if (paused && (State != GameState.Playing || !allowed)) return;
 
         IsPaused = paused;
         if (paused)
