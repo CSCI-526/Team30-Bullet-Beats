@@ -1,37 +1,39 @@
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
-/// Spawns shield pickups while the song plays. Every spawnInterval seconds it spawns one:
-/// a basic shield that flies in from the top of the screen toward the ship (shoot it), or a
-/// moving shield parked at a random W/A/S/D spot the ship isn't on (dash to it).
-/// Skips a kind the ship already has, and only one pickup is out at a time.
-/// Some spawns are slow motion instead (see <see cref="SlowMo"/>): parked at a spot like the moving
-/// shield. Without its own prefab it reuses the moving shield's.
+/// Spawns power-up stars while the song plays. Every spawnInterval seconds it parks one at a random
+/// W/A/S/D spot the ship isn't on; the ship collects it by moving there. A spawn is slow motion
+/// A spawn is a bomb (see <see cref="Bomb"/>) at bombChance; otherwise slow motion
+/// (see <see cref="SlowMo"/>) at slowMoChance, otherwise a shield (see <see cref="BasicShield"/>).
+/// Skips a power-up the ship already has, and only one pickup is out at a time.
 /// Every pickup shows as a glowing star in its power-up's color (<see cref="PickupStar"/>).
 /// </summary>
 public class PowerUpSpawner : MonoBehaviour
 {
-    public PowerUpPickup basicShieldPrefab;
-    public PowerUpPickup movingShieldPrefab;
-    [Tooltip("Optional. Without one, the moving shield prefab is used.")]
+    [FormerlySerializedAs("movingShieldPrefab")]
+    public PowerUpPickup shieldPrefab;
+    [Tooltip("Optional. Without one, the shield prefab is used.")]
     public PowerUpPickup slowMoPrefab;
+    [Tooltip("Optional. Without one, the shield prefab is used.")]
+    public PowerUpPickup bombPrefab;
 
     public float firstSpawnDelay = 15f;
     public float spawnInterval = 20f;
-    public float movingShieldChance = 0.5f;
-    [Tooltip("Chance a spawn is slow motion instead of a shield.")]
+    [Tooltip("Chance a spawn is a bomb. Rolled first.")]
+    [Range(0f, 1f)] public float bombChance = 0.25f;
+    [Tooltip("Chance a spawn that isn't a bomb is slow motion instead of a shield.")]
     [Range(0f, 1f)] public float slowMoChance = 0.35f;
 
     [Header("Stars")]
-    public Color basicShieldColor = new Color(1f, 0.8f, 0.3f);
-    public Color movingShieldColor = new Color(0.75f, 0.5f, 1f);
+    [FormerlySerializedAs("movingShieldColor")]
+    public Color shieldColor = new Color(0.75f, 0.5f, 1f);
     public Color slowMoColor = new Color(0.45f, 0.85f, 1f);
+    public Color bombColor = new Color(1f, 0.42f, 0.15f);
 
-    public float basicSpawnDistance = 60f;
-    public float basicFlightSeconds = 6f;
-    public Vector2 basicViewportMin = new Vector2(0.3f, 0.55f);
-    public Vector2 basicViewportMax = new Vector2(0.7f, 0.8f);
-    public float movingLifetime = 6f;
+    [FormerlySerializedAs("movingLifetime")]
+    [Tooltip("Seconds a star stays at its spot when it doesn't fly in.")]
+    public float starLifetime = 6f;
     [Tooltip("Spot stars fly in from the middle of the screen and land on a beat, instead of appearing at their spot.")]
     public bool flyInStars = true;
     [Tooltip("Song seconds (at least) a spot star takes to fly in; it lands on the next beat after that.")]
@@ -61,47 +63,39 @@ public class PowerUpSpawner : MonoBehaviour
         PlayerHealth ship = PlayerHealth.Instance;
         if (ship == null || ship.IsDead) return;
 
-        bool canSlowMo = ship.TryGetComponent(out SlowMo slowMo) && !slowMo.Active
-            && (slowMoPrefab != null || movingShieldPrefab != null);
-        if (canSlowMo && Random.value < slowMoChance)
+        bool canBomb = ship.TryGetComponent(out Bomb bomb) && !bomb.Active
+            && (bombPrefab != null || shieldPrefab != null);
+        if (canBomb && Random.value < bombChance)
         {
-            live = SpawnSlowMo(ship);
+            live = SpawnBomb(ship);
             return;
         }
 
-        bool hasBasic = ship.TryGetComponent(out BasicShield basic) && basic.Active;
-        bool hasMoving = ship.TryGetComponent(out DirectionalShield moving) && moving.Active;
-        bool canBasic = basicShieldPrefab != null && !hasBasic;
-        bool canMoving = movingShieldPrefab != null && !hasMoving;
-        if (!canBasic && !canMoving) return;
+        bool canSlowMo = ship.TryGetComponent(out SlowMo slowMo) && !slowMo.Active
+            && (slowMoPrefab != null || shieldPrefab != null);
+        bool canShield = shieldPrefab != null && ship.TryGetComponent(out BasicShield shield) && !shield.Active;
 
-        bool pickMoving = canMoving && (!canBasic || Random.value < movingShieldChance);
-        live = pickMoving ? SpawnMoving(ship) : SpawnBasic(ship);
-    }
-
-    public PowerUpPickup SpawnBasic(PlayerHealth ship)
-    {
-        Camera cam = DisplayCamera.Find();
-        if (cam == null) return null;
-
-        Vector3 viewport = new Vector3(
-            Random.Range(basicViewportMin.x, basicViewportMax.x),
-            Random.Range(basicViewportMin.y, basicViewportMax.y),
-            basicSpawnDistance);
-        Vector3 spawn = cam.ViewportToWorldPoint(viewport);
-        PowerUpPickup pickup = Instantiate(basicShieldPrefab, spawn, Quaternion.identity);
-        pickup.kind = PowerUpPickup.Kind.BasicShield;
-        pickup.gameObject.AddComponent<PickupStar>().Init(basicShieldColor);
-        pickup.velocity = (ShipCenter(ship) - spawn) / Mathf.Max(0.1f, basicFlightSeconds);
-        // Gone once it reaches the ship, instead of flying on into the camera.
-        pickup.lifetime = basicFlightSeconds;
-        return pickup;
+        if (canSlowMo && (!canShield || Random.value < slowMoChance)) live = SpawnSlowMo(ship);
+        else if (canShield) live = SpawnShield(ship);
     }
 
     /// <param name="at">Spot to park it on; random (not the ship's own spot) when left out.</param>
-    public PowerUpPickup SpawnMoving(PlayerHealth ship, PowerUpPickup prefab = null, PlayerMovement.Spot? at = null, Color? color = null)
+    public PowerUpPickup SpawnShield(PlayerHealth ship, PlayerMovement.Spot? at = null) =>
+        SpawnStar(ship, shieldPrefab, PowerUpPickup.Kind.Shield, shieldColor, at);
+
+    /// <param name="at">Spot to park it on; random (not the ship's own spot) when left out.</param>
+    public PowerUpPickup SpawnSlowMo(PlayerHealth ship, PlayerMovement.Spot? at = null) =>
+        SpawnStar(ship, slowMoPrefab, PowerUpPickup.Kind.SlowMo, slowMoColor, at);
+
+    /// <param name="at">Spot to park it on; random (not the ship's own spot) when left out.</param>
+    public PowerUpPickup SpawnBomb(PlayerHealth ship, PlayerMovement.Spot? at = null) =>
+        SpawnStar(ship, bombPrefab, PowerUpPickup.Kind.Bomb, bombColor, at);
+
+    /// <summary>Parks a star of <paramref name="kind"/> at a W/A/S/D spot. Without a prefab, the shield prefab is used.</summary>
+    public PowerUpPickup SpawnStar(PlayerHealth ship, PowerUpPickup prefab, PowerUpPickup.Kind kind, Color color, PlayerMovement.Spot? at = null)
     {
-        if (!ship.TryGetComponent(out PlayerMovement movement)) return null;
+        if (prefab == null) prefab = shieldPrefab;
+        if (prefab == null || !ship.TryGetComponent(out PlayerMovement movement)) return null;
 
         PlayerMovement.Spot spot;
         if (at.HasValue) spot = at.Value;
@@ -113,13 +107,13 @@ public class PowerUpSpawner : MonoBehaviour
 
         // Put it where the ship's body will be, not its origin, which sits off to the side of the mesh.
         Vector3 bodyOffset = ShipCenter(ship) - ship.transform.position;
-        PowerUpPickup pickup = Instantiate(prefab != null ? prefab : movingShieldPrefab, movement.WorldPositionOf(spot) + bodyOffset, Quaternion.identity);
-        pickup.kind = PowerUpPickup.Kind.MovingShield;
+        PowerUpPickup pickup = Instantiate(prefab, movement.WorldPositionOf(spot) + bodyOffset, Quaternion.identity);
+        pickup.kind = kind;
         pickup.velocity = Vector3.zero;
-        pickup.lifetime = movingLifetime;
+        pickup.lifetime = starLifetime;
         pickup.shipOffset = bodyOffset;
         var star = pickup.gameObject.AddComponent<PickupStar>();
-        star.Init(color ?? movingShieldColor);
+        star.Init(color);
         if (flyInStars)
         {
             // The star removes itself after it lands and lingers, so the pickup's own timer is off.
@@ -129,25 +123,13 @@ public class PowerUpSpawner : MonoBehaviour
         return pickup;
     }
 
-    public PowerUpPickup SpawnSlowMo(PlayerHealth ship, PlayerMovement.Spot? at = null)
-    {
-        PowerUpPickup pickup = SpawnMoving(ship, slowMoPrefab, at, slowMoColor);
-        if (pickup != null) pickup.kind = PowerUpPickup.Kind.SlowMo;
-        return pickup;
-    }
-
-    /// <summary>Center of the ship's visible meshes, leaving out the shield visuals.</summary>
+    /// <summary>Center of the ship's visible meshes.</summary>
     static Vector3 ShipCenter(PlayerHealth ship)
     {
-        Transform shieldA = ship.TryGetComponent(out DirectionalShield moving) && moving.pivot != null ? moving.pivot : null;
-        Transform shieldB = ship.TryGetComponent(out BasicShield basic) && basic.visual != null ? basic.visual.transform : null;
-
         bool found = false;
         Bounds bounds = default;
         foreach (Renderer r in ship.GetComponentsInChildren<Renderer>())
         {
-            if ((shieldA != null && r.transform.IsChildOf(shieldA)) || (shieldB != null && r.transform.IsChildOf(shieldB)))
-                continue;
             if (found) bounds.Encapsulate(r.bounds);
             else bounds = r.bounds;
             found = true;

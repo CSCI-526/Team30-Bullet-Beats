@@ -435,56 +435,24 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator PowerUpStep()
     {
-        yield return ShowFor("POWER-UPS", "Shields block hits for you. Here are two kinds.", 2.5f);
-        yield return BasicShieldStep();
-        yield return MovingShieldStep();
+        yield return ShowFor("POWER-UPS", "Stars give you power-ups. Fly onto one to grab it.", 2.5f);
+        yield return ShieldStep();
         yield return SlowMoStep();
     }
 
-    IEnumerator BasicShieldStep()
+    IEnumerator ShieldStep()
     {
-        CurrentStep = "powerup_basic";
-        BasicShield basic = health != null ? health.GetComponent<BasicShield>() : null;
-        if (powerUps == null || basic == null) yield break;
-
-        for (int attempt = 0; attempt < maxTries; attempt++)
-        {
-            PowerUpPickup pickup = powerUps.SpawnBasic(health);
-            if (pickup == null) yield break;
-
-            ShowBanner("SHIELD PICKUP", "A glowing shield is flying in");
-            float start = Time.time;
-            yield return new WaitUntil(() => pickup == null || Time.time - start >= powerUps.basicFlightSeconds * 0.4f);
-
-            if (pickup != null)
-            {
-                ShowBanner("SHOOT THE SHIELD!", "Click it to collect.");
-                yield return SlowDown();
-                yield return new WaitUntil(() => pickup == null);
-            }
-
-            bool got = basic.Active;
-            if (got) ShowBanner("SHIELD UP!", "It takes the next hit for you", goodColor);
-            else ShowBanner("ALMOST!", "Click the shield before it reaches you");
-            yield return SpeedUp();
-            yield return HideAfter(got ? 2.5f : 1.5f);
-            if (got) yield break;
-        }
-    }
-
-    IEnumerator MovingShieldStep()
-    {
-        CurrentStep = "powerup_moving";
-        DirectionalShield shield = health != null ? health.GetComponent<DirectionalShield>() : null;
+        CurrentStep = "powerup_shield";
+        BasicShield shield = health != null ? health.GetComponent<BasicShield>() : null;
         if (powerUps == null || shield == null) yield break;
 
         for (int attempt = 0; attempt < maxTries && !shield.Active; attempt++)
         {
-            PowerUpPickup pickup = powerUps.SpawnMoving(health, null, SideSpot());
+            PowerUpPickup pickup = powerUps.SpawnShield(health, SideSpot());
             if (pickup == null) yield break;
             KeepUntilGrabbed(pickup);
 
-            ShowBanner("MOVING SHIELD", "Watch where the star lands, then press W A S D to grab it!");
+            ShowBanner("SHIELD", "Watch where the <color=#b8f>PURPLE</color> star lands, then press W A S D to grab it!");
             float giveUp = Time.unscaledTime + 18f; // room for the flight in, then time to grab it
             yield return new WaitUntil(() => shield.Active || pickup == null || Time.unscaledTime > giveUp);
             if (pickup != null) Destroy(pickup.gameObject);
@@ -492,14 +460,7 @@ public class Tutorial : MonoBehaviour
 
         if (!shield.Active) { HideBanner(); yield break; }
 
-        ShowBanner("AIM IT", "This shield faces where you shoot! Aim at the incoming asteroids!", goodColor);
-        var targets = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (3.5f, NoteLane.RightUpper, false) }, targets);
-        yield return WaitUntilCleared(targets, 0.5f);
-
-        bool blocked = shield.BlocksLeft < shield.maxBlocks;
-        if (blocked) ShowBanner("BLOCKED!", "The shield stops asteroids in the direction you aim", goodColor);
-        else ShowBanner("NICE!", "Aim toward an asteroid and the shield turns with you");
+        ShowBanner("SHIELD UP!", "The ring takes the next hit for you", goodColor);
         yield return HideAfter(2.5f);
     }
     IEnumerator SlowMoStep()

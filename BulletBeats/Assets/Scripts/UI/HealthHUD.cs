@@ -4,8 +4,7 @@ using UnityEngine.UI;
 /// <summary>
 /// Health hearts in the top-left corner and the current streak under them. Full pips take the ship's
 /// health colour (<see cref="ShipDamageFlash.ColorFor"/>). A pip that was just lost flashes red before going empty.
-/// An extra pip after the health shows the <see cref="BasicShield"/>, and a line under the streak
-/// shows the <see cref="DirectionalShield"/>'s blocks left.
+/// An extra pip after the health shows the <see cref="BasicShield"/>.
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(PlayerHealth))]
@@ -30,14 +29,12 @@ public class HealthHUD : MonoBehaviour
     PlayerHealth health;
     ShipDamageFlash shipColor;
     BasicShield basicShield;
-    DirectionalShield movingShield;
     GameObject canvasObject;
     RectTransform corner;
     static Sprite heart;
     readonly System.Collections.Generic.List<Image> pips = new System.Collections.Generic.List<Image>();
     Image shieldPip;
     Text streakLabel;
-    Text movingShieldLabel;
     float healGlowTimer;
     float lostFlashTimer;
     int lostFrom, lostTo;
@@ -46,7 +43,6 @@ public class HealthHUD : MonoBehaviour
     {
         health = GetComponent<PlayerHealth>();
         basicShield = GetComponent<BasicShield>();
-        movingShield = GetComponent<DirectionalShield>();
         BuildCanvas();
     }
 
@@ -57,7 +53,6 @@ public class HealthHUD : MonoBehaviour
         health.Healed += OnHealed;
         health.Damaged += OnDamaged;
         if (basicShield != null) basicShield.Changed += OnBasicShieldChanged;
-        if (movingShield != null) movingShield.Changed += RefreshMovingShield;
         canvasObject.SetActive(true);
         Refresh();
     }
@@ -69,7 +64,6 @@ public class HealthHUD : MonoBehaviour
         health.Healed -= OnHealed;
         health.Damaged -= OnDamaged;
         if (basicShield != null) basicShield.Changed -= OnBasicShieldChanged;
-        if (movingShield != null) movingShield.Changed -= RefreshMovingShield;
         if (canvasObject != null) canvasObject.SetActive(false);
     }
 
@@ -116,7 +110,6 @@ public class HealthHUD : MonoBehaviour
     {
         RefreshPips();
         RefreshStreak();
-        RefreshMovingShield();
     }
 
     void RefreshPips()
@@ -194,13 +187,6 @@ public class HealthHUD : MonoBehaviour
             : "";
     }
 
-    void RefreshMovingShield()
-    {
-        bool up = movingShield != null && movingShield.Active;
-        movingShieldLabel.gameObject.SetActive(up);
-        if (up) movingShieldLabel.text = $"ARC SHIELD x{movingShield.BlocksLeft}";
-    }
-
     void BuildCanvas()
     {
         canvasObject = new GameObject("HealthHUD", typeof(Canvas), typeof(CanvasScaler));
@@ -223,7 +209,6 @@ public class HealthHUD : MonoBehaviour
         shieldPip = MakePip("ShieldPip", health.maxHealth);
 
         streakLabel = MakeLabel("Streak", -(PipHeight + 10f), streakColor);
-        movingShieldLabel = MakeLabel("ArcShield", -(PipHeight + 10f + 32f), shieldColor);
     }
 
     Text MakeLabel(string name, float y, Color color)
