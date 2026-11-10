@@ -19,7 +19,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      # Repository secret: the Google Sheet's CSV export link. Empty = the labelled sample data.
+      # Repository secret: the Google Sheet's CSV export link. Empty = a page saying there is no data yet.
       ANALYTICS_CSV_URL: ${{ secrets.ANALYTICS_CSV_URL }}
       REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
     steps:
@@ -27,8 +27,8 @@ jobs:
 
       - name: Build dashboard
         run: |
-          python3 Analytics/visualize_analytics.py "${ANALYTICS_CSV_URL:-Analytics/sample_responses.csv}" \
-            --fallback Analytics/sample_responses.csv -o dashboard.html
+          # Real responses only. With no sheet link saved yet, this writes the "No playtest data yet" page.
+          python3 Analytics/visualize_analytics.py ${ANALYTICS_CSV_URL:+"$ANALYTICS_CSV_URL"} -o dashboard.html
 
       - name: Publish to gh-pages
         run: |

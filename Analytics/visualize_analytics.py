@@ -3,10 +3,12 @@
 
     python3 visualize_analytics.py responses.csv -o dashboard.html
     python3 visualize_analytics.py "https://docs.google.com/spreadsheets/d/<id>/export?format=csv&gid=<gid>"
+    python3 visualize_analytics.py -o dashboard.html        (no source: writes the "No playtest data yet" page)
 
 Only needs Python 3. Rows from before the Beta logging (level = "MainLevel") are ignored, so old
-test data doesn't need clearing. With --fallback, a sample file is used and clearly labelled when
-the source has no Beta rows yet.
+test data doesn't need clearing. The page only ever draws real responses. With no source, or no Beta
+rows yet, it says "No playtest data yet" and shows no numbers. (--simulated is for testing the script
+on made-up data on your own computer. The published workflow never uses it.)
 
 The form's columns are: Timestamp, session, event, level, level time, data 1, data 2, data 3.
     session = player-session        level = song|difficulty|attempt
@@ -383,6 +385,18 @@ def level_table(runs, songs):
     return f'<div class="scroll"><table>{head}{"".join(rows)}</table></div>'
 
 
+def build_empty_page(message):
+    """A page with no numbers at all, for when there are no real responses to draw."""
+    css = PAGE.split("<style>")[1].split("</style>")[0].replace("{{", "{").replace("}}", "}")
+    updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return (f'<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+            f'<title>Bullet Beats Analytics</title><style>{css}</style></head><body><main>'
+            f'<header><h1>Bullet Beats Analytics</h1><p class="sub">Beta dashboard for CSCI 526 Team 30. Checked {updated}.</p></header>'
+            f'<section class="card"><h2>No playtest data yet</h2><p>{ESC(message)}</p>'
+            f'<p class="sub">This page only shows real responses from the Google Form. It draws the four graphs as soon as the first Beta runs arrive.</p></section>'
+            f'</main></body></html>\n')
+
+
 def legend(*items):
     return '<div class="legend">' + "".join(f'<span><i style="background:{c}"></i>{ESC(t)}</span>' for c, t in items) + "</div>"
 
@@ -487,28 +501,30 @@ s.addEventListener('change',show);show();
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("source", help="responses CSV file or link")
+    parser.add_argument("source", nargs="?", help="responses CSV file or link; leave out to write the empty page")
     parser.add_argument("-o", "--output", default="analytics_report.html")
-    parser.add_argument("--fallback", help="sample CSV to use, labelled as simulated, when source has no Beta rows")
-    parser.add_argument("--simulated", action="store_true", help="label the source itself as simulated")
+    parser.add_argument("--simulated", action="store_true", help="local testing only: label the data as simulated")
     args = parser.parse_args(argv)
 
-    simulated, note = args.simulated, "Google Form responses"
-    try:
-        runs = build_runs(load_rows(args.source))
-    except Exception as error:  # a broken link shouldn't take the dashboard down
-        print(f"Could not read the source: {error}", file=sys.stderr)
-        runs = []
-    if not runs and args.fallback:
-        runs, simulated = build_runs(load_rows(args.fallback)), True
-    if simulated:
-        note = "simulated sample responses"
-    if not runs:
-        print("No Beta-format rows found, nothing to draw.", file=sys.stderr)
-        return 1
+    runs = []
+    if args.source:
+        try:
+            runs = build_runs(load_rows(args.source))
+        except Exception as error:  # keep the last good page: don't replace it with an empty one
+            print(f"Could not read the source: {error}", file=sys.stderr)
+            return 1
+        note = "no Beta responses in the sheet yet"
+    else:
+        note = "the responses sheet is not connected yet"
+
+    if runs:
+        page = build_page(runs, "simulated sample responses" if args.simulated else "Google Form responses", args.simulated)
+        print(f"Wrote {args.output}: {len(runs)} runs{' (simulated)' if args.simulated else ''}")
+    else:
+        page = build_empty_page(f"No data to show: {note}.")
+        print(f"Wrote {args.output}: no real data yet ({note})")
     with open(args.output, "w", encoding="utf-8") as f:
-        f.write(build_page(runs, note, simulated))
-    print(f"Wrote {args.output}: {len(runs)} runs{' (simulated)' if simulated else ''}")
+        f.write(page)
     return 0
 
 
