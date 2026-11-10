@@ -3,10 +3,11 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// The on-screen cues the <see cref="Tutorial"/> uses instead of sentences: W/A/S/D key caps at the
+/// The on-screen cues the <see cref="Tutorial"/> draws next to its words: W/A/S/D key caps at the
 /// spots (lit when that's the key to press), a glowing "go here" ring and an arrow between spots, a mouse
-/// with a pulsing button for shooting, marks on an asteroid (hit pips, a crossed-out crosshair), short
-/// labels that float up, a heart row for the goal, and the check mark + NEXT pop-up after each step.
+/// with a pulsing button for shooting, hit pips and labels on asteroids and stars (TURBO, SHOOT NOW),
+/// short labels that float up, a heart row for the goal, and the check mark + NEXT pop-up after each step
+/// with an arrow cursor, since the crosshair is off while it waits.
 /// Everything is drawn from code on the tutorial's canvas and animates on unscaled time.
 /// </summary>
 public class TutorialCues
@@ -46,8 +47,14 @@ public class TutorialCues
     GameObject popup;
     Button next;
     bool nextPressed;
+    RectTransform cursor;
 
-    static Sprite ring, disc, heart;
+    // Labels that follow an asteroid or a star.
+    Text nowLabel, tagLabel;
+    ChartTarget nowTarget, tagTarget;
+    readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
+
+    static Sprite ring, disc, heart, pointer;
 
     public TutorialCues(Canvas canvas, Font font, PlayerMovement movement, Color accent, Color good, Color warn)
     {
@@ -96,6 +103,9 @@ public class TutorialCues
         arrowOn = false;
         ShowMouse(false);
         Mark(null, MarkKind.None);
+        ClearTag();
+        HideNow();
+        ClearWorldTags();
     }
 
     // ---------------------------------------------------------------- mouse
@@ -112,6 +122,40 @@ public class TutorialCues
     {
         marked = target;
         markKind = target != null ? kind : MarkKind.None;
+    }
+
+    // ---------------------------------------------------------------- labels that follow things
+
+    /// <summary>A big "SHOOT NOW!" under <paramref name="target"/>: the brackets are gold, so this is the moment.</summary>
+    public void ShowNow(ChartTarget target) => nowTarget = target;
+
+    public void HideNow() => nowTarget = null;
+
+    /// <summary>A name above <paramref name="target"/>, e.g. TURBO.</summary>
+    public void Tag(ChartTarget target, string text, Color color)
+    {
+        tagTarget = target;
+        tagLabel.text = text;
+        tagLabel.color = color;
+    }
+
+    public void ClearTag() => tagTarget = null;
+
+    /// <summary>A short line above something in the world, e.g. a power-up star. Stays until <see cref="ClearWorldTags"/>.</summary>
+    public void TagWorld(Transform follow, string text, Color color)
+    {
+        Text label = AddText(canvas.transform, 30, FontStyle.Bold, color);
+        label.text = text;
+        label.rectTransform.sizeDelta = new Vector2(700f, 50f);
+        label.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
+        worldTags.Add((label, follow));
+    }
+
+    public void ClearWorldTags()
+    {
+        foreach ((Text text, Transform _) in worldTags)
+            if (text != null) Object.Destroy(text.gameObject);
+        worldTags.Clear();
     }
 
     // ---------------------------------------------------------------- labels and hearts
@@ -221,12 +265,53 @@ public class TutorialCues
 
         UpdateMark(cam, scale);
         UpdateFloaters(scale);
+        UpdateLabels(cam, scale, pulse);
+        UpdateCursor();
 
         if (popup.activeSelf)
         {
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             if (keyboard != null && (keyboard.spaceKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame)) nextPressed = true;
         }
+    }
+
+    void UpdateLabels(Camera cam, float scale, float pulse)
+    {
+        bool now = nowTarget != null && nowTarget.TryGetScreenCircle(cam, out _, out _);
+        nowLabel.gameObject.SetActive(now);
+        if (now)
+        {
+            nowTarget.TryGetScreenCircle(cam, out Vector2 center, out float radius);
+            nowLabel.rectTransform.position = center + Vector2.down * (radius + 62f * scale);
+            nowLabel.transform.localScale = Vector3.one * Mathf.Lerp(0.95f, 1.12f, pulse);
+        }
+
+        bool tag = tagTarget != null && tagTarget.TryGetScreenCircle(cam, out _, out _);
+        tagLabel.gameObject.SetActive(tag);
+        if (tag)
+        {
+            tagTarget.TryGetScreenCircle(cam, out Vector2 center, out float radius);
+            tagLabel.rectTransform.position = center + Vector2.up * (radius + 90f * scale);
+        }
+
+        for (int i = worldTags.Count - 1; i >= 0; i--)
+        {
+            (Text text, Transform follow) = worldTags[i];
+            if (text == null) { worldTags.RemoveAt(i); continue; }
+            bool alive = follow != null;
+            text.gameObject.SetActive(alive);
+            // Stacked, so two stars flying in from the same point don't print over each other.
+            if (alive) text.rectTransform.position = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * (110f + 48f * i) * scale;
+        }
+    }
+
+    /// <summary>While NEXT waits, the crosshair is off and the system cursor is hidden, so draw an arrow at the mouse.</summary>
+    void UpdateCursor()
+    {
+        var mouse = UnityEngine.InputSystem.Mouse.current;
+        bool show = popup.activeSelf && mouse != null;
+        cursor.gameObject.SetActive(show);
+        if (show) cursor.position = mouse.position.ReadValue();
     }
 
     void UpdateMark(Camera cam, float scale)
@@ -347,40 +432,58 @@ public class TutorialCues
         hearts = new GameObject("Hearts", typeof(RectTransform)).GetComponent<RectTransform>();
         hearts.SetParent(canvas.transform, false);
         hearts.anchorMin = hearts.anchorMax = new Vector2(0.5f, 1f);
-        hearts.anchoredPosition = new Vector2(0f, -170f);
+        hearts.anchoredPosition = new Vector2(0f, -236f);
         hearts.gameObject.SetActive(false);
 
         progress = new GameObject("Progress", typeof(RectTransform)).GetComponent<RectTransform>();
         progress.SetParent(canvas.transform, false);
         progress.anchorMin = progress.anchorMax = new Vector2(0.5f, 1f);
-        progress.anchoredPosition = new Vector2(0f, -160f);
+        progress.anchoredPosition = new Vector2(0f, -214f);
         progress.gameObject.SetActive(false);
 
+        nowLabel = AddText(canvas.transform, 56, FontStyle.Bold, good);
+        nowLabel.text = "SHOOT NOW!";
+        nowLabel.rectTransform.sizeDelta = new Vector2(700f, 90f);
+        nowLabel.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
+        nowLabel.gameObject.SetActive(false);
+
+        tagLabel = AddText(canvas.transform, 38, FontStyle.Bold, warn);
+        tagLabel.rectTransform.sizeDelta = new Vector2(500f, 60f);
+        tagLabel.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
+        tagLabel.gameObject.SetActive(false);
+
         BuildPopup();
+
+        // Drawn last so it sits over everything, with its tip on the mouse.
+        Image arrowImage = AddImage(canvas.transform, PointerSprite(), Vector2.one * 56f);
+        arrowImage.rectTransform.pivot = new Vector2(0.15f, 0.95f);
+        arrowImage.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
+        cursor = arrowImage.rectTransform;
+        cursor.gameObject.SetActive(false);
     }
 
     void BuildPopup()
     {
-        var panel = AddImage(canvas.transform, null, new Vector2(360f, 250f));
-        panel.color = new Color(0.02f, 0.01f, 0.06f, 0.9f);
+        var panel = AddImage(canvas.transform, null, new Vector2(380f, 300f));
+        panel.color = new Color(0.02f, 0.01f, 0.06f, 1f); // opaque, or the gold outline shows through
         panel.gameObject.AddComponent<Outline>().effectColor = good;
         panel.raycastTarget = true;
         popup = panel.gameObject;
 
         // Check mark from two bars.
         Image shortArm = AddImage(panel.transform, null, new Vector2(16f, 50f));
-        shortArm.rectTransform.anchoredPosition = new Vector2(-28f, 52f);
+        shortArm.rectTransform.anchoredPosition = new Vector2(-28f, 78f);
         shortArm.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
         shortArm.color = good;
         Image longArm = AddImage(panel.transform, null, new Vector2(16f, 96f));
-        longArm.rectTransform.anchoredPosition = new Vector2(10f, 66f);
+        longArm.rectTransform.anchoredPosition = new Vector2(10f, 92f);
         longArm.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -38f);
         longArm.color = good;
 
         var image = new GameObject("NEXT", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
         image.rectTransform.SetParent(panel.transform, false);
         image.rectTransform.sizeDelta = new Vector2(260f, 70f);
-        image.rectTransform.anchoredPosition = new Vector2(0f, -62f);
+        image.rectTransform.anchoredPosition = new Vector2(0f, -64f);
         image.GetComponent<Outline>().effectColor = accent;
         next = image.GetComponent<Button>();
         ColorBlock colors = next.colors;
@@ -393,6 +496,11 @@ public class TutorialCues
         Text label = AddText(image.transform, 32, FontStyle.Bold, Color.white);
         label.rectTransform.sizeDelta = image.rectTransform.sizeDelta;
         label.text = "NEXT";
+
+        Text hint = AddText(panel.transform, 24, FontStyle.Normal, new Color(1f, 1f, 1f, 0.75f));
+        hint.rectTransform.anchoredPosition = new Vector2(0f, -122f);
+        hint.rectTransform.sizeDelta = new Vector2(340f, 36f);
+        hint.text = "or press SPACE";
 
         popup.SetActive(false);
     }
@@ -432,6 +540,26 @@ public class TutorialCues
     // ---------------------------------------------------------------- sprites drawn in code
 
     static Sprite RingSprite() => ring != null ? ring : ring = Shape(128, (x, y) => { float d = Mathf.Sqrt(x * x + y * y); return d <= 1f && d >= 0.8f; });
+
+    /// <summary>A mouse pointer (tip at the top left), drawn white.</summary>
+    static Sprite PointerSprite()
+    {
+        if (pointer != null) return pointer;
+        var outline = new[]
+        {
+            new Vector2(-0.7f, 0.9f), new Vector2(-0.7f, -0.65f), new Vector2(-0.3f, -0.3f), new Vector2(-0.05f, -0.9f),
+            new Vector2(0.2f, -0.8f), new Vector2(-0.02f, -0.22f), new Vector2(0.45f, -0.22f)
+        };
+        return pointer = Shape(64, (x, y) =>
+        {
+            bool inside = false;
+            for (int i = 0, j = outline.Length - 1; i < outline.Length; j = i++)
+                if ((outline[i].y > y) != (outline[j].y > y) &&
+                    x < (outline[j].x - outline[i].x) * (y - outline[i].y) / (outline[j].y - outline[i].y) + outline[i].x)
+                    inside = !inside;
+            return inside;
+        });
+    }
 
     static Sprite DiscSprite() => disc != null ? disc : disc = Shape(64, (x, y) => x * x + y * y <= 1f);
 

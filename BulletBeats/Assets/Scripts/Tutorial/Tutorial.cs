@@ -12,9 +12,10 @@ using UnityEngine.UI;
 /// <see cref="failsBeforeDemo"/> fails the ghost shows it again. Prompts are one or two words; key caps,
 /// glowing spots, arrows and marks on the asteroids (<see cref="TutorialCues"/>) do the rest. After each
 /// step a check mark waits for NEXT (the button, Space or Enter).
-/// Steps: controls, shoot on the cue (3 in a row), PERFECT (2), hearts (lose one, win it back),
-/// big asteroids (dodge two ways), a turbo asteroid, the shield star, the Freeze and Bomb stars,
-/// a practice run, then the goal and a 3-2-1 into the first level on Easy. The ship can't die here.
+/// Steps, each with a big title and one line under it: shoot on the cue (3 in a row, with SHOOT NOW when
+/// the brackets turn gold), PERFECT (2), move (W A S D), dodge big red asteroids (two ways), a turbo
+/// asteroid, the shield star, the Freeze and Bomb stars, a practice run, then the goal and a 3-2-1
+/// into the first level on Easy. The ship can't die here.
 /// Only players who finished the tutorial before can skip it (Skip button or ESC); for everyone else
 /// ESC opens the pause menu.
 /// Added by <see cref="GameFlow"/> for a tutorial run. It runs on the scene clock (no song), so
@@ -38,6 +39,8 @@ public class Tutorial : MonoBehaviour
     public Color warnColor = new Color(1f, 0.55f, 0.2f);
     public Color panelColor = new Color(0.02f, 0.01f, 0.06f, 0.78f);
     public Color ghostColor = new Color(0.45f, 0.9f, 1f, 0.35f);
+    public Color shieldTagColor = new Color(0.75f, 0.5f, 1f);
+    public Color freezeTagColor = new Color(0.45f, 0.85f, 1f);
 
     /// <summary>Name of the step being played, e.g. "shoot" or "big".</summary>
     public string CurrentStep { get; private set; } = "intro";
@@ -76,7 +79,7 @@ public class Tutorial : MonoBehaviour
     Canvas canvas;
     GameObject canvasObject, banner, livesHighlight, skipButton;
     Graphic[] livesHighlightParts;
-    Text bannerTitle, countdown;
+    Text bannerTitle, bannerDesc, countdown;
     Font font;
     TutorialCues cues;
     TutorialGhost ghost;
@@ -84,6 +87,7 @@ public class Tutorial : MonoBehaviour
     float SongTime => clock != null ? clock.SongTime : Time.time;
     float Beat => clock != null ? clock.SecondsPerBeat : 1f;
     float GoodWindow => clock != null ? clock.goodWindow : 0.25f;
+    float PerfectWindow => clock != null ? clock.perfectWindow : 0.12f;
 
     /// <summary>One try at a step: <see cref="passed"/> ends the step, <see cref="failed"/> counts toward a replay of the demo.</summary>
     class Try
@@ -178,10 +182,9 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator Run()
     {
-        yield return RunStep("controls", ControlsDemo, ControlsTry);
         yield return RunStep("shoot", ShootDemo, ShootTry);
         yield return RunStep("perfect", PerfectDemo, PerfectTry);
-        yield return RunStep("hearts", null, HeartsTry);
+        yield return RunStep("move", ControlsDemo, ControlsTry);
         yield return RunStep("big", BigDemo, BigTry);
         yield return RunStep("turbo", null, TurboTry);
         yield return RunStep("shield", ShieldDemo, ShieldTry);
@@ -190,6 +193,7 @@ public class Tutorial : MonoBehaviour
 
         CurrentStep = "done";
         Analytics.Instance?.LogTutorial("complete", CurrentStep);
+        ClearAsteroids(); // a star from the practice run shouldn't sit behind the goal card
         yield return GoalCard();
         yield return CountdownThenFinish();
     }
@@ -254,11 +258,11 @@ public class Tutorial : MonoBehaviour
         LockShooter(wasLocked);
     }
 
-    // Step 0: W A S D, then a shot.
+    // Step 3: W A S D, every spot once.
 
     IEnumerator ControlsDemo()
     {
-        ShowBanner("MOVE");
+        ShowStep("move");
         cues.ShowKeys(true);
         ghost.Show(movement.Current);
         foreach (PlayerMovement.Spot spot in TutorialCues.Spots)
@@ -274,7 +278,7 @@ public class Tutorial : MonoBehaviour
     IEnumerator ControlsTry(Try result)
     {
         // Every spot once. The ones still to visit glow, with their key lit.
-        ShowBanner("MOVE");
+        ShowStep("move");
         cues.ShowKeys(true);
         int visited = State("visited") | SpotBit(movement.Current);
         while (visited != 0b1111)
@@ -294,40 +298,7 @@ public class Tutorial : MonoBehaviour
         GoalSpot = null;
         cues.ClearGuides();
 
-        // Then the ghost shoots one asteroid, and the player shoots the next one.
-        ShowBanner("SHOOT");
-        cues.ShowMouse(true);
-        if (State("shotDemo") == 0)
-        {
-            SetState("shotDemo", 1);
-            LockShooter(true);
-            LockMovement(true);
-            ChartTarget demo = null;
-            yield return SpawnOne(NextLane(), false, t => demo = t);
-            if (demo != null)
-            {
-                demo.shipHitRadius = -1f;
-                ghost.Show(movement.Current, true);
-                yield return ghost.Shoot(demo, () => SongTime, demo.hitTime, 0.4f, true);
-                ghost.Hide();
-            }
-            LockMovement(false);
-            LockShooter(false);
-        }
-
-        ChartTarget target = null;
-        yield return SpawnOne(NextLane(), false, t => target = t);
-        if (target != null) target.shipHitRadius = -1f;
-        lastShotTarget = null;
-        yield return SlowTo(slowScale * 3f);
-        yield return new WaitUntil(() => target == null || (lastShotTarget != null && lastShotTarget == target)
-                                         || SongTime > target.hitTime + Beat);
-        bool shot = target == null || lastShotTarget == target;
-        yield return SpeedUp();
-        if (target != null) Destroy(target.gameObject);
-        cues.ShowMouse(false);
-        result.passed = shot;
-        result.failed = !shot;
+        result.passed = true;
     }
 
     static int SpotBit(PlayerMovement.Spot spot) => 1 << (int)spot;
@@ -336,7 +307,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator ShootDemo()
     {
-        ShowBanner("SHOOT");
+        ShowStep("shoot");
         ChartTarget demo = null;
         yield return SpawnOne(NoteLane.RightUpper, false, t => demo = t);
         if (demo == null) yield break;
@@ -349,7 +320,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator ShootTry(Try result)
     {
-        ShowBanner("SHOOT");
+        ShowStep("shoot");
         cues.ShowProgress(State("streak"), 3);
         bool hit = false;
         yield return OneTimedShot(NextLane(), false, h => hit = h);
@@ -375,7 +346,11 @@ public class Tutorial : MonoBehaviour
             yield break;
         }
         target.shipHitRadius = -1f; // a missed shot here shouldn't cost a life
-        if (turbo) cues.Mark(target, TutorialCues.MarkKind.Pips);
+        if (turbo)
+        {
+            cues.Mark(target, TutorialCues.MarkKind.Pips);
+            cues.Tag(target, "TURBO", warnColor);
+        }
 
         BeatJudgment worst = BeatJudgment.Perfect;
         bool shotAt = false;
@@ -391,6 +366,11 @@ public class Tutorial : MonoBehaviour
         yield return SlowTo(slowScale * 1.5f);
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - GoodWindow);
         if (target != null) yield return SlowTo(slowScale);
+        // The brackets turn gold for the PERFECT window: that is when to shoot.
+        yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - PerfectWindow);
+        if (target != null) cues.ShowNow(target);
+        yield return new WaitUntil(() => target == null || SongTime >= target.hitTime + PerfectWindow);
+        cues.HideNow();
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime + GoodWindow);
         if (target != null) yield return SlowTo(0.5f);
         yield return new WaitUntil(() => target == null || SongTime > target.hitTime + 0.4f);
@@ -399,6 +379,8 @@ public class Tutorial : MonoBehaviour
         bool broke = target == null;
         if (target != null) Destroy(target.gameObject);
         cues.Mark(null, TutorialCues.MarkKind.None);
+        cues.ClearTag();
+        cues.HideNow();
         yield return SpeedUp();
         // Judgments run Perfect < Good < Miss, so "worst <= needed" means every shot was good enough.
         hit(broke && shotAt && worst <= needed);
@@ -408,7 +390,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator PerfectDemo()
     {
-        ShowBanner("PERFECT");
+        ShowStep("perfect");
         foreach (float offset in new[] { -0.45f, 0.45f })
         {
             ChartTarget demo = null;
@@ -430,7 +412,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator PerfectTry(Try result)
     {
-        ShowBanner("PERFECT");
+        ShowStep("perfect");
         cues.ShowProgress(State("perfects"), 2);
         bool perfect = false;
         yield return OneTimedShot(NextLane(), false, h => perfect = h, BeatJudgment.Perfect);
@@ -440,63 +422,17 @@ public class Tutorial : MonoBehaviour
         result.failed = !perfect;
     }
 
-    // Step 3: a hit costs a heart; a streak on the beat wins it back.
-
-    IEnumerator HeartsTry(Try result)
-    {
-        cues.ShowHearts(1, 1, warnColor);
-        ShowLivesHighlight(true);
-        if (State("lost") == 0)
-        {
-            LockShooter(true); // this one has to land
-            if (health.Health <= health.minHealth) health.Heal(1); // keep a heart to lose
-            SetState("before", health.Health);
-            ChartTarget target = null;
-            yield return SpawnOne(NoteLane.RightUpper, false, t => target = t);
-            yield return new WaitUntil(() => target == null || SongTime > target.hitTime + Beat);
-            // If it missed the ship (the player moved away), take the heart anyway for the demo.
-            if (health.Health >= State("before")) health.TakeDamage(1);
-            if (target != null) Destroy(target.gameObject);
-            SetState("lost", 1);
-            yield return new WaitForSecondsRealtime(4f);
-            LockShooter(false);
-        }
-
-        // Win it back: the pips fill toward the next heal.
-        var targets = new List<ChartTarget>();
-        yield return SlowTo(0.45f);
-        StartCoroutine(SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (3f, NoteLane.RightUpper, false), (4f, NoteLane.LeftUpper, false), (5f, NoteLane.RightUpper, false) }, targets));
-        float giveUp = Time.unscaledTime + 30f;
-        while (health.Health < State("before") && Time.unscaledTime < giveUp
-               && !(targets.Count == 4 && targets.TrueForAll(t => t == null || SongTime > t.hitTime + Beat)))
-        {
-            foreach (ChartTarget t in targets) if (t != null) t.shipHitRadius = -1f;
-            int need = Mathf.Max(1, health.healStreak);
-            cues.ShowProgress(health.Streak % need, need);
-            yield return null;
-        }
-        yield return WaitUntilCleared(targets, 0.5f);
-        yield return SpeedUp();
-        result.passed = health.Health >= State("before");
-        result.failed = !result.passed;
-        if (result.passed)
-        {
-            ShowLivesHighlight(false);
-            cues.ShowHearts(0, 0, warnColor);
-        }
-    }
-
-    // Step 4: big asteroids can't be shot; move out of the way, two different ways.
+    // Step 4: big red asteroids can't be shot; move out of the way, two different ways.
 
     IEnumerator BigDemo()
     {
+        ShowStep("big");
         PlayerMovement.Spot from = movement.Current;
         PlayerMovement.Spot safe = SafeSpot(from, 0);
         ChartTarget demo = null;
         yield return SpawnOne(LaneToward(from), false, t => demo = t, big: true);
         if (demo == null) yield break;
         demo.shipHitRadius = -1f; // the player isn't asked to move during the demo
-        cues.Mark(demo, TutorialCues.MarkKind.Crossed);
         ghost.Show(from);
         yield return new WaitUntil(() => demo == null || SongTime >= demo.hitTime - 0.6f * Beat);
         yield return SlowTo(slowScale);
@@ -513,6 +449,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator BigTry(Try result)
     {
+        ShowStep("big");
         LockShooter(true);
         if (health.Health <= health.minHealth) health.Heal(1); // so a hit can show
         PlayerMovement.Spot from = movement.Current;
@@ -520,7 +457,6 @@ public class Tutorial : MonoBehaviour
 
         ChartTarget target = null;
         yield return SpawnOne(LaneToward(from), false, t => target = t, big: true);
-        if (target != null) cues.Mark(target, TutorialCues.MarkKind.Crossed);
         // Past its cue an asteroid rushes the ship, so slow down while it's still out there.
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - 0.6f * Beat);
 
@@ -533,14 +469,12 @@ public class Tutorial : MonoBehaviour
         yield return SlowTo(slowScale * 0.6f);
         yield return new WaitUntil(() => target == null || movement.Current != from);
         cues.ClearGuides();
-        cues.Mark(target, TutorialCues.MarkKind.Crossed);
         GoalSpot = null;
         yield return SpeedUp();
 
         float giveUp = Time.unscaledTime + 6f;
         yield return new WaitUntil(() => target == null || SongTime > target.hitTime + Beat || Time.unscaledTime > giveUp);
         if (target != null) Destroy(target.gameObject);
-        cues.Mark(null, TutorialCues.MarkKind.None);
         LockShooter(false);
 
         bool dodged = damageTaken == hitsBefore && movement.Current != from;
@@ -575,7 +509,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator TurboTry(Try result)
     {
-        ShowBanner("2 HITS");
+        ShowStep("turbo");
         bool hit = false;
         yield return OneTimedShot(NextLane(), true, h => hit = h);
         result.passed = hit;
@@ -589,7 +523,8 @@ public class Tutorial : MonoBehaviour
         PowerUpPickup star = EnsureStar(PowerUpPickup.Kind.Shield);
         if (star == null) yield break;
         PlayerMovement.Spot spot = SpotOf(star);
-        ShowBanner("STAR");
+        ShowStep("shield");
+        cues.TagWorld(star.transform, "SHIELD: blocks one hit", shieldTagColor);
         ghost.Show(movement.Current);
         cues.ShowArrow(movement.Current, spot);
         cues.Glow(spot, true);
@@ -607,10 +542,11 @@ public class Tutorial : MonoBehaviour
             yield break;
         }
 
-        ShowBanner("STAR");
+        ShowStep("shield");
         if (!shield.Active)
         {
             PowerUpPickup star = EnsureStar(PowerUpPickup.Kind.Shield);
+            if (star != null) cues.TagWorld(star.transform, "SHIELD: blocks one hit", shieldTagColor);
             float giveUp = Time.unscaledTime + 18f;
             cues.ShowKeys(true);
             while (!shield.Active && star != null && Time.unscaledTime < giveUp)
@@ -634,8 +570,8 @@ public class Tutorial : MonoBehaviour
             }
         }
 
-        // The shield takes the next hit: hold still and let one land. The shield shows its own label.
-        HideBanner();
+        // The shield takes the next hit: hold still and let one land.
+        ShowBanner("SHIELD", "Stay put. The shield blocks the next hit.", shieldTagColor);
         LockShooter(true);
         LockMovement(true);
         int healthBefore = health.Health;
@@ -662,6 +598,7 @@ public class Tutorial : MonoBehaviour
             yield break;
         }
 
+        ShowStep("stars");
         bool gotFreeze = false, gotBomb = false, slowed = false;
         PowerUpPickup freezeStar = null, bombStar = null;
         var targets = new List<ChartTarget>();
@@ -673,8 +610,16 @@ public class Tutorial : MonoBehaviour
         {
             foreach (ChartTarget t in targets) if (t != null) t.shipHitRadius = -1f;
             // Stars wait until grabbed; one that's gone without being grabbed comes back.
-            if (!gotFreeze && freezeStar == null && !slowMo.Active) freezeStar = SpawnStar(PowerUpPickup.Kind.SlowMo, bombStar);
-            if (!gotBomb && bombStar == null && !bomb.Active) bombStar = SpawnStar(PowerUpPickup.Kind.Bomb, freezeStar);
+            if (!gotFreeze && freezeStar == null && !slowMo.Active)
+            {
+                freezeStar = SpawnStar(PowerUpPickup.Kind.SlowMo, bombStar);
+                if (freezeStar != null) cues.TagWorld(freezeStar.transform, "FREEZE: slows time", freezeTagColor);
+            }
+            if (!gotBomb && bombStar == null && !bomb.Active)
+            {
+                bombStar = SpawnStar(PowerUpPickup.Kind.Bomb, freezeStar);
+                if (bombStar != null) cues.TagWorld(bombStar.transform, "BOMB: clears every asteroid", warnColor);
+            }
             gotFreeze |= slowMo.Active;
             gotBomb |= bomb.Active;
 
@@ -710,8 +655,8 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator PracticeTry(Try result)
     {
-        ShowBanner("YOUR TURN");
-        yield return new WaitForSecondsRealtime(1.2f);
+        ShowStep("practice");
+        yield return new WaitForSecondsRealtime(3f);
         HideBanner();
         int hitsBefore = damageTaken;
         var targets = new List<ChartTarget>();
@@ -752,9 +697,9 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator GoalCard()
     {
-        ShowBanner("SURVIVE THE SONG", goodColor);
+        ShowBanner("SURVIVE THE SONG", "Hits cost hearts. Perfect shots win them back.", goodColor);
         cues.ShowHearts(health.Health, health.Health, accentColor);
-        yield return new WaitForSecondsRealtime(3f);
+        yield return new WaitForSecondsRealtime(4.5f);
         cues.ShowHearts(0, 0, accentColor);
         HideBanner();
     }
@@ -878,6 +823,7 @@ public class Tutorial : MonoBehaviour
         {
             bigTimes.RemoveAt(big);
             target.MakeBig(spawner.bigScale, spawner.bigHitRadius, spawner.bigColor);
+            target.steadyWarning = true;
             return;
         }
         int turbo = turboTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
@@ -958,11 +904,31 @@ public class Tutorial : MonoBehaviour
 
     // ------------------------------------------------------------------ UI
 
-    /// <summary>One or two words at the top.</summary>
-    void ShowBanner(string title, Color? color = null)
+    /// <summary>What each step says: a big title and one short line under it.</summary>
+    static readonly Dictionary<string, (string title, string line)> Words = new Dictionary<string, (string, string)>
+    {
+        ["shoot"] = ("SHOOT", "Click when the brackets close in on the asteroid."),
+        ["perfect"] = ("PERFECT", "Shoot the moment the brackets turn gold."),
+        ["move"] = ("MOVE", "Press W A S D to move your ship."),
+        ["big"] = ("DODGE", "Big red asteroids can't be shot. Move out of the way!"),
+        ["turbo"] = ("TURBO", "Shoot the orange asteroid twice to break it."),
+        ["shield"] = ("SHIELD", "Move onto the purple star to collect it."),
+        ["stars"] = ("POWER-UPS", "Move onto each glowing star to collect it."),
+        ["practice"] = ("YOUR TURN", "Shoot on the beat, dodge red asteroids, grab stars."),
+    };
+
+    void ShowStep(string step)
+    {
+        (string title, string line) = Words[step];
+        ShowBanner(title, line);
+    }
+
+    /// <summary>A big title with one short line under it, at the top.</summary>
+    void ShowBanner(string title, string line = "", Color? color = null)
     {
         bannerTitle.text = title;
         bannerTitle.color = color ?? accentColor;
+        bannerDesc.text = line;
         banner.SetActive(true);
     }
 
@@ -985,11 +951,12 @@ public class Tutorial : MonoBehaviour
         panel.rectTransform.anchorMin = panel.rectTransform.anchorMax = new Vector2(0.5f, 1f);
         panel.rectTransform.pivot = new Vector2(0.5f, 1f);
         panel.rectTransform.anchoredPosition = new Vector2(0f, -30f);
-        panel.rectTransform.sizeDelta = new Vector2(560f, 96f);
+        panel.rectTransform.sizeDelta = new Vector2(1100f, 156f);
         panel.color = panelColor;
         panel.raycastTarget = false;
         banner = panel.gameObject;
-        bannerTitle = AddText(banner.transform, 56, FontStyle.Bold, Vector2.zero);
+        bannerTitle = AddText(banner.transform, 64, FontStyle.Bold, new Vector2(0f, 32f));
+        bannerDesc = AddText(banner.transform, 32, FontStyle.Normal, new Vector2(0f, -38f));
         banner.SetActive(false);
 
         countdown = AddText(canvasObject.transform, 220, FontStyle.Bold, Vector2.zero);
