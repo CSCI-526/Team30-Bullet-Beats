@@ -695,7 +695,7 @@ public class Tutorial : MonoBehaviour
         ShowLivesHighlight(true);
         // Under the banner and the hearts, pointing up at them.
         cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(-10f, -125f), TutorialCues.CalloutArrow.Up);
-        yield return new WaitForSecondsRealtime(3.4f);
+        yield return new WaitForSecondsRealtime(4.2f);
         ShowLivesHighlight(false);
         cues.HideCallout();
 
@@ -704,7 +704,7 @@ public class Tutorial : MonoBehaviour
         clockSample.gameObject.SetActive(true);
         timeHighlight.SetActive(true);
         cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(24f, -125f), TutorialCues.CalloutArrow.Up);
-        yield return new WaitForSecondsRealtime(3.4f);
+        yield return new WaitForSecondsRealtime(4.2f);
         timeHighlight.SetActive(false);
         clockSample.gameObject.SetActive(false);
         cues.HideCallout();
