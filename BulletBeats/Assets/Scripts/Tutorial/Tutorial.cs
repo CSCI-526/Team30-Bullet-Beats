@@ -87,6 +87,9 @@ public class Tutorial : MonoBehaviour
     int damageTaken;
     bool shooterLocked, movementLocked;
     float baseFixedDeltaTime, startedAt;
+    /// <summary>While true no asteroid can hurt the ship: the power-ups step is for learning, not surviving.</summary>
+    bool harmless;
+    float savedPlanetLead = -1f;
     float wantedTimeScale = 1f;
     NoteLane nextLane = NoteLane.RightUpper;
 
@@ -161,6 +164,7 @@ public class Tutorial : MonoBehaviour
         if (flow != null) flow.PausedChanged -= OnPausedChanged;
         if (spawner != null) spawner.Spawned -= OnSpawned;
         Time.fixedDeltaTime = baseFixedDeltaTime;
+        RestoreAsteroidSpeed();
         if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = false;
         ghost?.Destroy();
         if (canvasObject != null) Destroy(canvasObject);
@@ -183,6 +187,7 @@ public class Tutorial : MonoBehaviour
     {
         if (!SkipAvailable) return;
         StopAllCoroutines();
+        RestoreAsteroidSpeed();
         ShowLivesHighlight(false);
         if (timeHighlight != null) timeHighlight.SetActive(false);
         if (clockSample != null) clockSample.gameObject.SetActive(false);
@@ -577,19 +582,28 @@ public class Tutorial : MonoBehaviour
         bool gotFreeze = false, gotBomb = false, slowed = false;
         PowerUpPickup freezeStar = null, bombStar = null;
         var targets = new List<ChartTarget>();
-        float nextWave = Time.unscaledTime;
+
+        // Calm on purpose: asteroids drift in slowly, one at a time and three at most, and none can hurt.
+        // Freeze then slows them more, and the Bomb clears whatever is on screen.
+        harmless = true;
+        if (spawner != null)
+        {
+            savedPlanetLead = spawner.planetLeadSeconds;
+            spawner.planetLeadSeconds = 3.5f; // about 3.5 s from appearing to arriving, instead of 1
+        }
+        int sent = 0;
+        float nextAsteroid = Time.unscaledTime + 1.5f;
 
         float giveUp = Time.unscaledTime + 45f;
         float bothAt = -1f;
         cues.ShowKeys(true);
         while (Time.unscaledTime < giveUp)
         {
-            foreach (ChartTarget t in targets) if (t != null) t.shipHitRadius = -1f;
-            // Keep a few asteroids coming, so the Bomb has something to clear and Freeze something to slow.
-            if (Time.unscaledTime >= nextWave)
+            if (!gotBomb && sent < 3 && Time.unscaledTime >= nextAsteroid && ChartTarget.Active.Count == 0)
             {
-                nextWave = Time.unscaledTime + 5f;
-                StartCoroutine(SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (2.7f, NoteLane.RightUpper, false), (3.4f, NoteLane.LeftUpper, false) }, targets));
+                sent++;
+                nextAsteroid = Time.unscaledTime + 4f;
+                StartCoroutine(SpawnWave(new[] { (3.7f, sent % 2 == 0 ? NoteLane.RightUpper : NoteLane.LeftUpper, false) }, targets));
             }
             // Stars wait until grabbed; one that's gone without being grabbed comes back.
             if (!gotFreeze && freezeStar == null && !slowMo.Active)
@@ -606,9 +620,9 @@ public class Tutorial : MonoBehaviour
             gotBomb |= bomb.Active;
             if (gotFreeze && gotBomb)
             {
-                // Both taken: a few more seconds of slowed asteroids, then on. No waiting for Freeze to run out.
+                // Both taken: a moment to see them work, then on. No waiting for Freeze to run out.
                 if (bothAt < 0f) bothAt = Time.unscaledTime;
-                if (Time.unscaledTime - bothAt > 3.5f) break;
+                if (Time.unscaledTime - bothAt > 1.8f) break;
             }
 
             // No song here for Freeze to slow, so slow the scene clock while it lasts.
@@ -636,8 +650,20 @@ public class Tutorial : MonoBehaviour
         yield return new WaitUntil(() => !bomb.Active);
         yield return SpeedUp();
         yield return WaitUntilCleared(targets, 0.5f);
+        RestoreAsteroidSpeed();
         result.passed = gotFreeze && gotBomb;
         result.failed = !result.passed;
+    }
+
+    /// <summary>Back to normal asteroids: they can hurt again and arrive at the usual speed.</summary>
+    void RestoreAsteroidSpeed()
+    {
+        harmless = false;
+        if (spawner != null && savedPlanetLead >= 0f)
+        {
+            spawner.planetLeadSeconds = savedPlanetLead;
+            savedPlanetLead = -1f;
+        }
     }
 
     // Step 7: a short run on your own.
@@ -863,6 +889,7 @@ public class Tutorial : MonoBehaviour
     void OnSpawned(ChartTarget target)
     {
         spawned.Add(target);
+        if (harmless) target.shipHitRadius = -1f;
         int big = bigTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
         if (big >= 0)
         {
