@@ -94,7 +94,7 @@ public class SlowMo : MonoBehaviour
         c.a *= strength;
         tint.color = c;
         bar.fillAmount = duration > 0f ? remaining / duration : 0f;
-        label.text = $"SLOW-MO  {Mathf.CeilToInt(remaining)}";
+        label.text = $"FREEZE  {Mathf.CeilToInt(remaining)}";
     }
 
     void BuildUI()

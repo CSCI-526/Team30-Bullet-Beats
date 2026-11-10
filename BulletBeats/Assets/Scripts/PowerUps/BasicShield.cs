@@ -3,8 +3,8 @@ using UnityEngine;
 
 /// <summary>
 /// One extra hit on top of the ship's health. <see cref="PlayerHealth.TakeDamage"/> breaks it before
-/// any health is lost. While it's up, a thin ring in the shield's color circles the ship, facing the
-/// camera. Granted by a <see cref="PowerUpPickup"/>. The ring is built from code, so it needs no art.
+/// any health is lost. While it's up, a glowing bubble in the shield's color surrounds the ship, facing
+/// the camera. Granted by a <see cref="PowerUpPickup"/>. The bubble is built from code, so it needs no art.
 /// </summary>
 public class BasicShield : MonoBehaviour
 {
@@ -14,7 +14,9 @@ public class BasicShield : MonoBehaviour
     [Tooltip("When Ring Radius is 0: how much bigger than the ship the ring is.")]
     public float ringPadding = 1.25f;
     [Tooltip("Ring thickness in world units.")]
-    public float ringWidth = 0.15f;
+    public float ringWidth = 0.45f;
+    [Tooltip("How strongly the inside of the bubble is tinted, 0 to 1.")]
+    [Range(0f, 1f)] public float bubbleTint = 0.18f;
 
     /// <summary>Raised when the shield goes up or breaks, with the new state.</summary>
     public event Action<bool> Changed;
@@ -22,6 +24,7 @@ public class BasicShield : MonoBehaviour
     public bool Active { get; private set; }
 
     LineRenderer ring;
+    MeshRenderer bubble;
     Vector3 localCenter;
     float radius = 1f;
 
@@ -72,6 +75,7 @@ public class BasicShield : MonoBehaviour
     void ShowRing()
     {
         if (ring != null) ring.enabled = Active;
+        if (bubble != null) bubble.enabled = Active;
     }
 
     /// <summary>Centers the ring on the ship's visible body (its origin sits off to the side of the mesh).</summary>
@@ -113,6 +117,49 @@ public class BasicShield : MonoBehaviour
             line.SetPosition(i, new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f));
         }
         line.enabled = false;
+        bubble = BuildBubble(go.transform, line.material);
         return line;
+    }
+
+    /// <summary>A disc that is faint in the middle, brightest at the rim, with a soft glow past it.</summary>
+    MeshRenderer BuildBubble(Transform parent, Material material)
+    {
+        float[] radii = { 0f, 0.7f, 0.96f, 1f, 1.22f };
+        float[] alphas = { bubbleTint * 0.4f, bubbleTint, bubbleTint * 3f, 0.75f, 0f };
+        const int segments = 64;
+        var vertices = new Vector3[radii.Length * segments];
+        var colors = new Color[vertices.Length];
+        var triangles = new int[(radii.Length - 1) * segments * 6];
+        int tri = 0;
+        for (int r = 0; r < radii.Length; r++)
+        {
+            for (int s = 0; s < segments; s++)
+            {
+                float a = s / (float)segments * Mathf.PI * 2f;
+                int i = r * segments + s;
+                vertices[i] = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * radii[r];
+                colors[i] = new Color(ringColor.r, ringColor.g, ringColor.b, alphas[r]);
+                if (r == radii.Length - 1) continue;
+                int next = r * segments + (s + 1) % segments;
+                triangles[tri++] = i;
+                triangles[tri++] = i + segments;
+                triangles[tri++] = next + segments;
+                triangles[tri++] = i;
+                triangles[tri++] = next + segments;
+                triangles[tri++] = next;
+            }
+        }
+
+        var mesh = new Mesh { name = "ShieldBubble", vertices = vertices, colors = colors, triangles = triangles };
+        mesh.RecalculateBounds();
+        var go = new GameObject("Bubble", typeof(MeshFilter), typeof(MeshRenderer));
+        go.transform.SetParent(parent, false);
+        go.GetComponent<MeshFilter>().sharedMesh = mesh;
+        var view = go.GetComponent<MeshRenderer>();
+        view.sharedMaterial = material;
+        view.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        view.receiveShadows = false;
+        view.enabled = false;
+        return view;
     }
 }
