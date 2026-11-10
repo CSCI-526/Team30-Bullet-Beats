@@ -63,10 +63,10 @@ public class GameFlow : MonoBehaviour
     public Level[] levels = { new Level { displayName = "Tetris", sceneName = "MainLevel" } };
 
     /// <summary>
-    /// The only songs the game shows, in catalog order. A song in the catalog that isn't listed here stays
-    /// hidden until it is ready: add its id here to show it again.
+    /// The only songs the game shows, in this order (Level Select, level numbers and Next Level follow it). A song
+    /// in the catalog that isn't listed here stays hidden until it is ready: add its id here to show it again.
     /// </summary>
-    public static readonly string[] ShownLevelIds = { "pink-panther", "cheat-codes", "flames", "far-out", "boogie-shoes" };
+    public static readonly string[] ShownLevelIds = { "pink-panther", "cheat-codes", "boogie-shoes", "flames", "far-out" };
     [Tooltip("Level length in seconds while BeatClock has no song. 0 = never ends by time.")]
     public float levelLengthSeconds = 90f;
     [Tooltip("If off, running out of health does not end the level (for testing).")]
@@ -164,7 +164,10 @@ public class GameFlow : MonoBehaviour
         LevelCatalog catalog = Resources.Load<LevelCatalog>("LevelCatalog");
         if (catalog != null && catalog.levels != null && catalog.levels.Length > 0)
         {
-            Level[] shown = Array.FindAll(catalog.levels, level => Array.IndexOf(ShownLevelIds, level.id) >= 0);
+            // In the order of ShownLevelIds, not the catalog's.
+            Level[] shown = Array.FindAll(
+                Array.ConvertAll(ShownLevelIds, id => Array.Find(catalog.levels, level => level.id == id)),
+                level => level != null);
             levels = shown.Length > 0 ? shown : catalog.levels;
         }
 
