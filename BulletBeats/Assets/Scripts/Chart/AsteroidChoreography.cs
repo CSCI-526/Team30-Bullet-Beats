@@ -3,10 +3,11 @@ using UnityEngine;
 
 /// <summary>
 /// Spawns asteroids from a level's isolated stems (drums / other / vocals / bass).
-/// Each stem plays near-silently ahead of the song by the spawner's lead time and is read with
-/// <see cref="AudioSource.GetSpectrumData"/>. When a stem's energy jumps above its recent average,
-/// an asteroid is spawned in that stem's screen section, timed to reach the ship when the song
-/// gets to that moment. The screen is a 3 x 2 grid. Levels without stems use the normal chart.
+/// Energy is read from each stem <see cref="AudioClip"/> at song time + lead (PCM samples),
+/// so detection still works while <see cref="CornerMute"/> silences the listener. When a stem's
+/// energy jumps above its recent average, an asteroid is spawned in that stem's screen section,
+/// timed to reach the ship when the song gets to that moment. The screen is a 3 x 2 grid.
+/// Levels without stems use the normal chart.
 /// </summary>
 public class AsteroidChoreography : MonoBehaviour
 {
@@ -20,8 +21,8 @@ public class AsteroidChoreography : MonoBehaviour
     public bool spawnAtCenter = true;
 
     [Header("Detection")]
-    [Tooltip("Spectrum samples per read. Power of two, 64-8192.")]
-    public int spectrumSize = 512;
+    [Tooltip("PCM samples per energy read (per channel). Higher = smoother, heavier.")]
+    [Min(64)] public int spectrumSize = 512;
     [Tooltip("A stem triggers when its energy is this many times its running average.")]
     public float peakRatio = 1.6f;
     [Tooltip("Ignore energy below this (relative to the stem's loudest recent read).")]
@@ -30,9 +31,9 @@ public class AsteroidChoreography : MonoBehaviour
     public float averageSpeed = 4f;
     [Tooltip("Shortest time between two asteroids from the same stem.")]
     public float minGapSeconds = 0.6f;
-    [Tooltip("Stem playback volume. Very low so they aren't heard; detection is relative so the level doesn't matter.")]
+    [Tooltip("Unused: analysis reads clip samples, so mute no longer needs silent stem playback.")]
     [Range(0.0001f, 1f)] public float analysisVolume = 0.001f;
-    [Tooltip("Resync the stems if they drift this far from the song.")]
+    [Tooltip("Unused: stems are no longer played as AudioSources.")]
     public float resyncSeconds = 0.05f;
 
     [Header("Busy stem")]
@@ -150,7 +151,7 @@ public class AsteroidChoreography : MonoBehaviour
     }
 
     Stem[] stems;
-    float[] spectrum;
+    float[] sampleBuf;
     AudioSource music;
     ChartTargetSpawner spawner;
     float lead;
@@ -177,7 +178,7 @@ public class AsteroidChoreography : MonoBehaviour
     public static bool HasStems(GameFlow.Level level) =>
         level != null && (level.drumsStem != null || level.otherStem != null || level.vocalsStem != null || level.bassStem != null);
 
-    /// <summary>Creates a near-silent source per stem and loads its audio. Call before the song starts.</summary>
+    /// <summary>Loads each stem clip into memory for PCM reads. Call before the song starts.</summary>
     public IEnumerator Load(GameFlow.Level level)
     {
         Stop();
@@ -196,27 +197,17 @@ public class AsteroidChoreography : MonoBehaviour
         {
             if (stem.clip.loadState != AudioDataLoadState.Loaded) stem.clip.LoadAudioData();
             while (stem.clip.loadState == AudioDataLoadState.Loading) yield return null;
-
-            var go = new GameObject($"Stem_{stem.name}");
-            go.transform.SetParent(transform, false);
-            stem.source = go.AddComponent<AudioSource>();
-            stem.source.clip = stem.clip;
-            stem.source.playOnAwake = false;
-            stem.source.loop = false;
-            stem.source.spatialBlend = 0f;
-            stem.source.volume = analysisVolume;
         }
         stems = found;
     }
 
-    /// <summary>Starts the stems <paramref name="leadSeconds"/> ahead of <paramref name="song"/>, which has just started playing.</summary>
+    /// <summary>Arms stem analysis <paramref name="leadSeconds"/> ahead of <paramref name="song"/>.</summary>
     public void Play(AudioSource song, ChartTargetSpawner targetSpawner, float leadSeconds)
     {
         if (!HasLoadedStems || song == null) return;
         music = song;
         spawner = targetSpawner;
         lead = Mathf.Max(0f, leadSeconds);
-        spectrum = new float[Mathf.ClosestPowerOfTwo(Mathf.Clamp(spectrumSize, 64, 8192))];
         circleIndex = 0;
         circling = false;
         counterclockwise = startCounterclockwise;
@@ -233,9 +224,6 @@ public class AsteroidChoreography : MonoBehaviour
             stem.peak = 0f;
             stem.lastSpawn = float.NegativeInfinity;
             stem.hits.Clear();
-            if (lead >= stem.clip.length) continue;
-            stem.source.time = lead;
-            stem.source.Play();
         }
     }
 
@@ -254,27 +242,17 @@ public class AsteroidChoreography : MonoBehaviour
     {
         if (music == null || !HasLoadedStems || spawner == null) return;
         BeatClock clock = BeatClock.Instance;
+        // music.isPlaying is true while the song runs, even if CornerMute set listener volume to 0.
         if (clock == null || !music.isPlaying) return;
 
         float noteTime = clock.SongTime + lead;
         float dt = Time.unscaledDeltaTime;
 
-        // Read every stem first, then only the loudest one may spawn this frame.
+        // Read every stem from clip PCM (works while muted), then only the loudest may spawn.
         Stem loudest = null;
         foreach (Stem stem in stems)
         {
-            stem.energy = 0f;
-            AudioSource source = stem.source;
-            if (source == null || !source.isPlaying) continue;
-
-            // Follow the song: same pitch (slow-mo) and stay lead seconds ahead.
-            source.pitch = music.pitch;
-            float wanted = music.time + lead;
-            if (wanted < stem.clip.length && Mathf.Abs(source.time - wanted) > resyncSeconds)
-                source.time = wanted;
-
-            source.GetSpectrumData(spectrum, 0, FFTWindow.BlackmanHarris);
-            for (int i = 0; i < spectrum.Length; i++) stem.energy += spectrum[i];
+            stem.energy = EnergyAt(stem.clip, noteTime);
             stem.peak = Mathf.Max(stem.peak * (1f - 0.05f * dt), stem.energy);
 
             if (loudest == null || stem.energy > loudest.energy) loudest = stem;
@@ -469,6 +447,26 @@ public class AsteroidChoreography : MonoBehaviour
         if (!spawner.SpawnInArea(time, area, centered)) return false;
         lastAnySpawn = time;
         return true;
+    }
+
+    /// <summary>
+    /// RMS energy of <paramref name="clip"/> around <paramref name="time"/> seconds.
+    /// Reads PCM directly so CornerMute (listener volume 0) does not zero out detection.
+    /// </summary>
+    float EnergyAt(AudioClip clip, float time)
+    {
+        if (clip == null || time < 0f || time >= clip.length) return 0f;
+        int channels = Mathf.Max(1, clip.channels);
+        int rate = Mathf.Max(1, clip.frequency);
+        int start = Mathf.FloorToInt(time * rate);
+        if (start >= clip.samples) return 0f;
+        int frames = Mathf.Min(Mathf.Max(64, spectrumSize), clip.samples - start);
+        int samples = frames * channels;
+        if (sampleBuf == null || sampleBuf.Length < samples) sampleBuf = new float[samples];
+        if (!clip.GetData(sampleBuf, start)) return 0f;
+        double sum = 0.0;
+        for (int i = 0; i < samples; i++) sum += sampleBuf[i] * sampleBuf[i];
+        return (float)System.Math.Sqrt(sum / samples);
     }
 
     /// <summary>True when the stem's energy this frame is loud and jumps above its recent average.</summary>
