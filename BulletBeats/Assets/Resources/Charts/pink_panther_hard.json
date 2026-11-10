@@ -1,6 +1,8 @@
 {
  "song": "The Pink Panther Theme",
  "difficulty": "hard",
+ "endTime": 80.299,
+ "endFade": 1.5,
  "healStreak": 0,
  "startLives": 3,
  "canDie": true,
@@ -824,6 +826,14 @@
    "turbo": false,
    "x": 0.255,
    "y": 0.787
+  },
+  {
+   "t": 79.787,
+   "fly": 1.35,
+   "cue": 1.35,
+   "turbo": false,
+   "x": 0.478,
+   "y": 0.709
   }
  ],
  "bigAsteroids": [

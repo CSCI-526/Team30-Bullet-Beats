@@ -17,6 +17,8 @@ public class ScriptedLevel : MonoBehaviour
     public class Data
     {
         public float flyIn, cue;
+        [Tooltip("Song second where the music starts fading out and the level then ends. 0 = play to the end of the audio.")]
+        public float endTime, endFade = 1.5f;
         [Tooltip("Shifts the chart to line up with its audio. Missing = the shared default.")]
         public float offset = float.NaN;
         public int healStreak, startLives;
@@ -98,6 +100,7 @@ public class ScriptedLevel : MonoBehaviour
 
     static void ApplyOffset(Data chart, float offset)
     {
+        chart.endTime = chart.endTime > 0f ? chart.endTime + offset : 0f;
         foreach (Note n in chart.notes) n.t += offset;
         for (int i = 0; i < chart.bigAsteroids.Length; i++) chart.bigAsteroids[i] += offset;
         foreach (Star s in chart.stars) s.t += offset;
@@ -110,10 +113,33 @@ public class ScriptedLevel : MonoBehaviour
         if (Chart == null || clock == null || !clock.IsMusicPlaying) return;
 
         float now = clock.SongTime;
+        if (UpdateEnding(clock, now)) return;
         // Nothing is skipped when a frame is slow: a late spawn just starts a little way into its flight.
         while (next < events.Count && events[next].at <= now)
             events[next++].run();
         UpdateFlights(now);
+    }
+
+    bool ending;
+    float fadeElapsed, startVolume;
+
+    /// <summary>At the chart's end time the music fades out, then the level is won.</summary>
+    /// <returns>True while fading, when nothing else should spawn.</returns>
+    bool UpdateEnding(BeatClock clock, float now)
+    {
+        if (Chart.endTime <= 0f || clock.music == null) return false;
+        if (!ending)
+        {
+            if (now < Chart.endTime) return false;
+            ending = true;
+            startVolume = clock.music.volume;
+        }
+
+        if (Time.timeScale > 0f) fadeElapsed += Time.unscaledDeltaTime;
+        float fade = Mathf.Clamp01(fadeElapsed / Mathf.Max(0.05f, Chart.endFade));
+        clock.music.volume = startVolume * (1f - fade);
+        if (fade >= 1f && GameFlow.Instance != null) GameFlow.Instance.EndLevel(true);
+        return true;
     }
 
     void UpdateFlights(float now)
