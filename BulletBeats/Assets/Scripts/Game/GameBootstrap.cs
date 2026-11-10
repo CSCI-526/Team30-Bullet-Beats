@@ -55,6 +55,8 @@ static class GameBootstrap
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<LevelIntroCard>();
         if (Object.FindFirstObjectByType<PauseMenu>() == null)
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<PauseMenu>();
+        if (Object.FindFirstObjectByType<PowerUpBanners>() == null)
+            Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<PowerUpBanners>();
         if (Object.FindFirstObjectByType<CornerMute>() == null)
             new GameObject("CornerMute", typeof(CornerMute));
     }

@@ -51,6 +51,8 @@ public class PlayerHealth : MonoBehaviour
     public int Streak { get; private set; }
     public int BestStreak { get; private set; }
     public bool IsDead => Health <= 0;
+    /// <summary>True if the most recent hit that landed was taken by a <see cref="BasicShield"/>.</summary>
+    public bool LastHitAbsorbed { get; private set; }
     /// <summary>Notes still needed for the next heal.</summary>
     public int NotesUntilHeal => healStreak - Streak % healStreak;
     public bool IsInvulnerable => Time.time < invulnerableUntil || (movement != null && movement.IsInvulnerable);
@@ -98,6 +100,7 @@ public class PlayerHealth : MonoBehaviour
 
         invulnerableUntil = Time.time + hitInvulnerableTime;
         bool absorbed = TryGetComponent(out BasicShield shield) && shield.TryAbsorb();
+        LastHitAbsorbed = absorbed;
         if (!absorbed) SetHealth(Health - amount);
         SetStreak(0);
         Damaged?.Invoke(absorbed ? 0 : amount);

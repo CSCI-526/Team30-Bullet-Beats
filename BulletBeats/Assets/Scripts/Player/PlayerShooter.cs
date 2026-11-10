@@ -206,6 +206,7 @@ public class PlayerShooter : MonoBehaviour
 
         BeatJudgment judgment = clock.JudgeAtSongTime(rock.hitTime, out float offset);
         LastShotOffset = offset;
+        rock.RecordShot(judgment, offset);
         return judgment;
     }
 

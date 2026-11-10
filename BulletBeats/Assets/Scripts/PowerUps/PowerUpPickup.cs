@@ -9,7 +9,12 @@ public class PowerUpPickup : MonoBehaviour
 {
     public enum Kind { Shield, SlowMo, Bomb }
 
+    /// <summary>Raised once per pickup when it's collected (true) or disappears uncollected (false), for analytics.</summary>
+    public static event System.Action<PowerUpPickup, bool> Ended;
+
     public Kind kind = Kind.Shield;
+    /// <summary>The W/A/S/D spot the spawner parked it on.</summary>
+    [HideInInspector] public PlayerMovement.Spot spot;
     [Tooltip("World units per second. Zero = stays put.")]
     public Vector3 velocity;
     [Tooltip("How close the ship has to get to collect it.")]
@@ -22,6 +27,20 @@ public class PowerUpPickup : MonoBehaviour
 
     float age;
     bool collected;
+    bool reported;
+
+    void Report(bool wasCollected)
+    {
+        if (reported) return;
+        reported = true;
+        Ended?.Invoke(this, wasCollected);
+    }
+
+    void OnDestroy()
+    {
+        // A scene unload (retry, level end) isn't the star expiring.
+        if (gameObject.scene.isLoaded) Report(false);
+    }
 
     void Update()
     {
@@ -46,6 +65,7 @@ public class PowerUpPickup : MonoBehaviour
     {
         if (collected) return;
         collected = true;
+        Report(true);
 
         PlayerHealth ship = PlayerHealth.Instance;
         if (ship != null)
