@@ -50,7 +50,8 @@ public class PlayerShooter : MonoBehaviour
     [Tooltip("Shots per second while the button is held.")]
     [Min(1f)] public float holdFireRate = 12f;
 
-    const string HoldToFirePrefsKey = "HoldToFire";
+    // New key so a saved "on" from an older build doesn't carry over: everyone starts with it off.
+    const string HoldToFirePrefsKey = "HoldToFire.v2";
     /// <summary>Title-screen setting kept in PlayerPrefs so it survives reloads.</summary>
     public static bool HoldToFireEnabled
     {
