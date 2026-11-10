@@ -70,8 +70,12 @@ public class Analytics : MonoBehaviour
 
     public void LogDeath(string cause = "") => Log("death", cause);
 
-    /// <summary>Tutorial result: "complete" or "skipped", and the step it ended on.</summary>
+    /// <summary>Tutorial result: "started", "complete" or "skipped", and the step it was on.</summary>
     public void LogTutorial(string result, string step) => Log("tutorial", result, step);
+
+    /// <summary>A tutorial step the player passed: its name, how many tries it took and how many seconds.</summary>
+    public void LogTutorialStep(string step, int tries, float seconds) =>
+        Log("tutorial_step", step, tries.ToString(), seconds.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
 
     public void LogLevelEnd(bool won)
     {
