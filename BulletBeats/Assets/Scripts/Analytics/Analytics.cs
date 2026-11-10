@@ -87,7 +87,7 @@ public class Analytics : MonoBehaviour
     static string Num(float value) => value.ToString("F2", CultureInfo.InvariantCulture);
 
     /// <summary>Starts a run: counts this attempt at the level (kept across reloads) and tags every later row with it.</summary>
-    public void LogLevelStart(string levelId, string difficulty, bool holdToFire, float aimAssist, bool tutorialSeen)
+    public void LogLevelStart(string levelId, string difficulty, bool holdToFire, float aimAssist, bool tutorialSeen, float perfectWindow, float goodWindow)
     {
         levelId = string.IsNullOrEmpty(levelId) ? "unknown" : levelId.Replace("|", "-");
         string key = AttemptKeyPrefix + levelId;
@@ -95,7 +95,9 @@ public class Analytics : MonoBehaviour
         PlayerPrefs.SetInt(key, attempt);
         PlayerPrefs.Save();
         levelContext = levelId + "|" + difficulty + "|" + attempt;
-        Log("level_start", holdToFire ? "1" : "0", Num(aimAssist), tutorialSeen ? "seen" : "new");
+        // Data 3 = tutorial seen/new | Perfect window ms | Good window ms, so the dashboard shades the windows the game really used.
+        string windows = Mathf.RoundToInt(perfectWindow * 1000f) + "|" + Mathf.RoundToInt(goodWindow * 1000f);
+        Log("level_start", holdToFire ? "1" : "0", Num(aimAssist), (tutorialSeen ? "seen" : "new") + "|" + windows);
     }
 
     /// <summary>One row per asteroid. <paramref name="hitTime"/> is its beat, so the row's time is the same for every player.</summary>

@@ -34,6 +34,9 @@ BIN = 5                # seconds per column on the song-time charts
 MIN_RUNS = 5           # columns with fewer runs than this are drawn grey
 # Song ids in level order. Fill in the final order here; any other song is listed after these.
 LEVEL_ORDER = ["pink-panther", "cheat-codes", "flames", "far-out", "boogie-shoes"]
+# Timing windows (ms) used when the data doesn't say which ones the game had. Matches MainLevel.unity (BeatClock).
+# Newer builds log their windows in each level_start row, and the page uses those instead.
+DEFAULT_WINDOWS_MS = (70, 150)
 # Optional planned difficulty score per song id (doc 3). Empty = column hidden.
 PLANNED_SCORE = {}
 
@@ -72,7 +75,7 @@ def load_rows(source):
 
 
 def new_run(player, song, difficulty, attempt):
-    return {"player": player, "song": song, "difficulty": difficulty, "attempt": attempt, "hold": False,
+    return {"windows": None, "player": player, "song": song, "difficulty": difficulty, "attempt": attempt, "hold": False,
             "result": None, "end": 0.0, "asteroids": [], "dodges": [], "stars": [], "empty": 0}
 
 
@@ -90,6 +93,9 @@ def build_runs(rows):
         e = r["event"]
         if e == "level_start":
             run["hold"] = r["d1"] == "1"
+            w = r["d3"].split("|")
+            if len(w) == 3 and w[1].isdigit() and w[2].isdigit() and int(w[1]) > 0:
+                run["windows"] = (int(w[1]), int(w[2]))
         elif e == "asteroid":
             kind = r["d1"].split("|") + [""]
             shot = r["d3"].split("|") + ["", ""]
@@ -111,8 +117,9 @@ def build_runs(rows):
 
 
 def level_ids(runs):
+    """The songs the game shows, in level order. Songs that have been hidden are left out."""
     seen = {r["song"] for r in runs}
-    return [s for s in LEVEL_ORDER if s in seen] + sorted(seen - set(LEVEL_ORDER))
+    return [s for s in LEVEL_ORDER if s in seen]
 
 
 def pct(a, b):
@@ -211,7 +218,12 @@ def timing_data(runs):
             a1 += one
             a2 += two
             pairs += 1
-    return {"first": first, "later": later, "pairs": pairs, "pair_first": iqr(a1), "pair_later": iqr(a2),
+    used = defaultdict(int)
+    for run in runs:
+        if not run["hold"] and any(a["offset"] is not None for a in run["asteroids"]):
+            used[run["windows"] or DEFAULT_WINDOWS_MS] += 1
+    windows = max(used, key=used.get) if used else DEFAULT_WINDOWS_MS
+    return {"windows": windows, "mixed": len(used) > 1, "all_windows": dict(used), "first": first, "later": later, "pairs": pairs, "pair_first": iqr(a1), "pair_later": iqr(a2),
             "empty": sum(r["empty"] for r in runs), "runs": len(runs)}
 
 
@@ -312,6 +324,7 @@ def timeline_svg(d):
 def timing_svg(d):
     left, right, top, h0, w = 46, 20, 16, 220, 700
     edges = list(range(-300, 301, 20))
+    pw, gw = d["windows"]
 
     def shares(values):
         inside = [v for v in values if -300 <= v < 300]
@@ -324,9 +337,10 @@ def timing_svg(d):
     ymax = max(first + later + [5]) * 1.15
     x = lambda ms: left + (ms + 300) / 600 * (w - left - right)
     y = lambda p: top + h0 - p / ymax * h0
-    out = [rect(x(-250), top, x(250) - x(-250), h0, "var(--band)", extra='fill-opacity=".45"'),
-           rect(x(-120), top, x(120) - x(-120), h0, "var(--band)"),
-           text(x(0), top + 12, "Perfect ±120", "middle", "on"), text(x(-185), top + 12, "Good", "middle"), text(x(185), top + 12, "Good", "middle")]
+    out = [rect(x(-gw), top, x(gw) - x(-gw), h0, "var(--band)", extra='fill-opacity=".45"'),
+           rect(x(-pw), top, x(pw) - x(-pw), h0, "var(--band)"),
+           text(x(0), top + 12, f"Perfect ±{pw}", "middle", "on"),
+           text(x(-(pw + gw) / 2), top + 12, "Good", "middle"), text(x((pw + gw) / 2), top + 12, "Good", "middle")]
     for t in range(0, int(ymax) + 1, 5):
         out.append(f'<line x1="{left}" x2="{w - right}" y1="{y(t):.1f}" y2="{y(t):.1f}" class="grid"/>' + text(left - 8, y(t) + 4, f"{t}%", "end"))
     for m in range(-300, 301, 100):
@@ -371,18 +385,18 @@ def power_svg(table):
 def level_table(runs, songs):
     show_score = bool(PLANNED_SCORE)
     head = "<tr><th>Level</th>" + ('<th class="num">Planned score</th>' if show_score else "") + \
-        '<th class="num">Players</th><th class="num">Runs</th><th class="num">Finished %</th><th class="num">Asteroids per second</th><th class="num">Hit per 100 asteroids</th></tr>'
+        '<th class="num">Players</th><th class="num">Runs</th><th class="num">Completed %</th><th class="num">Asteroids per second</th><th class="num">Hit per 100 asteroids</th></tr>'
     rows = []
-    for i, song in enumerate(songs, 1):
+    for song in songs:
         group = [r for r in runs if r["song"] == song]
-        ended = [r for r in group if r["result"]]
         asteroids = [a for r in group for a in r["asteroids"]]
         seconds = sum(r["end"] for r in group) or 1
         score = f'<td class="num">{PLANNED_SCORE.get(song, "-")}</td>' if show_score else ""
-        rows.append(f'<tr><td>{i}. {ESC(song)}</td>{score}<td class="num">{len({r["player"] for r in group})}</td><td class="num">{len(group)}</td>'
-                    f'<td class="num">{pct(sum(r["result"] == "win" for r in ended), len(ended)):.0f}</td><td class="num">{len(asteroids) / seconds:.2f}</td>'
+        rows.append(f'<tr><td>{LEVEL_ORDER.index(song) + 1}. {ESC(song)}</td>{score}<td class="num">{len({r["player"] for r in group})}</td><td class="num">{len(group)}</td>'
+                    f'<td class="num">{pct(sum(r["result"] == "win" for r in group), len(group)):.0f}</td><td class="num">{len(asteroids) / seconds:.2f}</td>'
                     f'<td class="num">{pct(sum(a["outcome"] == "hit" for a in asteroids), len(asteroids)):.0f}</td></tr>')
-    return f'<div class="scroll"><table>{head}{"".join(rows)}</table></div>'
+    return (f'<div class="scroll"><table>{head}{"".join(rows)}</table></div>'
+            '<p class="stat">Completed = the player reached the end of the song. Runs that were lost, quit early or are still being played count as not completed.</p>')
 
 
 def build_empty_page(message):
@@ -416,7 +430,7 @@ def build_page(runs, source_note, simulated):
     options, heat, timeline = [], [], []
     for i, song in enumerate(songs):
         group = [r for r in runs if r["song"] == song]
-        options.append(f'<option value="{i}">{i + 1}. {ESC(song)}</option>')
+        options.append(f'<option value="{i}">{LEVEL_ORDER.index(song) + 1}. {ESC(song)}</option>')
         hd, td = heat_data(group), timeline_data(group)
         camp = f"Median run spent {hd['camp']:.0f}% of its time at its most-used spot." if hd["camp"] is not None else ""
         flags = ", ".join(f"{b * BIN}-{(b + 1) * BIN}s" for b in td["flagged"])
@@ -448,7 +462,7 @@ def build_page(runs, source_note, simulated):
                          "One tight peak near zero means the cue is readable. A peak off to one side means players share the wrong moment. A wide, flat curve means guessing.",
                          "The median offset stays within ±40 ms, and the middle half of shots is narrower on later attempts for the same players."),
         timing_legend=legend(("var(--s1)", f"Attempt 1 ({len(t['first'])} shots)"), ("var(--s2)", f"Attempt 2 or later ({len(t['later'])} shots)")),
-        timing_stat=f'Median offset: attempt 1 {fmt_ms(median(t["first"]))}, later {fmt_ms(median(t["later"]))}. {narrowing} Clicks at nothing: {t["empty"] / max(1, t["runs"]):.1f} per run.',
+        timing_stat=f'Median offset: attempt 1 {fmt_ms(median(t["first"]))}, later {fmt_ms(median(t["later"]))}. {narrowing} Clicks at nothing: {t["empty"] / max(1, t["runs"]):.1f} per run. Timing windows in the game: Perfect ±{t["windows"][0]} ms, Good ±{t["windows"][1]} ms{" (runs used different windows, Perfect/Good in ms: " + ", ".join(f"{p}/{g} in {n} runs" for (p, g), n in sorted(t["all_windows"].items(), key=lambda kv: -kv[1])) + "; the shaded one is the most common)" if t["mixed"] else ""}.',
         power=power_svg(power_data(runs)),
         power_info=info("For each power-up: how often its star was taken, and how often a ship hit followed in the next 10 song-seconds, collected vs missed.",
                         "Shows whether power-ups are noticed and whether they change the outcome.",
@@ -506,19 +520,25 @@ def main(argv=None):
     parser.add_argument("--simulated", action="store_true", help="local testing only: label the data as simulated")
     args = parser.parse_args(argv)
 
-    runs = []
+    runs, hidden = [], 0
     if args.source:
         try:
             runs = build_runs(load_rows(args.source))
         except Exception as error:  # keep the last good page: don't replace it with an empty one
             print(f"Could not read the source: {error}", file=sys.stderr)
             return 1
-        note = "no Beta responses in the sheet yet"
+        # Only the songs the game shows (LEVEL_ORDER). Runs on songs that were hidden later are left out and counted.
+        hidden = sum(1 for r in runs if r["song"] not in LEVEL_ORDER)
+        runs = [r for r in runs if r["song"] in LEVEL_ORDER]
+        note = "no Beta responses on the Beta songs in the sheet yet"
     else:
         note = "the responses sheet is not connected yet"
 
     if runs:
-        page = build_page(runs, "simulated sample responses" if args.simulated else "Google Form responses", args.simulated)
+        source = "simulated sample responses" if args.simulated else "Google Form responses"
+        if hidden:
+            source += f" ({hidden} runs on songs that are no longer in the game are not shown)"
+        page = build_page(runs, source, args.simulated)
         print(f"Wrote {args.output}: {len(runs)} runs{' (simulated)' if args.simulated else ''}")
     else:
         page = build_empty_page(f"No data to show: {note}.")

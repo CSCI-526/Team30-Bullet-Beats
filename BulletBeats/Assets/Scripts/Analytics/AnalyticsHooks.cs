@@ -15,6 +15,8 @@ public class AnalyticsHooks : MonoBehaviour
     PlayerMovement.Spot lastSpot;
     bool runStarted;
     int emptyClicks;
+    /// <summary>Frame the level ended on. The asteroid that killed the ship ends in the same frame, just after the level does.</summary>
+    int endedFrame = -1;
 
     void Start()
     {
@@ -56,8 +58,10 @@ public class AnalyticsHooks : MonoBehaviour
         runStarted = true;
         GameFlow.Level level = flow.CurrentLevel;
         string levelId = level == null ? "unknown" : !string.IsNullOrEmpty(level.id) ? level.id : level.displayName;
+        BeatClock clock = BeatClock.Instance;
         Analytics.Instance?.LogLevelStart(levelId, ScoreKeeper.SelectedDifficulty.ToString(),
-            shooter != null && shooter.holdToFire, shooter != null ? shooter.aimAssist : 0f, GameFlow.TutorialDone);
+            shooter != null && shooter.holdToFire, shooter != null ? shooter.aimAssist : 0f, GameFlow.TutorialDone,
+            clock != null ? clock.perfectWindow : 0f, clock != null ? clock.goodWindow : 0f);
     }
 
     void OnShotFired(BeatJudgment judgment)
@@ -73,7 +77,9 @@ public class AnalyticsHooks : MonoBehaviour
 
     void OnAsteroidEnded(ChartTarget asteroid, ChartTarget.Outcome outcome)
     {
-        if (!InRun) return;
+        // The hit that kills the ship ends the level first, so it arrives just after the run stops: keep it.
+        bool sameFrameAsEnd = runStarted && !InTutorial && Time.frameCount == endedFrame;
+        if (!InRun && !sameFrameAsEnd) return;
         Analytics.Instance?.LogAsteroid(asteroid.hitTime, asteroid.TypeName, outcome.ToString().ToLowerInvariant(),
             lastSpot.ToString(), asteroid.FirstShotOffset, asteroid.Tries, asteroid.FirstShotInSlowMo);
     }
@@ -85,6 +91,7 @@ public class AnalyticsHooks : MonoBehaviour
 
     void OnStateChanged(GameState state)
     {
+        if (state == GameState.Ended) endedFrame = Time.frameCount;
         if (state == GameState.Playing) BeginRun();
         if (state != GameState.Ended || InTutorial || !runStarted) return;
         Analytics.Instance?.LogLevelEnd(flow.Won, emptyClicks);

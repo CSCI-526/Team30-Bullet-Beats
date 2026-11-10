@@ -4,8 +4,10 @@ The game's `Analytics` script posts one Google Form response per event from the 
 saves them to its linked Google Sheet. `visualize_analytics.py` turns the sheet into one HTML dashboard
 with four graphs: Ship Position Heat Map, Asteroid Outcome Timeline, Timing Profile and Power-up Value.
 
-The live page is <https://csci-526.github.io/Team30-Bullet-Beats/analytics/>. It's rebuilt every 30
-minutes by `.github/workflows/analytics-dashboard.yml`.
+The live page is <https://csci-526.github.io/Team30-Bullet-Beats/analytics/>. It's rebuilt by
+`.github/workflows/analytics-dashboard.yml` on every push to `main`, on a 30-minute timer (GitHub runs
+these late or skips them, so don't rely on it), and whenever someone presses "Run workflow" on the Actions
+tab. Press it just before the page is graded.
 
 ## What the game sends
 
@@ -20,7 +22,7 @@ The form's columns don't change. New values are packed with `|`.
 
 | Event | Data 1 | Data 2 | Data 3 |
 | --- | --- | --- | --- |
-| `level_start` | Hold to Fire 1/0 | aim assist | tutorial `seen`/`new` |
+| `level_start` | Hold to Fire 1/0 | aim assist | tutorial `seen`/`new` \| Perfect window ms \| Good window ms |
 | `asteroid` | `type\|outcome` | ship spot | `offsetMs\|tries\|slowMo` |
 | `dodge` | from | to | |
 | `star` | kind | spot | `collected`/`expired` |
