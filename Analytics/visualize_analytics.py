@@ -241,7 +241,10 @@ def power_data(runs):
 # ---------------------------------------------------------------- drawing
 
 def svg(w, h, label, body):
-    return f'<div class="scroll"><svg viewBox="0 0 {w} {h}" role="img" aria-label="{ESC(label)}">{body}</svg></div>'
+    # Never draw a chart bigger than its natural size: a run with only a few 5-second columns made a tiny
+    # viewBox that the page then stretched to the full width, so everything looked huge.
+    style = f"max-width:{w}px;min-width:min({w}px,600px)"
+    return f'<div class="scroll"><svg viewBox="0 0 {w} {h}" style="{style}" role="img" aria-label="{ESC(label)}">{body}</svg></div>'
 
 
 def text(x, y, s, anchor="start", cls=""):
@@ -268,9 +271,9 @@ def heat_svg(d):
     w, h = left + d["bins"] * cw + 58, top + 4 * ch + 42
     out = [text(0, 18, "asked")]
     for b in range(d["bins"]):
-        if d["n"][b] and d["bigs"][b] / d["n"][b] >= 0.4:
+        if d["n"][b] >= MIN_RUNS and d["bigs"][b] / d["n"][b] >= 0.4:
             out.append(text(left + b * cw + cw / 2 - 5, 18, "▲", "middle", "on"))
-        if d["n"][b] and d["stars"][b] / d["n"][b] >= 0.2:
+        if d["n"][b] >= MIN_RUNS and d["stars"][b] / d["n"][b] >= 0.2:
             out.append(text(left + b * cw + cw / 2 + 5, 18, "★", "middle", "on"))
     grand = {s: sum(c[s] for c in d["totals"]) for s in SPOTS}
     all_time = sum(grand.values()) or 1
@@ -487,7 +490,7 @@ h1{{margin:0;font-size:2rem}}h2{{margin:0;font-size:1.3rem}}p{{margin:0}}
 .card{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;display:grid;gap:14px}}
 .card>*{{min-width:0}}
 .facts{{display:flex;flex-wrap:wrap;gap:8px 28px}}.facts b{{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}}
-.scroll{{overflow-x:auto}}svg{{display:block;width:100%;min-width:600px;height:auto}}
+.scroll{{overflow-x:auto}}svg{{display:block;width:100%;height:auto}}
 svg text{{fill:var(--muted);font:11px ui-monospace,Menlo,monospace}}svg text.on{{fill:var(--fg);font-weight:600}}svg .grid{{stroke:var(--line)}}
 .legend{{display:flex;flex-wrap:wrap;gap:6px 16px}}.legend i{{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}}
 .ramp{{display:inline-block;width:100px;height:10px;margin:0 6px;background:linear-gradient(90deg,var(--empty),var(--seq));vertical-align:-1px}}
