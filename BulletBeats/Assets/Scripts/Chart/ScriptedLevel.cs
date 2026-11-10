@@ -17,6 +17,8 @@ public class ScriptedLevel : MonoBehaviour
     public class Data
     {
         public float flyIn, cue;
+        [Tooltip("Shifts the chart to line up with its audio. Missing = the shared default.")]
+        public float offset = float.NaN;
         public int healStreak, startLives;
         public bool canDie;
         public float perfectWindow, goodWindow;
@@ -57,7 +59,7 @@ public class ScriptedLevel : MonoBehaviour
         }
 
         Chart = JsonUtility.FromJson<Data>(file.text);
-        ApplyOffset(Chart, AudioOffsetSeconds);
+        ApplyOffset(Chart, float.IsNaN(Chart.offset) ? AudioOffsetSeconds : Chart.offset);
         spawner = GetComponent<ChartTargetSpawner>();
         powerUps = FindFirstObjectByType<PowerUpSpawner>();
         if (powerUps != null) powerUps.enabled = false; // stars only come from the chart
