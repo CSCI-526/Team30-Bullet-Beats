@@ -183,7 +183,7 @@ public class HealthHUD : MonoBehaviour
     void RefreshStreak()
     {
         streakLabel.text = health.Streak > 0 ? $"STREAK {health.Streak}"
-            : health.Health < health.maxHealth ? "Hit a Perfect note to gain a life"
+            : health.Health < health.maxHealth ? health.StreakHealEvery > 0 ? $"{health.StreakHealEvery} in a row to gain a life" : health.StreakHealEvery == 0 ? "" : "Hit a Perfect note to gain a life"
             : "";
     }
 

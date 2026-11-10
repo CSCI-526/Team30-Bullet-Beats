@@ -350,6 +350,46 @@ public class ChartTargetSpawner : MonoBehaviour
             : hit + Vector3.forward * 80f;
         liveViewports.Add(viewport);
 
+        ChartTarget target = CreateTarget(note, spawn);
+        target.Arm(note, spawn, hit);
+        target.shipHitRadius = shipHitRadius;
+        target.SetLifetime(quarter, lead, viewport);
+
+        spawnCount++;
+        if (bigEveryN > 0 && spawnCount % bigEveryN == 0)
+            target.MakeBig(bigScale, bigHitRadius, bigColor);
+        else if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
+            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+
+        Spawned?.Invoke(target);
+    }
+
+    public enum ScriptedKind { Normal, Turbo, Big }
+
+    /// <summary>Spawns one hand-charted target that flies exactly from spawn to hit.</summary>
+    /// <param name="cueSeconds">How long its timing cue shows.</param>
+    public ChartTarget SpawnScripted(ChartNote note, Vector3 spawn, Vector3 hit, float lead, float cueSeconds, ScriptedKind kind)
+    {
+        ChartTarget target = CreateTarget(note, spawn);
+        target.Arm(note, spawn, hit, true);
+        target.shipHitRadius = shipHitRadius;
+        target.SetLifetime(cueSeconds, lead, Vector2.zero);
+        if (kind == ScriptedKind.Big) target.MakeBig(bigScale, bigHitRadius, bigColor);
+        else if (kind == ScriptedKind.Turbo) target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+        Spawned?.Invoke(target);
+        return target;
+    }
+
+    /// <summary>The farthest a target starts from the camera; widens the far clip plane to see it.</summary>
+    public float PrepareSpawnDistance(Camera cam)
+    {
+        float distance = Mathf.Max(spawnDistanceFromCamera * Mathf.Max(1f, spawnDistanceMultiplier), distanceFromCamera + 1f);
+        if (cam != null && cam.farClipPlane < distance + 50f) cam.farClipPlane = distance + 50f;
+        return distance;
+    }
+
+    ChartTarget CreateTarget(ChartNote note, Vector3 spawn)
+    {
         ChartTarget target;
         if (targetPrefab != null)
         {
@@ -374,22 +414,12 @@ public class ChartTargetSpawner : MonoBehaviour
             }
         }
 
-        target.Arm(note, spawn, hit);
-        target.shipHitRadius = shipHitRadius;
-        target.SetLifetime(quarter, lead, viewport);
-
-        spawnCount++;
-        if (bigEveryN > 0 && spawnCount % bigEveryN == 0)
-            target.MakeBig(bigScale, bigHitRadius, bigColor);
-        else if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
-            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
-
-        Spawned?.Invoke(target);
+        return target;
     }
 
     // A primitive made from code gets the built-in default material, whose shader the URP web build
     // can't draw (magenta). Copy the ship's material instead: it's in the build and renders correctly.
-    Material NewAsteroidMaterial()
+    public Material NewAsteroidMaterial()
     {
         Material template = null;
         if (PlayerHealth.Instance != null)

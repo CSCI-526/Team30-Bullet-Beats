@@ -213,7 +213,8 @@ public class ChartTarget : MonoBehaviour, IShootable
         Destroy(gameObject);
     }
 
-    public void Arm(ChartNote note, Vector3 spawn, Vector3 hit)
+    /// <param name="straight">Fly exactly from spawn to hit, instead of aiming the path at the ship.</param>
+    public void Arm(ChartNote note, Vector3 spawn, Vector3 hit, bool straight = false)
     {
         hitTime = note.time;
         lane = note.lane;
@@ -224,7 +225,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         spinSpeed = Random.Range(40f, 120f);
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
-        if (cam != null && PlayerHealth.Instance != null)
+        if (!straight && cam != null && PlayerHealth.Instance != null)
         {
             Vector3 ship = PlayerHealth.Instance.transform.position;
             Vector3 fwd = cam.transform.forward;
