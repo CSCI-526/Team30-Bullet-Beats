@@ -122,6 +122,10 @@ def level_ids(runs):
     return [s for s in LEVEL_ORDER if s in seen]
 
 
+def plural(n, word):
+    return f"{n} {word}" + ("" if n == 1 else "s")
+
+
 def pct(a, b):
     return 100.0 * a / b if b else 0.0
 
@@ -178,7 +182,7 @@ def heat_data(runs):
         for s in run["stars"]:
             if int(s["t"] // BIN) < bins:
                 stars[int(s["t"] // BIN)] += 1
-    return {"bins": bins, "totals": totals, "n": reached, "bigs": bigs, "stars": stars, "camp": median(shares)}
+    return {"bins": bins, "totals": totals, "n": reached, "bigs": bigs, "stars": stars, "camp": median(shares), "runs": len(runs)}
 
 
 def timeline_data(runs):
@@ -241,7 +245,10 @@ def power_data(runs):
 # ---------------------------------------------------------------- drawing
 
 def svg(w, h, label, body):
-    return f'<div class="scroll"><svg viewBox="0 0 {w} {h}" role="img" aria-label="{ESC(label)}">{body}</svg></div>'
+    # Never draw a chart bigger than its natural size: a run with only a few 5-second columns made a tiny
+    # viewBox that the page then stretched to the full width, so everything looked huge.
+    style = f"max-width:{w}px;min-width:min({w}px,600px)"
+    return f'<div class="scroll"><svg viewBox="0 0 {w} {h}" style="{style}" role="img" aria-label="{ESC(label)}">{body}</svg></div>'
 
 
 def text(x, y, s, anchor="start", cls=""):
@@ -268,15 +275,15 @@ def heat_svg(d):
     w, h = left + d["bins"] * cw + 58, top + 4 * ch + 42
     out = [text(0, 18, "asked")]
     for b in range(d["bins"]):
-        if d["n"][b] and d["bigs"][b] / d["n"][b] >= 0.4:
+        if d["n"][b] >= MIN_RUNS and d["bigs"][b] / d["n"][b] >= 0.4:
             out.append(text(left + b * cw + cw / 2 - 5, 18, "▲", "middle", "on"))
-        if d["n"][b] and d["stars"][b] / d["n"][b] >= 0.2:
+        if d["n"][b] >= MIN_RUNS and d["stars"][b] / d["n"][b] >= 0.2:
             out.append(text(left + b * cw + cw / 2 + 5, 18, "★", "middle", "on"))
     grand = {s: sum(c[s] for c in d["totals"]) for s in SPOTS}
     all_time = sum(grand.values()) or 1
     for y, spot in enumerate(SPOTS):
         out.append(text(left - 12, top + y * ch + 17, KEY[spot], "end", "on"))
-        out.append(text(left + d["bins"] * cw + 10, top + y * ch + 17, f"{grand[spot] / all_time * 100:.0f}%", "start", "on"))
+        out.append(text(left + d["bins"] * cw + 10, top + y * ch + 17, f"{grand[spot] / all_time * 100:.0f}%" if d["runs"] >= MIN_RUNS else "-", "start", "on"))
         for b in range(d["bins"]):
             cell = d["totals"][b]
             whole = sum(cell.values())
@@ -432,12 +439,20 @@ def build_page(runs, source_note, simulated):
         group = [r for r in runs if r["song"] == song]
         options.append(f'<option value="{i}">{LEVEL_ORDER.index(song) + 1}. {ESC(song)}</option>')
         hd, td = heat_data(group), timeline_data(group)
-        camp = f"Median run spent {hd['camp']:.0f}% of its time at its most-used spot." if hd["camp"] is not None else ""
+        if len(group) < MIN_RUNS:
+            camp = f"Only {plural(len(group), 'run')} so far. The cells and the totals stay empty until {MIN_RUNS} runs reach the same stretch."
+        else:
+            camp = f"Median run spent {hd['camp']:.0f}% of its time at its most-used spot." if hd["camp"] is not None else ""
         flags = ", ".join(f"{b * BIN}-{(b + 1) * BIN}s" for b in td["flagged"])
         flag_text = f"▲ Hit share at least 1.5× the level average in a quieter stretch: {flags}." if flags else "No quiet stretch has an unusually high hit share."
         heat.append(f'<div data-level="{i}">{heat_svg(hd)}<p class="stat">{camp}</p></div>')
-        timeline.append(f'<div data-level="{i}">{timeline_svg(td)}<p class="stat">Level average: {td["avg_hit"]:.0f}% of asteroids hit the ship. {flag_text}</p></div>')
+        if len(group) < MIN_RUNS:
+            tl_stat = f"Only {plural(len(group), 'run')} so far, so these bars are too few to read. Columns stay grey until {MIN_RUNS} runs reach them."
+        else:
+            tl_stat = f"Level average: {td['avg_hit']:.0f}% of asteroids hit the ship. {flag_text}"
+        timeline.append(f'<div data-level="{i}">{timeline_svg(td)}<p class="stat">{tl_stat}</p></div>')
     t = timing_data(runs)
+    pw = power_data(runs)
     narrowing = (f'Among {t["pairs"]} player-level pairs who retried, the middle half of shots went from {t["pair_first"]:.0f} ms wide to {t["pair_later"]:.0f} ms wide.'
                  if t["pairs"] and t["pair_first"] and t["pair_later"] else "Not enough retries yet to compare the same players.")
     banner = ('<div class="banner"><strong>Simulated data.</strong> These charts show generated sample responses until Beta playtest data arrives. '
@@ -462,13 +477,14 @@ def build_page(runs, source_note, simulated):
                          "One tight peak near zero means the cue is readable. A peak off to one side means players share the wrong moment. A wide, flat curve means guessing.",
                          "The median offset stays within ±40 ms, and the middle half of shots is narrower on later attempts for the same players."),
         timing_legend=legend(("var(--s1)", f"Attempt 1 ({len(t['first'])} shots)"), ("var(--s2)", f"Attempt 2 or later ({len(t['later'])} shots)")),
-        timing_stat=f'Median offset: attempt 1 {fmt_ms(median(t["first"]))}, later {fmt_ms(median(t["later"]))}. {narrowing} Clicks at nothing: {t["empty"] / max(1, t["runs"]):.1f} per run. Timing windows in the game: Perfect ±{t["windows"][0]} ms, Good ±{t["windows"][1]} ms{" (runs used different windows, Perfect/Good in ms: " + ", ".join(f"{p}/{g} in {n} runs" for (p, g), n in sorted(t["all_windows"].items(), key=lambda kv: -kv[1])) + "; the shaded one is the most common)" if t["mixed"] else ""}.',
-        power=power_svg(power_data(runs)),
+        timing_stat=f'Median offset: attempt 1 {fmt_ms(median(t["first"]))}, later {fmt_ms(median(t["later"]))}. {narrowing} Clicks at nothing: {t["empty"] / max(1, t["runs"]):.1f} per run. {"Only " + plural(len(t["first"]) + len(t["later"]), "shot") + " so far, which is too few to read the shape. " if len(t["first"]) + len(t["later"]) < 30 else ""}Timing windows in the game: Perfect ±{t["windows"][0]} ms, Good ±{t["windows"][1]} ms{" (runs used different windows, Perfect/Good in ms: " + ", ".join(f"{p}/{g} in {n} runs" for (p, g), n in sorted(t["all_windows"].items(), key=lambda kv: -kv[1])) + "; the shaded one is the most common)" if t["mixed"] else ""}.',
+        power=power_svg(pw),
         power_info=info("For each power-up: how often its star was taken, and how often a ship hit followed in the next 10 song-seconds, collected vs missed.",
                         "Shows whether power-ups are noticed and whether they change the outcome.",
                         "A blue bar shorter than its orange bar means fewer hits after collecting. Stronger players may also collect more, so check it against the other graphs.",
                         "Each type is collected more than half the time, and collected stars are followed by a hit less often than missed ones."),
-        power_legend=legend(("var(--s1)", "Star collected"), ("var(--s2)", "Star missed")) ,
+        power_legend=legend(("var(--s1)", "Star collected"), ("var(--s2)", "Star missed")),
+        power_stat=("Only " + plural(sum(side[0] for kind in pw.values() for side in kind.values()), "star") + " so far, which is too few to compare. " if sum(side[0] for kind in pw.values() for side in kind.values()) < 20 else "") + "All levels combined. Lower is better.",
     )
 
 
@@ -487,7 +503,7 @@ h1{{margin:0;font-size:2rem}}h2{{margin:0;font-size:1.3rem}}p{{margin:0}}
 .card{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;display:grid;gap:14px}}
 .card>*{{min-width:0}}
 .facts{{display:flex;flex-wrap:wrap;gap:8px 28px}}.facts b{{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}}
-.scroll{{overflow-x:auto}}svg{{display:block;width:100%;min-width:600px;height:auto}}
+.scroll{{overflow-x:auto}}svg{{display:block;width:100%;height:auto}}
 svg text{{fill:var(--muted);font:11px ui-monospace,Menlo,monospace}}svg text.on{{fill:var(--fg);font-weight:600}}svg .grid{{stroke:var(--line)}}
 .legend{{display:flex;flex-wrap:wrap;gap:6px 16px}}.legend i{{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}}
 .ramp{{display:inline-block;width:100px;height:10px;margin:0 6px;background:linear-gradient(90deg,var(--empty),var(--seq));vertical-align:-1px}}
@@ -503,7 +519,7 @@ label{{font-weight:600}}select{{font:inherit;padding:4px 8px;margin-left:8px}}
 <section class="card"><h2>1. Ship Position Heat Map</h2>{heat_info}{heat}{heat_legend}</section>
 <section class="card"><h2>2. Asteroid Outcome Timeline</h2>{timeline_info}{timeline}{timeline_legend}</section>
 <section class="card"><h2>3. Timing Profile</h2>{timing_info}{timing}{timing_legend}<p class="stat">{timing_stat}</p></section>
-<section class="card"><h2>4. Power-up Value</h2>{power_info}{power}{power_legend}<p class="stat">All levels combined. Lower is better.</p></section>
+<section class="card"><h2>4. Power-up Value</h2>{power_info}{power}{power_legend}<p class="stat">{power_stat}</p></section>
 <p class="sub">One graph can suggest a cause but can't prove one. Read each graph against the others and the Beta survey.</p>
 </main><script>
 var s=document.getElementById('level'),b=document.querySelectorAll('[data-level]');
@@ -537,7 +553,7 @@ def main(argv=None):
     if runs:
         source = "simulated sample responses" if args.simulated else "Google Form responses"
         if hidden:
-            source += f" ({hidden} runs on songs that are no longer in the game are not shown)"
+            source += f" ({plural(hidden, 'run')} on songs that are no longer in the game not shown)"
         page = build_page(runs, source, args.simulated)
         print(f"Wrote {args.output}: {len(runs)} runs{' (simulated)' if args.simulated else ''}")
     else:
