@@ -17,6 +17,8 @@ public class SlowMo : MonoBehaviour
     [Range(0.2f, 1f)] public float speed = 0.5f;
     [Tooltip("Seconds to ease in and out of slow motion.")]
     public float rampSeconds = 0.4f;
+    [Tooltip("Real seconds to ease back to normal speed when it ends, so asteroids speed up gently.")]
+    public float rampOutSeconds = 1.5f;
     public Color tintColor = new Color(0.4f, 0.75f, 1f, 0.12f);
     public Color barColor = new Color(0.45f, 0.85f, 1f);
 
@@ -56,7 +58,8 @@ public class SlowMo : MonoBehaviour
         }
 
         float target = Active ? speed : 1f;
-        current = Mathf.MoveTowards(current, target, (1f - speed) / Mathf.Max(0.01f, rampSeconds) * Time.unscaledDeltaTime);
+        float ramp = Active ? rampSeconds : rampOutSeconds;
+        current = Mathf.MoveTowards(current, target, (1f - speed) / Mathf.Max(0.01f, ramp) * Time.unscaledDeltaTime);
         Apply(current);
         RefreshUI();
     }

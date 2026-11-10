@@ -120,6 +120,21 @@ public class PlayerHealth : MonoBehaviour
     [ContextMenu("Take 1 damage")]
     void TakeOneDamage() => TakeDamage(1);
 
+    /// <summary>Hand-made charts: heal every this many notes in a row instead of on each Perfect. 0 = no streak healing.</summary>
+    public void UseStreakHealing(int every) => streakHealEvery = every;
+
+    /// <summary>Notes in a row per life on a hand-made chart; negative = a Perfect heals instead.</summary>
+    public int StreakHealEvery => streakHealEvery;
+
+    /// <summary>Sets the lives a hand-made chart starts with, and whether the ship can die on it.</summary>
+    public void SetChartLives(int lives, bool canDie)
+    {
+        minHealth = canDie ? 0 : 1;
+        SetHealth(Mathf.Min(lives, maxHealth));
+    }
+
+    int streakHealEvery = -1;
+
     void OnShotFired(BeatJudgment judgment)
     {
         if (IsDead) return;
@@ -130,7 +145,11 @@ public class PlayerHealth : MonoBehaviour
         }
 
         SetStreak(Streak + 1);
-        if (judgment == BeatJudgment.Perfect)
+        if (streakHealEvery >= 0)
+        {
+            if (streakHealEvery > 0 && Streak % streakHealEvery == 0) Heal(healAmount);
+        }
+        else if (judgment == BeatJudgment.Perfect)
             Heal(healAmount);
     }
 

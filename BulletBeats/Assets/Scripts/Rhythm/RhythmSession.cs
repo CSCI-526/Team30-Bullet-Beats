@@ -106,7 +106,7 @@ public class RhythmSession : MonoBehaviour
             else if (level.music != null)
             {
                 musicClip = level.music;
-                chartFromAudio = true;
+                chartFromAudio = string.IsNullOrEmpty(level.chartJson);
             }
             if (level.bpm > 1f)
             {
@@ -152,7 +152,13 @@ public class RhythmSession : MonoBehaviour
 
         // Stem levels are driven by AsteroidChoreography at runtime. Skip the spectrum/MIDI chart
         // so the two systems stay independent.
-        if (!stemsLevel)
+        if (level != null && !string.IsNullOrEmpty(level.chartJson))
+        {
+            ScriptedLevel scripted = spawner.gameObject.AddComponent<ScriptedLevel>();
+            if (scripted.Load(ScriptedLevel.ChartName(level.chartJson, ScoreKeeper.SelectedDifficulty), out List<ChartNote> shots) && metronome != null)
+                metronome.SetChartNotes(shots);
+        }
+        else if (!stemsLevel)
         {
             if (chartFromAudio)
             {

@@ -41,8 +41,8 @@ public class BeatClock : MonoBehaviour
     float clipEndedAt = -1f;
 
     // While the music's pitch is changed (slow motion), the web build reports the playback position
-    // wrong: too slow, then a jump forward once the pitch is back to 1. So while it's changed the
-    // clock counts time itself at the pitch's speed, until the real position catches up again.
+    // wrong: too slow, then a jump forward once the pitch is back to 1. So from the first pitch change
+    // the clock counts time itself at the pitch's speed, for the rest of the song.
     bool counting;
     float countedTime;
 
@@ -118,8 +118,6 @@ public class BeatClock : MonoBehaviour
 
         if (music.isPlaying && !AudioListener.pause && Time.timeScale > 0f)
             countedTime += Time.unscaledDeltaTime * music.pitch;
-        // Back at normal speed: hand back to the real position once it has caught up.
-        if (!pitched && PlaybackTime >= countedTime - 0.02f) counting = false;
     }
 
     /// <summary>Call when music is (re)started so beat events resync from the song timeline.</summary>
