@@ -34,7 +34,7 @@ Older rows (level = `MainLevel`) are ignored, so the sheet doesn't need clearing
 2. Build the link: `https://docs.google.com/spreadsheets/d/<sheet id>/export?format=csv&gid=<tab id>`
 3. Save it as the repository secret `ANALYTICS_CSV_URL`.
 
-Until there are Beta rows, the page shows `sample_responses.csv` under a "Simulated data" banner.
+The page only ever shows real responses. Until the link is saved, or while the sheet has no Beta rows, it says "No playtest data yet" and shows no numbers. If the link stops working, the workflow fails and the last good page stays up.
 
 ## Run it locally
 
@@ -42,5 +42,5 @@ Until there are Beta rows, the page shows `sample_responses.csv` under a "Simula
 python3 Analytics/visualize_analytics.py responses.csv -o dashboard.html
 ```
 
-`simulate_responses.py` regenerates the sample file. Set the level order in `LEVEL_ORDER` at the top of
+`simulate_responses.py` writes `sample_responses.csv` (made-up rows, never committed) so you can try the script on your own computer with `--simulated`, which adds a "Simulated data" banner. The published workflow never uses it. Set the level order in `LEVEL_ORDER` at the top of
 `visualize_analytics.py`.
