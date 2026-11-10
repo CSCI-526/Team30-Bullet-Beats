@@ -360,7 +360,7 @@ public class GameMenus : MonoBehaviour
         viewportRect.SetParent(levelPanel.transform, false);
         viewportRect.sizeDelta = new Vector2(920f, 560f);
         viewportRect.anchoredPosition = new Vector2(0f, 16f);
-        AddRankHeader(levelPanel, 324f);
+        if (ShowDifficultyNumbers) AddRankHeader(levelPanel, 324f);
         var viewportImage = viewport.GetComponent<Image>();
         viewportImage.color = new Color(0f, 0f, 0f, 0.01f);
         viewportImage.raycastTarget = true;
@@ -403,11 +403,19 @@ public class GameMenus : MonoBehaviour
             if (playable && levelFirst == null) levelFirst = button;
         }
 
-        AddText(levelPanel, "OR LOAD A FILE", 22, new Color(0.95f, 0.78f, 0.35f), -340f);
-        yourSongButton = AddFilePicker(levelPanel, -406f);
+        if (ShowSongFilePicker)
+        {
+            AddText(levelPanel, "OR LOAD A FILE", 22, new Color(0.95f, 0.78f, 0.35f), -340f);
+            yourSongButton = AddFilePicker(levelPanel, -406f);
+        }
         Button back = AddButton(levelPanel, "BACK", -500f, flow.ShowTitle);
         if (levelFirst == null) levelFirst = back;
     }
+
+    /// <summary>Easy / Medium / Hard numbers are typed into the catalog by hand, so they stay hidden until they are calculated.</summary>
+    static readonly bool ShowDifficultyNumbers = false;
+    /// <summary>Choosing a song file only works in the Unity editor, not in the web build.</summary>
+    static readonly bool ShowSongFilePicker = false;
 
     const string ChooseFilePrompt = "Choose a .wav, .mp3, or .ogg file…";
 
@@ -502,7 +510,7 @@ public class GameMenus : MonoBehaviour
         title.horizontalOverflow = HorizontalWrapMode.Overflow;
         title.text = playable ? level.displayName : $"{level.displayName}  (not in build)";
 
-        int[] ranks = { level.easyLevel, level.mediumLevel, level.hardLevel };
+        int[] ranks = ShowDifficultyNumbers ? new[] { level.easyLevel, level.mediumLevel, level.hardLevel } : new int[0];
         for (int i = 0; i < ranks.Length; i++)
         {
             var rank = new GameObject("Rank", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
@@ -551,7 +559,7 @@ public class GameMenus : MonoBehaviour
             var difficulty = (Difficulty)i;
             int high = ScoreKeeper.GetHighScore(level, difficulty);
             int chartLevel = level.ChartLevel(difficulty);
-            string rating = chartLevel > 0 ? $"LV {chartLevel}      " : "";
+            string rating = ShowDifficultyNumbers && chartLevel > 0 ? $"LV {chartLevel}      " : "";
             difficultyButtons[i].GetComponentInChildren<Text>().text =
                 $"{ScoreKeeper.DifficultyName(difficulty)}  {rating}HIGH SCORE  {(high >= 0 ? ScoreKeeper.FormatPoints(high) : "-")}";
         }
