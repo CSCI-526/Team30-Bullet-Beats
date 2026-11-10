@@ -1,5 +1,11 @@
 [
   {
+    "id": "2026-11-10-3f2ce7f",
+    "date": "2026-11-10 08:23 UTC",
+    "sha": "3f2ce7f",
+    "message": "Merge pull request #117 from CSCI-526/feat/hide-unfinished"
+  },
+  {
     "id": "2026-11-10-c612527",
     "date": "2026-11-10 07:53 UTC",
     "sha": "c612527",
