@@ -16,7 +16,7 @@ public class PowerUpBanners : MonoBehaviour
 
     const float TabWidth = 190f, TabHeight = 44f, Gap = 12f, Top = 14f;
     /// <summary>In the tutorial the tabs sit under its title and description.</summary>
-    const float TutorialTop = 196f;
+    const float TutorialTop = 134f;
     const float PopSeconds = 0.3f, LeaveSeconds = 0.22f;
 
     class Tab

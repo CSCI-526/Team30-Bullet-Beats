@@ -49,7 +49,7 @@ public class TutorialCues
     RectTransform popupKey;
     RectTransform callout, calloutArrow;
     Text calloutText;
-    bool calloutArrowLeft;
+    CalloutArrow calloutArrowDir;
 
     // Labels that follow an asteroid or a star.
     Text nowLabel, tagLabel;
@@ -129,22 +129,27 @@ public class TutorialCues
 
     // ---------------------------------------------------------------- callout
 
+    public enum CalloutArrow { Left, Right, Up }
+
     /// <summary>
-    /// A name with an arrow pointing at part of the screen, e.g. YOUR LIVES next to the hearts.
+    /// A name with an arrow pointing at part of the screen, e.g. YOUR LIVES under the hearts.
     /// <paramref name="anchor"/> is the screen corner it hangs from, <paramref name="position"/> the offset from it,
-    /// and <paramref name="arrowOnLeft"/> puts the arrow on the left (pointing left) or the right (pointing right).
+    /// and <paramref name="arrow"/> which way the arrow points.
     /// </summary>
-    public void ShowCallout(string text, Vector2 anchor, Vector2 position, bool arrowOnLeft)
+    public void ShowCallout(string text, Vector2 anchor, Vector2 position, CalloutArrow arrow)
     {
         callout.anchorMin = callout.anchorMax = callout.pivot = anchor;
         callout.anchoredPosition = position;
         calloutText.text = text;
-        calloutText.alignment = arrowOnLeft ? TextAnchor.MiddleLeft : TextAnchor.MiddleRight;
-        calloutText.rectTransform.offsetMin = new Vector2(arrowOnLeft ? 64f : 0f, 0f);
-        calloutText.rectTransform.offsetMax = new Vector2(arrowOnLeft ? 0f : -64f, 0f);
-        calloutArrow.anchorMin = calloutArrow.anchorMax = new Vector2(arrowOnLeft ? 0f : 1f, 0.5f);
-        calloutArrow.localRotation = Quaternion.Euler(0f, 0f, arrowOnLeft ? 180f : 0f);
-        calloutArrowLeft = arrowOnLeft;
+        calloutArrowDir = arrow;
+        bool up = arrow == CalloutArrow.Up;
+        bool left = arrow == CalloutArrow.Left;
+        callout.sizeDelta = up ? new Vector2(330f, 120f) : new Vector2(440f, 70f);
+        calloutText.alignment = up ? TextAnchor.LowerCenter : left ? TextAnchor.MiddleLeft : TextAnchor.MiddleRight;
+        calloutText.rectTransform.offsetMin = new Vector2(left ? 64f : 0f, 0f);
+        calloutText.rectTransform.offsetMax = new Vector2(left || up ? 0f : -64f, up ? -56f : 0f);
+        calloutArrow.anchorMin = calloutArrow.anchorMax = up ? new Vector2(0.5f, 1f) : new Vector2(left ? 0f : 1f, 0.5f);
+        calloutArrow.localRotation = Quaternion.Euler(0f, 0f, up ? 90f : left ? 180f : 0f);
         callout.gameObject.SetActive(true);
     }
 
@@ -294,7 +299,9 @@ public class TutorialCues
         UpdateLabels(cam, scale, pulse);
         if (popup.activeSelf) popupKey.localScale = Vector3.one * Mathf.Lerp(1f, 1.08f, pulse);
         if (callout.gameObject.activeSelf)
-            calloutArrow.anchoredPosition = new Vector2((calloutArrowLeft ? 28f : -28f) + (calloutArrowLeft ? -1f : 1f) * 8f * pulse, 0f);
+            calloutArrow.anchoredPosition = calloutArrowDir == CalloutArrow.Up
+                ? new Vector2(0f, -26f + 8f * pulse)
+                : new Vector2((calloutArrowDir == CalloutArrow.Left ? 28f : -28f) + (calloutArrowDir == CalloutArrow.Left ? -1f : 1f) * 8f * pulse, 0f);
 
         if (popup.activeSelf)
         {
@@ -456,13 +463,13 @@ public class TutorialCues
         hearts = new GameObject("Hearts", typeof(RectTransform)).GetComponent<RectTransform>();
         hearts.SetParent(canvas.transform, false);
         hearts.anchorMin = hearts.anchorMax = new Vector2(0.5f, 1f);
-        hearts.anchoredPosition = new Vector2(0f, -236f);
+        hearts.anchoredPosition = new Vector2(0f, -186f);
         hearts.gameObject.SetActive(false);
 
         progress = new GameObject("Progress", typeof(RectTransform)).GetComponent<RectTransform>();
         progress.SetParent(canvas.transform, false);
         progress.anchorMin = progress.anchorMax = new Vector2(0.5f, 1f);
-        progress.anchoredPosition = new Vector2(0f, -214f);
+        progress.anchoredPosition = new Vector2(0f, -152f);
         progress.gameObject.SetActive(false);
 
         nowLabel = AddText(canvas.transform, 56, FontStyle.Bold, good);

@@ -90,6 +90,7 @@ public class Tutorial : MonoBehaviour
     Graphic[] livesHighlightParts, timeHighlightParts;
     Text clockSample;
     Text bannerTitle, bannerDesc, countdown;
+    RectTransform bannerRect;
     Font font;
     TutorialCues cues;
     TutorialGhost ghost;
@@ -164,6 +165,7 @@ public class Tutorial : MonoBehaviour
         if (CanSkip && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
+        FitBanner();
         PulseLivesHighlight();
         ghost.Update();
         cues.Update(DisplayCamera.Find());
@@ -684,7 +686,8 @@ public class Tutorial : MonoBehaviour
         // Lives: top left.
         ShowBanner("YOUR LIVES", "Each heart is a life. A hit costs one.");
         ShowLivesHighlight(true);
-        cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(300f, -32f), true);
+        // Under the banner and the hearts, pointing up at them.
+        cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(-10f, -125f), TutorialCues.CalloutArrow.Up);
         yield return new WaitForSecondsRealtime(3.4f);
         ShowLivesHighlight(false);
         cues.HideCallout();
@@ -693,7 +696,7 @@ public class Tutorial : MonoBehaviour
         ShowBanner("YOUR TIME", "The clock counts down the time left in the song.");
         clockSample.gameObject.SetActive(true);
         timeHighlight.SetActive(true);
-        cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(-250f, -32f), false);
+        cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(24f, -125f), TutorialCues.CalloutArrow.Up);
         yield return new WaitForSecondsRealtime(3.4f);
         timeHighlight.SetActive(false);
         clockSample.gameObject.SetActive(false);
@@ -967,6 +970,17 @@ public class Tutorial : MonoBehaviour
         banner.SetActive(true);
     }
 
+    /// <summary>The banner stays clear of the hearts hint at the top left, so it is narrower in a narrow window.</summary>
+    void FitBanner()
+    {
+        if (bannerRect == null || canvas == null) return;
+        float width = Mathf.Clamp(Screen.width / Mathf.Max(0.01f, canvas.scaleFactor) - 700f, 640f, 1100f);
+        if (Mathf.Approximately(bannerRect.sizeDelta.x, width)) return;
+        bannerRect.sizeDelta = new Vector2(width, bannerRect.sizeDelta.y);
+        bannerTitle.rectTransform.sizeDelta = new Vector2(width - 30f, bannerTitle.rectTransform.sizeDelta.y);
+        bannerDesc.rectTransform.sizeDelta = new Vector2(width - 30f, bannerDesc.rectTransform.sizeDelta.y);
+    }
+
     void HideBanner() => banner.SetActive(false);
 
     void BuildCanvas()
@@ -985,13 +999,19 @@ public class Tutorial : MonoBehaviour
         panel.rectTransform.SetParent(canvasObject.transform, false);
         panel.rectTransform.anchorMin = panel.rectTransform.anchorMax = new Vector2(0.5f, 1f);
         panel.rectTransform.pivot = new Vector2(0.5f, 1f);
-        panel.rectTransform.anchoredPosition = new Vector2(0f, -30f);
-        panel.rectTransform.sizeDelta = new Vector2(1100f, 156f);
+        // Compact and at the very top, so it ends above the ship when it sits at the W spot.
+        panel.rectTransform.anchoredPosition = new Vector2(0f, -8f);
+        panel.rectTransform.sizeDelta = new Vector2(1100f, 112f);
         panel.color = panelColor;
         panel.raycastTarget = false;
         banner = panel.gameObject;
-        bannerTitle = AddText(banner.transform, 64, FontStyle.Bold, new Vector2(0f, 32f));
-        bannerDesc = AddText(banner.transform, 32, FontStyle.Normal, new Vector2(0f, -38f));
+        bannerRect = panel.rectTransform;
+        bannerTitle = AddText(banner.transform, 56, FontStyle.Bold, new Vector2(0f, 24f));
+        bannerDesc = AddText(banner.transform, 29, FontStyle.Normal, new Vector2(0f, -30f));
+        // Long lines shrink to fit when the window is narrow.
+        bannerDesc.resizeTextForBestFit = true;
+        bannerDesc.resizeTextMinSize = 18;
+        bannerDesc.resizeTextMaxSize = 29;
         banner.SetActive(false);
 
         countdown = AddText(canvasObject.transform, 220, FontStyle.Bold, Vector2.zero);
@@ -1106,9 +1126,10 @@ public class Tutorial : MonoBehaviour
         var image = new GameObject("SKIP TUTORIAL", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
         RectTransform rect = image.rectTransform;
         rect.SetParent(canvasObject.transform, false);
+        // Right edge, above the ship's bottom-right spot, so it never covers the ship or the D glow.
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 0f);
-        rect.anchoredPosition = new Vector2(-40f, 40f);
-        rect.sizeDelta = new Vector2(380f, 64f);
+        rect.anchoredPosition = new Vector2(-30f, 330f);
+        rect.sizeDelta = new Vector2(340f, 56f);
         image.color = new Color(0.08f, 0.08f, 0.16f, 0.9f);
         image.GetComponent<Outline>().effectColor = accentColor;
         image.GetComponent<Button>().onClick.AddListener(Skip);
