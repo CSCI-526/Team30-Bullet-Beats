@@ -46,7 +46,7 @@ public class PlayerShooter : MonoBehaviour
     [Tooltip("Clicks closer together than this many seconds are ignored.")]
     public float minShotInterval = 0.08f;
     [Tooltip("Hold the button to keep firing. The title screen toggle writes HoldToFireEnabled.")]
-    public bool holdToFire = true;
+    public bool holdToFire = false;
     [Tooltip("Shots per second while the button is held.")]
     [Min(1f)] public float holdFireRate = 12f;
 
@@ -54,7 +54,7 @@ public class PlayerShooter : MonoBehaviour
     /// <summary>Title-screen setting kept in PlayerPrefs so it survives reloads.</summary>
     public static bool HoldToFireEnabled
     {
-        get => PlayerPrefs.GetInt(HoldToFirePrefsKey, 1) == 1;
+        get => PlayerPrefs.GetInt(HoldToFirePrefsKey, 0) == 1;
         set
         {
             PlayerPrefs.SetInt(HoldToFirePrefsKey, value ? 1 : 0);
@@ -154,13 +154,6 @@ public class PlayerShooter : MonoBehaviour
     void ApplyAimAssist(Vector2 cursor)
     {
         shotScreenPosition = cursor;
-        // Aiming right at a pickup: don't let a nearby rock pull the shot away from it.
-        if (CursorOverPickup(cursor))
-        {
-            LockedTarget = null;
-            return;
-        }
-
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
         float reach = aimAssist * aimAssistReach * aimCamera.pixelHeight;
@@ -169,16 +162,6 @@ public class PlayerShooter : MonoBehaviour
         if (LockedTarget == null) return;
         AimPoint = LockedTarget.transform.position;
         shotScreenPosition = aimCamera.WorldToScreenPoint(AimPoint);
-    }
-
-    bool CursorOverPickup(Vector2 cursor)
-    {
-        Ray ray = aimCamera.ScreenPointToRay(cursor);
-        int count = Physics.SphereCastNonAlloc(ray, hitscanRadius, hits, aimDistance,
-            Physics.DefaultRaycastLayers, QueryTriggerInteraction.Collide);
-        for (int i = 0; i < count; i++)
-            if (hits[i].collider.GetComponentInParent<PowerUpPickup>() != null) return true;
-        return false;
     }
 
     Vector3 FindAimPoint(Vector2 screenPosition)

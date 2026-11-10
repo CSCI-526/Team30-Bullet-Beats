@@ -34,10 +34,10 @@ static class GameBootstrap
         // Shields before the HUD, so the HUD finds them in Awake.
         if (health.GetComponent<BasicShield>() == null)
             health.gameObject.AddComponent<BasicShield>();
-        if (health.GetComponent<DirectionalShield>() == null)
-            health.gameObject.AddComponent<DirectionalShield>();
         if (health.GetComponent<SlowMo>() == null)
             health.gameObject.AddComponent<SlowMo>();
+        if (health.GetComponent<Bomb>() == null)
+            health.gameObject.AddComponent<Bomb>();
         if (health.GetComponent<HealthHUD>() == null)
             health.gameObject.AddComponent<HealthHUD>();
         if (health.GetComponent<ShipDamageFlash>() == null)

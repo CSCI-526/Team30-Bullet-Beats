@@ -32,7 +32,6 @@ public class ChartTarget : MonoBehaviour, IShootable
     int hitsLeft = 1;
     int healOnDestroy;
     bool dying;
-    bool shieldChecked;
     
     [Header("Lock-on brackets")]
     [Tooltip("Static corner ticks are this much bigger than the asteroid on screen.")]
@@ -71,9 +70,22 @@ public class ChartTarget : MonoBehaviour, IShootable
     /// <summary>Shots still needed to break it (turbo asteroids start with more than one).</summary>
     public int HitsLeft => hitsLeft;
 
+    /// <summary>Every asteroid in flight (read only).</summary>
+    public static IReadOnlyList<ChartTarget> Active => active;
+
     void OnEnable() => active.Add(this);
 
     void OnDisable() => active.Remove(this);
+
+    /// <summary>Removes the asteroid with no damage, judgment or turbo heal. Works on big ones too.</summary>
+    /// <returns>False if it was already on its way out.</returns>
+    public bool DestroyByBomb()
+    {
+        if (dying || !armed) return false;
+        dying = true;
+        Destroy(gameObject);
+        return true;
+    }
 
     /// <summary>
     /// The rock a shot from <paramref name="cursor"/> goes to: the closest one within
@@ -279,19 +291,8 @@ public class ChartTarget : MonoBehaviour, IShootable
         //        Destroy(gameObject);
         ////=======
         //        // Damage only when the planet actually reaches the ship.
+        // A BasicShield on the ship absorbs this hit inside TakeDamage.
         PlayerHealth ship = PlayerHealth.Instance;
-        DirectionalShield shield = DirectionalShield.Instance;
-        if (!shieldChecked && ship != null && shield != null && shield.Active
-            && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shield.blockRadius)
-        {
-            shieldChecked = true;
-            if (shield.TryBlock(transform.position))
-            {
-                Destroy(gameObject);
-                return;
-            }
-        }
-
         if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius * PlayerMovement.SizeScale)
         {
             ship.TakeDamage(1);
@@ -462,16 +463,6 @@ public class ChartTarget : MonoBehaviour, IShootable
     {
         if (other.CompareTag("Player"))
         {
-            DirectionalShield shield = DirectionalShield.Instance;
-            if (!shieldChecked && shield != null && shield.Active)
-            {
-                shieldChecked = true;
-                if (shield.TryBlock(transform.position))
-                {
-                    Destroy(gameObject);
-                    return;
-                }
-            }
             PlayerHealth.Instance?.TakeDamage(1);
             Destroy(gameObject);
         }

@@ -1,24 +1,20 @@
 using UnityEngine;
 
 /// <summary>
-/// A power-up the ship collects. The spawner sets <see cref="kind"/>, <see cref="collectBy"/>, the
-/// position and <see cref="velocity"/>. Shot: shooting it collects it, like an asteroid that gives
-/// instead of hurts. Touch: the ship collects it by flying into it (e.g. parked at a W/A/S/D spot
-/// with zero velocity, see <see cref="PlayerMovement.WorldPositionOf"/>). Never damages the ship.
-/// Needs a collider for Shot (a trigger is fine).
+/// A power-up the ship collects by flying into it (e.g. parked at a W/A/S/D spot with zero velocity,
+/// see <see cref="PlayerMovement.WorldPositionOf"/>). The spawner sets <see cref="kind"/>, the position
+/// and <see cref="velocity"/>. It can't be shot, and it never damages the ship.
 /// </summary>
-public class PowerUpPickup : MonoBehaviour, IShootable
+public class PowerUpPickup : MonoBehaviour
 {
-    public enum Kind { BasicShield, MovingShield, SlowMo }
-    public enum CollectBy { Shot, Touch }
+    public enum Kind { Shield, SlowMo, Bomb }
 
-    public Kind kind = Kind.BasicShield;
-    public CollectBy collectBy = CollectBy.Shot;
+    public Kind kind = Kind.Shield;
     [Tooltip("World units per second. Zero = stays put.")]
     public Vector3 velocity;
-    [Tooltip("Touch only. How close the ship has to get to collect it.")]
+    [Tooltip("How close the ship has to get to collect it.")]
     public float pickupRadius = 4f;
-    [Tooltip("Touch only. Measured from the ship's position plus this, e.g. the visible body's offset from the ship's origin.")]
+    [Tooltip("Measured from the ship's position plus this, e.g. the visible body's offset from the ship's origin.")]
     public Vector3 shipOffset;
     [Tooltip("Seconds before it disappears uncollected. 0 = never.")]
     public float lifetime = 10f;
@@ -27,11 +23,6 @@ public class PowerUpPickup : MonoBehaviour, IShootable
     float age;
     bool collected;
 
-    public void OnShot(PlayerBullet bullet)
-    {
-        if (collectBy == CollectBy.Shot) Collect();
-    }
-
     void Update()
     {
         Vector3 last = transform.position;
@@ -39,7 +30,7 @@ public class PowerUpPickup : MonoBehaviour, IShootable
         transform.Rotate(Vector3.up, spinSpeed * Time.deltaTime, Space.Self);
 
         PlayerHealth ship = PlayerHealth.Instance;
-        if (collectBy == CollectBy.Touch && ship != null
+        if (ship != null
             && ChartTarget.DistanceToSegment(ship.transform.position + shipOffset, last, transform.position) <= pickupRadius)
         {
             Collect();
@@ -59,9 +50,9 @@ public class PowerUpPickup : MonoBehaviour, IShootable
         PlayerHealth ship = PlayerHealth.Instance;
         if (ship != null)
         {
-            if (kind == Kind.BasicShield && ship.TryGetComponent(out BasicShield basic)) basic.Grant();
-            else if (kind == Kind.MovingShield && ship.TryGetComponent(out DirectionalShield moving)) moving.Grant();
+            if (kind == Kind.Shield && ship.TryGetComponent(out BasicShield shield)) shield.Grant();
             else if (kind == Kind.SlowMo && ship.TryGetComponent(out SlowMo slowMo)) slowMo.Grant();
+            else if (kind == Kind.Bomb && ship.TryGetComponent(out Bomb bomb)) bomb.Grant();
         }
         Destroy(gameObject);
     }

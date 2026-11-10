@@ -25,6 +25,10 @@ public class ScoreKeeper : MonoBehaviour
     public int perfectPoints = 100;
     public int goodPoints = 50;
 
+    [Header("Bomb")]
+    [Tooltip("Points per asteroid the bomb clears. Not multiplied by the streak, and less than a shot.")]
+    public int bombPoints = 10;
+
     [Header("Streak multiplier")]
     [Tooltip("Streak needed for each step of the multiplier: x2 at this streak, x3 at twice it, ...")]
     [Min(1)] public int streakPerStep = 10;
@@ -166,6 +170,17 @@ public class ScoreKeeper : MonoBehaviour
     void OnSpawned(ChartTarget rock)
     {
         if (flow.State == GameState.Playing && !flow.IsTutorial && !rock.IsBig) HitsNeeded += rock.HitsLeft;
+    }
+
+    /// <summary>Scores an asteroid the bomb cleared. The streak doesn't change, and the rock no longer
+    /// counts toward HitsNeeded, so using the bomb doesn't cost stars.</summary>
+    /// <returns>Points added (0 outside play).</returns>
+    public int AddBombClear(ChartTarget rock)
+    {
+        if (flow.State != GameState.Playing) return 0;
+        if (!flow.IsTutorial && !rock.IsBig) HitsNeeded = Mathf.Max(0, HitsNeeded - rock.HitsLeft);
+        Score += bombPoints;
+        return bombPoints;
     }
 
     void OnShotFired(BeatJudgment judgment)
