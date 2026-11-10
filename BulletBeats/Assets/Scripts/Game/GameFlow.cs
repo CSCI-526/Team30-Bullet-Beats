@@ -357,7 +357,7 @@ public class GameFlow : MonoBehaviour
 
     /// <summary>
     /// Pauses or resumes a level. In a level, pausing only works once the song is playing. In the tutorial
-    /// it works for first-time players only (<see cref="Tutorial.CanPause"/>); for returning players ESC skips it.
+    /// it works unless Skip is showing (<see cref="Tutorial.CanPause"/>): returning players' ESC skips during the first 30 s.
     /// </summary>
     public void SetPaused(bool paused)
     {

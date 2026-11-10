@@ -16,7 +16,8 @@ using UnityEngine.UI;
 /// brackets turn gold, which is PERFECT), move (W A S D), dodge big red asteroids (two ways), a turbo
 /// asteroid, the Shield star, the Freeze and Bomb stars, a practice run, then the goal and a 3-2-1
 /// into the first level on Easy. The ship can't die here.
-/// Only players who finished the tutorial before can skip it (Skip button or ESC); for everyone else
+/// Only players who finished the tutorial before can skip it (Skip button or ESC), and only in the first
+/// <see cref="skipSeconds"/> seconds; after that, and for everyone else,
 /// ESC opens the pause menu.
 /// Added by <see cref="GameFlow"/> for a tutorial run. It runs on the scene clock (no song), so
 /// slowing <see cref="Time.timeScale"/> slows the asteroids, brackets and timing together.
@@ -39,6 +40,8 @@ public class Tutorial : MonoBehaviour
     [Range(0.05f, 1f)] public float quickWindowScale = 0.6f;
     [Tooltip("Beats before a timed asteroid reaches its beat.")]
     [Min(1f)] public float shotLeadBeats = 1.15f;
+    [Tooltip("Returning players see Skip (and ESC skips) only for this many real seconds at the start.")]
+    public float skipSeconds = 30f;
     [Tooltip("Fails before the ghost shows the step again.")]
     [Min(1)] public int failsBeforeDemo = 2;
 
@@ -57,8 +60,10 @@ public class Tutorial : MonoBehaviour
     public bool IsFinishing { get; private set; }
     /// <summary>True for players who finished the tutorial before: only they can skip it.</summary>
     public bool CanSkip { get; private set; }
-    /// <summary>ESC pauses only for first-time players; for returning players it skips.</summary>
-    public bool CanPause => !CanSkip && !IsFinishing;
+    /// <summary>Returning players can skip only in the first <see cref="skipSeconds"/> of the tutorial.</summary>
+    public bool SkipAvailable => CanSkip && !IsFinishing && Time.unscaledTime - startedAt < skipSeconds;
+    /// <summary>ESC pauses, except while Skip is available (returning players, first 30 s), when it skips.</summary>
+    public bool CanPause => !SkipAvailable && !IsFinishing;
     /// <summary>The spot the player is being sent to right now (the glowing one), if any.</summary>
     public PlayerMovement.Spot? GoalSpot { get; private set; }
     /// <summary>True while the check mark waits for SPACE.</summary>
@@ -81,7 +86,7 @@ public class Tutorial : MonoBehaviour
     ChartTarget lastShotTarget;
     int damageTaken;
     bool shooterLocked, movementLocked;
-    float baseFixedDeltaTime;
+    float baseFixedDeltaTime, startedAt;
     float wantedTimeScale = 1f;
     NoteLane nextLane = NoteLane.RightUpper;
 
@@ -117,6 +122,7 @@ public class Tutorial : MonoBehaviour
         powerUps = FindFirstObjectByType<PowerUpSpawner>();
         baseFixedDeltaTime = Time.fixedDeltaTime;
         CanSkip = GameFlow.TutorialDone;
+        startedAt = Time.unscaledTime;
 
         if (health != null)
         {
@@ -162,7 +168,8 @@ public class Tutorial : MonoBehaviour
 
     void Update()
     {
-        if (CanSkip && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
+        if (skipButton != null && skipButton.activeSelf != SkipAvailable) skipButton.SetActive(SkipAvailable); // gone after the first 30 s
+        if (SkipAvailable && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
         FitBanner();
@@ -171,10 +178,10 @@ public class Tutorial : MonoBehaviour
         cues.Update(DisplayCamera.Find());
     }
 
-    /// <summary>Ends the tutorial early (returning players only): clears everything and goes to the countdown.</summary>
+    /// <summary>Ends the tutorial early (returning players, in the first 30 s): clears everything and goes to the countdown.</summary>
     public void Skip()
     {
-        if (IsFinishing || !CanSkip) return;
+        if (!SkipAvailable) return;
         StopAllCoroutines();
         ShowLivesHighlight(false);
         if (timeHighlight != null) timeHighlight.SetActive(false);
