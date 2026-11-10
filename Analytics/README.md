@@ -1,34 +1,46 @@
-# Analytics visualization
+# Analytics dashboard
 
-The game's `Analytics` script (`BulletBeats/Assets/Scripts/Analytics/Analytics.cs`) posts one Google
-Form response per event (`shot`, `dodge`, `death`, `level_end`) from the WebGL build. The form saves
-the responses to its linked Google Sheet. `visualize_analytics.py` turns that sheet into
-`analytics_report.html`, with one section per GDD metric:
+The game's `Analytics` script posts one Google Form response per event from the WebGL build. The form
+saves them to its linked Google Sheet. `visualize_analytics.py` turns the sheet into one HTML dashboard
+with four graphs: Ship Position Heat Map, Asteroid Outcome Timeline, Timing Profile and Power-up Value.
 
-1. **Win / loss ratio**: wins vs losses, and attempts until each session's first win
-2. **Death spots**: histogram of the level time when players die
-3. **Shot accuracy**: Perfect / Good / Miss share, overall and per session
-4. **Dodging**: dodges per session, and histogram of when in the level they happen
+The live page is <https://csci-526.github.io/Team30-Bullet-Beats/analytics/>. It's rebuilt every 30
+minutes by `.github/workflows/analytics-dashboard.yml`.
 
-It only needs Python 3 (no extra packages).
+## What the game sends
 
-## Run it
+The form's columns don't change. New values are packed with `|`.
 
-1. Get the responses as CSV, either way:
-   - **File:** open the responses sheet → File → Download → Comma-separated values (.csv)
-   - **Link:** share the sheet as "Anyone with the link can view" and use
-     `https://docs.google.com/spreadsheets/d/<sheet id>/export?format=csv&gid=<tab id>`
-2. Run:
+| Column | Value |
+| --- | --- |
+| session | `player-session`. The player id is kept across page reloads. |
+| event | `level_start`, `asteroid`, `dodge`, `star`, `level_end`, `tutorial` |
+| level | `song\|difficulty\|attempt` |
+| level time | Song seconds. For `asteroid`, the asteroid's beat. |
 
-   ```bash
-   python3 Analytics/visualize_analytics.py responses.csv
-   ```
+| Event | Data 1 | Data 2 | Data 3 |
+| --- | --- | --- | --- |
+| `level_start` | Hold to Fire 1/0 | aim assist | tutorial `seen`/`new` |
+| `asteroid` | `type\|outcome` | ship spot | `offsetMs\|tries\|slowMo` |
+| `dodge` | from | to | |
+| `star` | kind | spot | `collected`/`expired` |
+| `level_end` | `win`/`loss` | attempt | clicks at nothing |
 
-3. Open `analytics_report.html` in a browser.
+Older rows (level = `MainLevel`) are ignored, so the sheet doesn't need clearing.
 
-Options: `-o report.html` picks the output file, and `--bin 10` sets the seconds per bar in the time
-histograms (default 5).
+## Connect the sheet
 
-Columns are matched by their header names (session, event, level time, data 1–3). If the headers
-don't match, the form's question order is used: Timestamp, session, event, level, level time,
-data 1, data 2, data 3.
+1. Share the responses sheet as "Anyone with the link can view".
+2. Build the link: `https://docs.google.com/spreadsheets/d/<sheet id>/export?format=csv&gid=<tab id>`
+3. Save it as the repository secret `ANALYTICS_CSV_URL`.
+
+Until there are Beta rows, the page shows `sample_responses.csv` under a "Simulated data" banner.
+
+## Run it locally
+
+```bash
+python3 Analytics/visualize_analytics.py responses.csv -o dashboard.html
+```
+
+`simulate_responses.py` regenerates the sample file. Set the level order in `LEVEL_ORDER` at the top of
+`visualize_analytics.py`.

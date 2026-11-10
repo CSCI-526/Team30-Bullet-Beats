@@ -62,6 +62,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     float baseRadius = 1f;
     float baseScale = 1f;
     bool isBig;
+    bool isTurbo;
     Color bigWarnColor;
     Renderer[] bigRenderers;
 
@@ -69,6 +70,49 @@ public class ChartTarget : MonoBehaviour, IShootable
     public bool IsBig => isBig;
     /// <summary>Shots still needed to break it (turbo asteroids start with more than one).</summary>
     public int HitsLeft => hitsLeft;
+
+    /// <summary>How an asteroid's life ended. Each asteroid ends exactly one way.</summary>
+    public enum Outcome { Perfect, Good, Dodged, Shielded, Bombed, Hit }
+
+    /// <summary>Raised once per asteroid when it ends, for analytics.</summary>
+    public static event System.Action<ChartTarget, Outcome> Ended;
+
+    /// <summary>"normal", "turbo" or "big".</summary>
+    public string TypeName => isBig ? "big" : isTurbo ? "turbo" : "normal";
+    /// <summary>Seconds from this asteroid's beat to the first shot at it (negative = early). NaN if never shot at.</summary>
+    public float FirstShotOffset { get; private set; } = float.NaN;
+    /// <summary>Shots fired at this asteroid.</summary>
+    public int Tries { get; private set; }
+    /// <summary>True if the first shot at it came during slow motion, when song-time offsets are stretched.</summary>
+    public bool FirstShotInSlowMo { get; private set; }
+
+    BeatJudgment lastJudgment = BeatJudgment.Miss;
+    bool ended;
+
+    /// <summary>Called by <see cref="PlayerShooter"/> for every shot judged against this asteroid.</summary>
+    public void RecordShot(BeatJudgment judgment, float offset)
+    {
+        lastJudgment = judgment;
+        Tries++;
+        if (Tries > 1) return;
+        FirstShotOffset = offset;
+        PlayerHealth ship = PlayerHealth.Instance;
+        FirstShotInSlowMo = ship != null && ship.TryGetComponent(out SlowMo slowMo) && slowMo.Active;
+    }
+
+    void End(Outcome outcome)
+    {
+        if (ended) return;
+        ended = true;
+        Ended?.Invoke(this, outcome);
+    }
+
+    /// <summary>Ends the asteroid after it touched the ship. <paramref name="landed"/> is TakeDamage's result.</summary>
+    void EndOnShip(bool landed)
+    {
+        if (!landed) End(Outcome.Dodged);
+        else End(PlayerHealth.Instance != null && PlayerHealth.Instance.LastHitAbsorbed ? Outcome.Shielded : Outcome.Hit);
+    }
 
     /// <summary>Every asteroid in flight (read only).</summary>
     public static IReadOnlyList<ChartTarget> Active => active;
@@ -83,6 +127,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     {
         if (dying || !armed) return false;
         dying = true;
+        End(Outcome.Bombed);
         Destroy(gameObject);
         return true;
     }
@@ -163,6 +208,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         }
 
         dying = true;
+        End(lastJudgment == BeatJudgment.Perfect ? Outcome.Perfect : Outcome.Good);
         if (healOnDestroy > 0) PlayerHealth.Instance?.Heal(healOnDestroy);
         Destroy(gameObject);
     }
@@ -222,6 +268,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     }
     public void MakeTurbo(int hits, int heal, float scale, Color tint)
     {
+        isTurbo = true;
         hitsLeft = hits;
         healOnDestroy = heal;
         transform.localScale *= scale;
@@ -295,7 +342,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         PlayerHealth ship = PlayerHealth.Instance;
         if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius * PlayerMovement.SizeScale)
         {
-            ship.TakeDamage(1);
+            EndOnShip(ship.TakeDamage(1));
             Destroy(gameObject);
             return;
 //>>>>>>> Stashed changes
@@ -311,7 +358,10 @@ public class ChartTarget : MonoBehaviour, IShootable
             Camera cam = DisplayCamera.Find();
             if (cam == null) cam = Camera.main;
             if (cam == null || Vector3.Dot(transform.position - cam.transform.position, cam.transform.forward) < -hitDistance)
+            {
+                End(Outcome.Dodged);
                 Destroy(gameObject);
+            }
         }
     }
 
@@ -463,7 +513,7 @@ public class ChartTarget : MonoBehaviour, IShootable
     {
         if (other.CompareTag("Player"))
         {
-            PlayerHealth.Instance?.TakeDamage(1);
+            if (PlayerHealth.Instance != null) EndOnShip(PlayerHealth.Instance.TakeDamage(1));
             Destroy(gameObject);
         }
     }

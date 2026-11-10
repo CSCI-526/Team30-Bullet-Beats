@@ -1,0 +1,43 @@
+name: Publish analytics dashboard
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  push:
+    branches: [main]
+    paths: ["Analytics/**", ".github/workflows/analytics-dashboard.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gh-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      # Repository secret: the Google Sheet's CSV export link. Empty = the labelled sample data.
+      ANALYTICS_CSV_URL: ${{ secrets.ANALYTICS_CSV_URL }}
+      REPO_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build dashboard
+        run: |
+          python3 Analytics/visualize_analytics.py "${ANALYTICS_CSV_URL:-Analytics/sample_responses.csv}" \
+            --fallback Analytics/sample_responses.csv -o dashboard.html
+
+      - name: Publish to gh-pages
+        run: |
+          git clone --depth 1 --branch gh-pages "$REPO_URL" site
+          mkdir -p site/analytics
+          cp dashboard.html site/analytics/index.html
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add analytics
+          git commit -m "Update analytics dashboard" || exit 0
+          git push origin gh-pages

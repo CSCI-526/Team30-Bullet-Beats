@@ -1,418 +1,516 @@
 #!/usr/bin/env python3
-"""Turn the Bullet Beats analytics responses into a chart report.
+"""Builds the Bullet Beats analytics dashboard from the Google Form responses.
 
-The game's Analytics script posts one Google Form response per event. The form's linked
-Google Sheet has one row per event:
-
-    Timestamp | session | event | level | level time | data 1 | data 2 | data 3
-
-    event        data 1              data 2          data 3
-    shot         Perfect/Good/Miss   -               -
-    dodge        from spot           to spot         -
-    death        cause               -               -
-    level_end    win / loss          attempt number  -
-
-This script reads that sheet as CSV (a downloaded file or the sheet's CSV export link) and
-writes an HTML report with one chart per GDD metric:
-
-    1. Win / loss ratio      wins vs losses, and attempts until each session's first win
-    2. Death spots           when in the level players die (histogram of level time)
-    3. Shot accuracy         Perfect / Good / Miss share, overall and per session
-    4. Dodging               dodges per session, and when in the level they happen
-
-Only the Python standard library is used, so it runs with a plain `python3`.
-
-Usage:
-    python3 visualize_analytics.py responses.csv
+    python3 visualize_analytics.py responses.csv -o dashboard.html
     python3 visualize_analytics.py "https://docs.google.com/spreadsheets/d/<id>/export?format=csv&gid=<gid>"
-    python3 visualize_analytics.py responses.csv -o report.html --bin 5
+
+Only needs Python 3. Rows from before the Beta logging (level = "MainLevel") are ignored, so old
+test data doesn't need clearing. With --fallback, a sample file is used and clearly labelled when
+the source has no Beta rows yet.
+
+The form's columns are: Timestamp, session, event, level, level time, data 1, data 2, data 3.
+    session = player-session        level = song|difficulty|attempt
+    level_start   data: holdToFire, aimAssist, tutorial seen/new
+    asteroid      time = its beat; data: type|outcome, ship spot, offsetMs|tries|slowMo
+    dodge         data: from, to
+    star          data: kind, spot, collected/expired
+    level_end     data: win/loss, attempt, empty clicks
 """
 
 import argparse
 import csv
 import html
 import io
+import math
+import statistics
 import sys
 import urllib.request
-from collections import Counter, defaultdict
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timezone
 
-FIELDS = ["timestamp", "session", "event", "level", "level_time", "d1", "d2", "d3"]
+BIN = 5                # seconds per column on the song-time charts
+MIN_RUNS = 5           # columns with fewer runs than this are drawn grey
+# Song ids in level order. Fill in the final order here; any other song is listed after these.
+LEVEL_ORDER = ["pink-panther", "cheat-codes", "flames", "far-out", "boogie-shoes"]
+# Optional planned difficulty score per song id (doc 3). Empty = column hidden.
+PLANNED_SCORE = {}
 
-# Header words that identify each column; columns that don't match fall back to form order.
-HEADER_HINTS = {
-    "timestamp": ["timestamp"],
-    "session": ["session"],
-    "event": ["event"],
-    "level": ["level name", "level"],
-    "level_time": ["level time", "leveltime", "time"],
-    "d1": ["data 1", "data1", "d1"],
-    "d2": ["data 2", "data2", "d2"],
-    "d3": ["data 3", "data3", "d3"],
-}
-
-JUDGMENTS = ["Perfect", "Good", "Miss"]
-COLORS = {
-    "Perfect": "#e8b923",
-    "Good": "#3fb5d9",
-    "Miss": "#e0605e",
-    "win": "#4caf6e",
-    "loss": "#e0605e",
-    "bar": "#5b7fd6",
-}
+SPOTS = ["Center", "Left", "Bottom", "Right"]
+KEY = {"Center": "W", "Left": "A", "Bottom": "S", "Right": "D"}
+DESTROYED, AVOIDED, HIT = "Destroyed on the beat", "Avoided", "Hit the ship"
+GROUP = {"perfect": DESTROYED, "good": DESTROYED, "dodged": AVOIDED, "shielded": AVOIDED, "bombed": AVOIDED, "hit": HIT}
+ESC = html.escape
 
 
 # ---------------------------------------------------------------- loading
 
 def read_text(source):
-    if source.startswith("http://") or source.startswith("https://"):
-        with urllib.request.urlopen(source) as response:
+    if source.startswith(("http://", "https://")):
+        with urllib.request.urlopen(source, timeout=60) as response:
             return response.read().decode("utf-8-sig")
     with open(source, encoding="utf-8-sig") as f:
         return f.read()
 
 
-def map_columns(header):
-    """Returns {field: column index}, using header names first and form order as a fallback."""
-    lowered = [h.strip().lower() for h in header]
-    mapping = {}
-    # Most specific hints first, so "level time" is not taken by "level".
-    for field in ["timestamp", "session", "event", "level_time", "d1", "d2", "d3", "level"]:
-        for hint in HEADER_HINTS[field]:
-            for i, name in enumerate(lowered):
-                if i in mapping.values():
-                    continue
-                if name == hint or (hint in name and len(hint) > 4):
-                    mapping[field] = i
-                    break
-            if field in mapping:
-                break
-    for i, field in enumerate(FIELDS):
-        if field not in mapping and i < len(header) and i not in mapping.values():
-            mapping[field] = i
-    return mapping
-
-
-def load_events(source):
+def load_rows(source):
+    """Rows as dicts, by form order (Timestamp, session, event, level, time, d1, d2, d3)."""
     rows = list(csv.reader(io.StringIO(read_text(source))))
-    if not rows:
-        return []
-    mapping = map_columns(rows[0])
-    events = []
+    out = []
     for row in rows[1:]:
-        if not any(cell.strip() for cell in row):
+        if len(row) < 5:
             continue
-        get = lambda f: row[mapping[f]].strip() if f in mapping and mapping[f] < len(row) else ""
+        row = [c.strip() for c in row] + [""] * 8
         try:
-            level_time = float(get("level_time"))
+            t = float(row[4])
         except ValueError:
-            level_time = None
-        events.append({
-            "timestamp": get("timestamp"),
-            "session": get("session") or "unknown",
-            "event": get("event").lower(),
-            "level": get("level"),
-            "level_time": level_time,
-            "d1": get("d1"),
-            "d2": get("d2"),
-            "d3": get("d3"),
-        })
-    return events
-
-
-# ---------------------------------------------------------------- metrics
-
-def win_loss(events):
-    ends = [e for e in events if e["event"] == "level_end"]
-    counts = Counter(e["d1"].lower() for e in ends if e["d1"].lower() in ("win", "loss"))
-    # Attempts until the first win, per session (sessions that never won are counted separately).
-    attempts_to_win = []
-    never_won = 0
-    by_session = defaultdict(list)
-    for e in ends:
-        by_session[e["session"]].append(e)
-    for session_ends in by_session.values():
-        tries = 0
-        won = False
-        for e in session_ends:
-            tries += 1
-            if e["d1"].lower() == "win":
-                attempts_to_win.append(tries)
-                won = True
-                break
-        if not won:
-            never_won += 1
-    return counts, Counter(attempts_to_win), never_won
-
-
-def death_times(events):
-    return [e["level_time"] for e in events if e["event"] == "death" and e["level_time"] is not None]
-
-
-def shot_accuracy(events):
-    overall = Counter()
-    per_session = defaultdict(Counter)
-    for e in events:
-        if e["event"] != "shot":
             continue
-        judgment = e["d1"].capitalize()
-        if judgment not in JUDGMENTS:
-            continue
-        overall[judgment] += 1
-        per_session[e["session"]][judgment] += 1
-    return overall, per_session
-
-
-def dodges(events):
-    per_session = Counter(e["session"] for e in events if e["event"] == "dodge")
-    times = [e["level_time"] for e in events if e["event"] == "dodge" and e["level_time"] is not None]
-    return per_session, times
-
-
-def histogram(values, bin_size):
-    if not values:
-        return []
-    top = max(values)
-    bins = int(top // bin_size) + 1
-    counts = [0] * bins
-    for v in values:
-        counts[min(int(v // bin_size), bins - 1)] += 1
-    return [(f"{i * bin_size:g}-{(i + 1) * bin_size:g}s", c) for i, c in enumerate(counts)]
-
-
-# ---------------------------------------------------------------- charts (inline SVG)
-
-def bar_chart(items, title, x_label="", y_label="Count", width=480, height=280, color=COLORS["bar"]):
-    """items: list of (label, value), (label, value, color) or (label, value, color, tooltip name)."""
-    if not items:
-        return empty_chart(title)
-    pad_l, pad_r, pad_t, pad_b = 48, 12, 32, 56
-    plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
-    top = nice_top(max(v for _, v, *_ in items))
-    slot = plot_w / len(items)
-    bar_w = max(4, slot * 0.7)
-    parts = [svg_open(width, height), svg_title(title, width)]
-    parts += axis(pad_l, pad_t, plot_w, plot_h, top, y_label)
-    rotate = len(items) > 8
-    for i, (label, value, *rest) in enumerate(items):
-        h = plot_h * value / top
-        x = pad_l + i * slot + (slot - bar_w) / 2
-        y = pad_t + plot_h - h
-        fill = rest[0] if rest else color
-        name = rest[1] if len(rest) > 1 else label
-        parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" fill="{fill}" rx="2">'
-                     f'<title>{html.escape(str(name))}: {value}</title></rect>')
-        if value:
-            parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{y - 4:.1f}" class="val">{value}</text>')
-        lx, ly = x + bar_w / 2, pad_t + plot_h + 14
-        if rotate:
-            parts.append(f'<text x="{lx:.1f}" y="{ly:.1f}" class="lbl" transform="rotate(35 {lx:.1f} {ly:.1f})" '
-                         f'text-anchor="start">{html.escape(str(label))}</text>')
-        else:
-            parts.append(f'<text x="{lx:.1f}" y="{ly:.1f}" class="lbl">{html.escape(str(label))}</text>')
-    if x_label:
-        parts.append(f'<text x="{pad_l + plot_w / 2:.1f}" y="{height - 6}" class="axis-title">{html.escape(x_label)}</text>')
-    parts.append("</svg>")
-    return "".join(parts)
-
-
-def stacked_chart(rows, keys, title, width=480, height=300):
-    """rows: list of (label, Counter, tooltip name); bars show each key's share of the row total."""
-    if not rows:
-        return empty_chart(title)
-    pad_l, pad_r, pad_t, pad_b = 48, 12, 32, 48
-    plot_w, plot_h = width - pad_l - pad_r, height - pad_t - pad_b
-    slot = plot_w / len(rows)
-    bar_w = max(4, slot * 0.7)
-    parts = [svg_open(width, height), svg_title(title, width)]
-    parts += axis(pad_l, pad_t, plot_w, plot_h, 100, "% of shots", percent=True)
-    for i, (label, counts, name) in enumerate(rows):
-        total = sum(counts[k] for k in keys) or 1
-        x = pad_l + i * slot + (slot - bar_w) / 2
-        y = pad_t + plot_h
-        for k in keys:
-            h = plot_h * counts[k] / total
-            y -= h
-            parts.append(f'<rect x="{x:.1f}" y="{y:.1f}" width="{bar_w:.1f}" height="{h:.1f}" fill="{COLORS[k]}">'
-                         f'<title>{html.escape(name)} {k}: {counts[k]} ({100 * counts[k] / total:.0f}%)</title></rect>')
-        parts.append(f'<text x="{x + bar_w / 2:.1f}" y="{pad_t + plot_h + 14}" class="lbl">{html.escape(label)}</text>')
-    parts.append(legend(keys, pad_l, height - 8))
-    parts.append("</svg>")
-    return "".join(parts)
-
-
-def nice_top(value, ticks=4):
-    """Rounds the axis top up so each tick step is a whole 1, 2, 3, 4, 5, 6 or 8 x 10^n."""
-    raw = max(value, 1) / ticks
-    if raw <= 1:
-        return ticks
-    magnitude = 10 ** (len(str(int(raw))) - 1)
-    for m in (1, 2, 3, 4, 5, 6, 8, 10):
-        if raw <= m * magnitude:
-            return m * magnitude * ticks
-    return 10 * magnitude * ticks
-
-
-def axis(x0, y0, w, h, top, y_label, percent=False):
-    out = [f'<line x1="{x0}" y1="{y0 + h}" x2="{x0 + w}" y2="{y0 + h}" class="ax"/>',
-           f'<line x1="{x0}" y1="{y0}" x2="{x0}" y2="{y0 + h}" class="ax"/>']
-    for step in range(5):
-        frac = step / 4
-        y = y0 + h - h * frac
-        value = top * frac
-        text = f"{value:.0f}%" if percent else f"{value:.0f}"
-        out.append(f'<line x1="{x0}" y1="{y:.1f}" x2="{x0 + w}" y2="{y:.1f}" class="grid"/>')
-        out.append(f'<text x="{x0 - 6}" y="{y + 4:.1f}" class="tick">{text}</text>')
-    out.append(f'<text x="12" y="{y0 + h / 2:.1f}" class="axis-title" transform="rotate(-90 12 {y0 + h / 2:.1f})">'
-               f'{html.escape(y_label)}</text>')
+        out.append({"session": row[1], "event": row[2].lower(), "level": row[3], "t": t,
+                    "d1": row[5], "d2": row[6], "d3": row[7]})
     return out
 
 
-def legend(keys, x, y):
-    parts = []
-    for k in keys:
-        parts.append(f'<rect x="{x}" y="{y - 10}" width="10" height="10" fill="{COLORS[k]}"/>'
-                     f'<text x="{x + 14}" y="{y}" class="leg">{k}</text>')
-        x += 80
-    return "".join(parts)
+def new_run(player, song, difficulty, attempt):
+    return {"player": player, "song": song, "difficulty": difficulty, "attempt": attempt, "hold": False,
+            "result": None, "end": 0.0, "asteroids": [], "dodges": [], "stars": [], "empty": 0}
 
 
-def svg_open(width, height):
-    return f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" xmlns="http://www.w3.org/2000/svg">'
+def build_runs(rows):
+    """Groups Beta-format rows into one run per player, song and attempt."""
+    runs = {}
+    for r in rows:
+        parts = r["level"].split("|")
+        if len(parts) != 3 or not parts[2].isdigit():
+            continue
+        player = r["session"].split("-")[0]
+        key = (player, parts[0], int(parts[2]))
+        run = runs.setdefault(key, new_run(player, parts[0], parts[1], int(parts[2])))
+        run["end"] = max(run["end"], r["t"])
+        e = r["event"]
+        if e == "level_start":
+            run["hold"] = r["d1"] == "1"
+        elif e == "asteroid":
+            kind = r["d1"].split("|") + [""]
+            shot = r["d3"].split("|") + ["", ""]
+            try:
+                offset = int(shot[0])
+            except ValueError:
+                offset = None
+            run["asteroids"].append({"t": r["t"], "type": kind[0], "outcome": kind[1], "spot": r["d2"],
+                                     "offset": offset, "slow": shot[2] == "1"})
+        elif e == "dodge":
+            run["dodges"].append((r["t"], r["d2"]))
+        elif e == "star":
+            run["stars"].append({"t": r["t"], "kind": r["d1"], "spot": r["d2"], "collected": r["d3"] == "collected"})
+        elif e == "level_end":
+            run["result"], run["empty"] = r["d1"], int(r["d3"]) if r["d3"].isdigit() else 0
+    for run in runs.values():
+        run["dodges"].sort()
+    return list(runs.values())
 
 
-def svg_title(title, width):
-    return f'<text x="{width / 2}" y="18" class="title">{html.escape(title)}</text>'
+def level_ids(runs):
+    seen = {r["song"] for r in runs}
+    return [s for s in LEVEL_ORDER if s in seen] + sorted(seen - set(LEVEL_ORDER))
 
 
-def empty_chart(title):
-    return f'<div class="empty"><b>{html.escape(title)}</b><br>No data for this metric yet.</div>'
+def pct(a, b):
+    return 100.0 * a / b if b else 0.0
 
 
-# ---------------------------------------------------------------- report
-
-def pct(part, total):
-    return f"{100 * part / total:.0f}%" if total else "-"
+def median(values):
+    return statistics.median(values) if values else None
 
 
-def build_report(events, source, bin_size):
-    sessions = sorted({e["session"] for e in events})
-    # Short labels for the charts; the full session id stays in each bar's tooltip.
-    short = {sid: f"S{i + 1}" for i, sid in enumerate(sessions)}
-    counts, attempts_to_win, never_won = win_loss(events)
-    deaths = death_times(events)
-    overall, per_session = shot_accuracy(events)
-    dodge_counts, dodge_times = dodges(events)
+def iqr(values):
+    if len(values) < 4:
+        return None
+    q = statistics.quantiles(values, n=4)
+    return q[2] - q[0]
 
-    wins, losses = counts.get("win", 0), counts.get("loss", 0)
-    shots = sum(overall.values())
-    on_beat = overall["Perfect"] + overall["Good"]
 
-    sections = []
+# ---------------------------------------------------------------- calculations
 
-    sections.append(section(
-        "1. Win / loss ratio",
-        f"{wins} wins, {losses} losses (win rate {pct(wins, wins + losses)}). "
-        f"{sum(attempts_to_win.values())} sessions won at least once; {never_won} never won.",
-        bar_chart([("Wins", wins, COLORS["win"]), ("Losses", losses, COLORS["loss"])], "Level results"),
-        bar_chart([(str(k), attempts_to_win[k]) for k in sorted(attempts_to_win)],
-                  "Attempts until first win", x_label="Attempt number of the first win", y_label="Sessions"),
-    ))
+def bins_for(runs):
+    return max(1, math.ceil(max(r["end"] for r in runs) / BIN))
 
-    sections.append(section(
-        "2. Death spots",
-        f"{len(deaths)} deaths recorded" + (f", most common window: {max(histogram(deaths, bin_size), key=lambda b: b[1])[0]}." if deaths else "."),
-        bar_chart(histogram(deaths, bin_size), f"Deaths by level time ({bin_size:g}s bins)",
-                  x_label="Level time when the player died", y_label="Deaths", color=COLORS["loss"]),
-    ))
 
-    sections.append(section(
-        "3. Shot accuracy",
-        f"{shots} shots: Perfect {pct(overall['Perfect'], shots)}, Good {pct(overall['Good'], shots)}, "
-        f"Miss {pct(overall['Miss'], shots)}. On-beat (Perfect + Good) {pct(on_beat, shots)}.",
-        bar_chart([(k, overall[k], COLORS[k]) for k in JUDGMENTS], "All shots by judgment", y_label="Shots"),
-        stacked_chart([(short[s], per_session[s], s) for s in sessions if per_session[s]], JUDGMENTS,
-                      "Judgment share per session"),
-    ))
+def occupancy(run, bins):
+    """Seconds the ship spent at each spot, per column. Rebuilt from dodges; the ship starts at S."""
+    grid = [dict.fromkeys(SPOTS, 0.0) for _ in range(bins)]
+    points = [(0.0, "Bottom")] + [d for d in run["dodges"] if d[1] in SPOTS] + [(run["end"], None)]
+    for (start, spot), (stop, _) in zip(points, points[1:]):
+        for b in range(int(start // BIN), min(bins, int(stop // BIN) + 1)):
+            overlap = min(stop, (b + 1) * BIN) - max(start, b * BIN)
+            if overlap > 0:
+                grid[b][spot] += overlap
+    return grid
 
-    sections.append(section(
-        "4. Dodging",
-        f"{sum(dodge_counts.values())} dodges across {len(dodge_counts)} sessions"
-        + (f" (average {sum(dodge_counts.values()) / len(dodge_counts):.1f} per session)." if dodge_counts else "."),
-        bar_chart([(short[s], dodge_counts[s], COLORS["bar"], s) for s in sessions if dodge_counts[s]],
-                  "Dodges per session", x_label="Session", y_label="Dodges"),
-        bar_chart(histogram(dodge_times, bin_size), f"Dodges by level time ({bin_size:g}s bins)",
-                  x_label="Level time of the dodge", y_label="Dodges"),
-    ))
 
-    generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+def heat_data(runs):
+    bins = bins_for(runs)
+    totals = [dict.fromkeys(SPOTS, 0.0) for _ in range(bins)]
+    reached = [0] * bins
+    bigs, stars = [0] * bins, [0] * bins
+    shares = []
+    for run in runs:
+        grid = occupancy(run, bins)
+        whole = dict.fromkeys(SPOTS, 0.0)
+        for b, cell in enumerate(grid):
+            if sum(cell.values()) > 0:
+                reached[b] += 1
+            for s in SPOTS:
+                totals[b][s] += cell[s]
+                whole[s] += cell[s]
+        if sum(whole.values()) > 0:
+            shares.append(max(whole.values()) / sum(whole.values()) * 100)
+        for a in run["asteroids"]:
+            if a["type"] == "big" and int(a["t"] // BIN) < bins:
+                bigs[int(a["t"] // BIN)] += 1
+        for s in run["stars"]:
+            if int(s["t"] // BIN) < bins:
+                stars[int(s["t"] // BIN)] += 1
+    return {"bins": bins, "totals": totals, "n": reached, "bigs": bigs, "stars": stars, "camp": median(shares)}
+
+
+def timeline_data(runs):
+    bins = bins_for(runs)
+    counts = [defaultdict(int) for _ in range(bins)]
+    reached = [0] * bins
+    for run in runs:
+        for b in range(min(bins, int(run["end"] // BIN) + 1)):
+            reached[b] += 1
+        for a in run["asteroids"]:
+            b = int(a["t"] // BIN)
+            if b < bins and a["outcome"] in GROUP:
+                counts[b][GROUP[a["outcome"]]] += 1
+    total = [sum(c.values()) for c in counts]
+    density = [total[b] / (reached[b] * BIN) if reached[b] else 0 for b in range(bins)]
+    avg_hit = pct(sum(c[HIT] for c in counts), sum(total))
+    calm = median([d for d in density if d > 0]) or 0
+    flagged = [b for b in range(bins) if total[b] >= 10 and density[b] <= calm and pct(counts[b][HIT], total[b]) >= 1.5 * avg_hit]
+    return {"bins": bins, "counts": counts, "total": total, "n": reached, "density": density, "avg_hit": avg_hit, "flagged": flagged}
+
+
+def timing_data(runs):
+    first, later = [], []
+    by_player = defaultdict(lambda: ([], []))
+    for run in runs:
+        if run["hold"]:
+            continue
+        for a in run["asteroids"]:
+            if a["offset"] is None or a["slow"] or a["type"] == "big":
+                continue
+            (first if run["attempt"] == 1 else later).append(a["offset"])
+            by_player[(run["player"], run["song"])][0 if run["attempt"] == 1 else 1].append(a["offset"])
+    a1, a2 = [], []
+    pairs = 0
+    for one, two in by_player.values():
+        if len(one) >= 10 and len(two) >= 10:
+            a1 += one
+            a2 += two
+            pairs += 1
+    return {"first": first, "later": later, "pairs": pairs, "pair_first": iqr(a1), "pair_later": iqr(a2),
+            "empty": sum(r["empty"] for r in runs), "runs": len(runs)}
+
+
+def power_data(runs):
+    table = defaultdict(lambda: {"collected": [0, 0], "missed": [0, 0]})
+    for run in runs:
+        hits = [a["t"] for a in run["asteroids"] if a["outcome"] == "hit"]
+        for star in run["stars"]:
+            side = table[star["kind"]]["collected" if star["collected"] else "missed"]
+            side[0] += 1
+            side[1] += any(star["t"] < h <= star["t"] + 10 for h in hits)
+    return table
+
+
+# ---------------------------------------------------------------- drawing
+
+def svg(w, h, label, body):
+    return f'<div class="scroll"><svg viewBox="0 0 {w} {h}" role="img" aria-label="{ESC(label)}">{body}</svg></div>'
+
+
+def text(x, y, s, anchor="start", cls=""):
+    return f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" class="{cls}">{ESC(str(s))}</text>'
+
+
+def rect(x, y, w, h, fill, tip="", extra=""):
+    title = f"<title>{ESC(tip)}</title>" if tip else ""
+    return f'<rect x="{x:.1f}" y="{y:.1f}" width="{max(w, 0):.1f}" height="{max(h, 0):.1f}" rx="2" fill="{fill}" {extra}>{title}</rect>'
+
+
+def x_labels(bins, left, cw, y):
+    step = max(1, round(bins / 8))
+    return "".join(text(left + b * cw, y, f"{b * BIN}s", "middle") for b in range(0, bins + 1, step))
+
+
+def n_row(n, left, cw, y):
+    step = max(1, round(len(n) / 8))
+    return text(0, y, "runs") + "".join(text(left + b * cw + cw / 2, y, n[b], "middle") for b in range(0, len(n), step))
+
+
+def heat_svg(d):
+    left, top, cw, ch = 48, 28, max(14, min(34, 640 / d["bins"])), 26
+    w, h = left + d["bins"] * cw + 58, top + 4 * ch + 42
+    out = [text(0, 18, "asked")]
+    for b in range(d["bins"]):
+        if d["n"][b] and d["bigs"][b] / d["n"][b] >= 0.4:
+            out.append(text(left + b * cw + cw / 2 - 5, 18, "▲", "middle", "on"))
+        if d["n"][b] and d["stars"][b] / d["n"][b] >= 0.2:
+            out.append(text(left + b * cw + cw / 2 + 5, 18, "★", "middle", "on"))
+    grand = {s: sum(c[s] for c in d["totals"]) for s in SPOTS}
+    all_time = sum(grand.values()) or 1
+    for y, spot in enumerate(SPOTS):
+        out.append(text(left - 12, top + y * ch + 17, KEY[spot], "end", "on"))
+        out.append(text(left + d["bins"] * cw + 10, top + y * ch + 17, f"{grand[spot] / all_time * 100:.0f}%", "start", "on"))
+        for b in range(d["bins"]):
+            cell = d["totals"][b]
+            whole = sum(cell.values())
+            x, yy = left + b * cw, top + y * ch
+            if d["n"][b] < MIN_RUNS or not whole:
+                out.append(rect(x, yy, cw - 2, ch - 2, "var(--empty)", f"{b * BIN}s: only {d['n'][b]} runs"))
+                continue
+            v = cell[spot] / whole
+            out.append(rect(x, yy, cw - 2, ch - 2, "var(--seq)", f"{KEY[spot]} at {b * BIN}-{(b + 1) * BIN}s: {v * 100:.0f}% of time, {d['n'][b]} runs", f'fill-opacity="{max(.05, v):.2f}"'))
+    out.append(text(left + d["bins"] * cw + 10, top - 8, "total"))
+    out.append(x_labels(d["bins"], left, cw, top + 4 * ch + 14))
+    out.append(n_row(d["n"], left, cw, top + 4 * ch + 32))
+    return svg(w, h, "Ship position by song time", "".join(out))
+
+
+def timeline_svg(d):
+    left, cw, top_h, top, h0 = 52, max(14, min(34, 640 / d["bins"])), 44, 58, 200
+    w, h = left + d["bins"] * cw + 14, top + h0 + 42
+    peak = max(d["density"]) or 1
+    out = [text(0, 34, "per sec")]
+    for b, v in enumerate(d["density"]):
+        bar = v / peak * (top_h - 6)
+        out.append(rect(left + b * cw, top_h - bar, cw - 2, bar, "var(--density)", f"{b * BIN}s: {v:.2f} asteroids per second"))
+    for p in (0, 50, 100):
+        out.append(text(left - 10, top + h0 - p / 100 * h0 + 4, f"{p}%", "end"))
+    colors = [(HIT, "var(--s2)"), (AVOIDED, "var(--s3)"), (DESTROYED, "var(--s1)")]
+    for b in range(d["bins"]):
+        x = left + b * cw
+        if d["n"][b] < MIN_RUNS or not d["total"][b]:
+            out.append(rect(x, top, cw - 2, h0, "var(--empty)", f"{b * BIN}s: only {d['n'][b]} runs"))
+            continue
+        y = top + h0
+        for name, color in colors:
+            share = pct(d["counts"][b][name], d["total"][b])
+            seg = share / 100 * h0
+            y -= seg
+            out.append(rect(x, y + 1, cw - 2, max(1, seg - 2), color, f"{b * BIN}-{(b + 1) * BIN}s, {name}: {share:.0f}% of {d['total'][b]} asteroids"))
+    for b in d["flagged"]:
+        out.append(text(left + b * cw + cw / 2, top + h0 + 13, "▲", "middle", "on"))
+    out.append(x_labels(d["bins"], left, cw, top + h0 + 26))
+    out.append(n_row(d["n"], left, cw, top + h0 + 40))
+    return svg(w, h, "Asteroid outcomes by song time", "".join(out))
+
+
+def timing_svg(d):
+    left, right, top, h0, w = 46, 20, 16, 220, 700
+    edges = list(range(-300, 301, 20))
+
+    def shares(values):
+        inside = [v for v in values if -300 <= v < 300]
+        counts = [0] * (len(edges) - 1)
+        for v in inside:
+            counts[(v + 300) // 20] += 1
+        return [pct(c, len(values)) for c in counts]
+
+    first, later = shares(d["first"]), shares(d["later"])
+    ymax = max(first + later + [5]) * 1.15
+    x = lambda ms: left + (ms + 300) / 600 * (w - left - right)
+    y = lambda p: top + h0 - p / ymax * h0
+    out = [rect(x(-250), top, x(250) - x(-250), h0, "var(--band)", extra='fill-opacity=".45"'),
+           rect(x(-120), top, x(120) - x(-120), h0, "var(--band)"),
+           text(x(0), top + 12, "Perfect ±120", "middle", "on"), text(x(-185), top + 12, "Good", "middle"), text(x(185), top + 12, "Good", "middle")]
+    for t in range(0, int(ymax) + 1, 5):
+        out.append(f'<line x1="{left}" x2="{w - right}" y1="{y(t):.1f}" y2="{y(t):.1f}" class="grid"/>' + text(left - 8, y(t) + 4, f"{t}%", "end"))
+    for m in range(-300, 301, 100):
+        out.append(text(x(m), top + h0 + 16, f"+{m}" if m > 0 else m, "middle"))
+    out.append(text(left, top + h0 + 34, "early") + text(w - right, top + h0 + 34, "late, milliseconds from the beat", "end"))
+    for values, series, color in ((d["first"], first, "var(--s1)"), (d["later"], later, "var(--s2)")):
+        if not values:
+            continue
+        pts = " ".join(f"{x(edges[i] + 10):.1f},{y(p):.1f}" for i, p in enumerate(series))
+        out.append(f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="2.5" stroke-linejoin="round"/>')
+        m = median(values)
+        if -300 <= m <= 300:
+            out.append(f'<line x1="{x(m):.1f}" x2="{x(m):.1f}" y1="{top + h0}" y2="{top + h0 - 14}" stroke="{color}" stroke-width="3"/>')
+    return svg(w, top + h0 + 44, "Timing error distribution", "".join(out))
+
+
+def power_svg(table):
+    kinds = sorted(table)
+    left, right, top, rh, w = 190, 60, 8, 60, 700
+    h = top + max(1, len(kinds)) * rh + 30
+    xs = lambda p: left + p / 100 * (w - left - right)
+    out = []
+    for p in range(0, 101, 25):
+        out.append(f'<line x1="{xs(p):.1f}" x2="{xs(p):.1f}" y1="{top}" y2="{h - 24}" class="grid"/>' + text(xs(p), h - 8, f"{p}%", "middle"))
+    for i, kind in enumerate(kinds):
+        c, m = table[kind]["collected"], table[kind]["missed"]
+        y = top + i * rh + 8
+        total = c[0] + m[0]
+        out.append(text(0, y + 14, kind, "start", "on") + text(0, y + 31, f"{pct(c[0], total):.0f}% of {total} stars taken"))
+        for offset, side, color, name in ((0, c, "var(--s1)", "Collected"), (20, m, "var(--s2)", "Missed")):
+            if not side[0]:
+                out.append(text(left + 4, y + offset + 13, f"{name}: no stars"))
+                continue
+            v = pct(side[1], side[0])
+            out.append(rect(left, y + offset, xs(v) - left, 17, color, f"{kind}, {name}: {v:.0f}% of {side[0]} stars followed by a hit"))
+            out.append(text(xs(v) + 6, y + offset + 13, f"{v:.0f}% of {side[0]}", "start", "on"))
+    return svg(w, h, "Ship hits after collected and missed stars", "".join(out))
+
+
+# ---------------------------------------------------------------- page
+
+def level_table(runs, songs):
+    show_score = bool(PLANNED_SCORE)
+    head = "<tr><th>Level</th>" + ('<th class="num">Planned score</th>' if show_score else "") + \
+        '<th class="num">Players</th><th class="num">Runs</th><th class="num">Finished %</th><th class="num">Asteroids per second</th><th class="num">Hit per 100 asteroids</th></tr>'
+    rows = []
+    for i, song in enumerate(songs, 1):
+        group = [r for r in runs if r["song"] == song]
+        ended = [r for r in group if r["result"]]
+        asteroids = [a for r in group for a in r["asteroids"]]
+        seconds = sum(r["end"] for r in group) or 1
+        score = f'<td class="num">{PLANNED_SCORE.get(song, "-")}</td>' if show_score else ""
+        rows.append(f'<tr><td>{i}. {ESC(song)}</td>{score}<td class="num">{len({r["player"] for r in group})}</td><td class="num">{len(group)}</td>'
+                    f'<td class="num">{pct(sum(r["result"] == "win" for r in ended), len(ended)):.0f}</td><td class="num">{len(asteroids) / seconds:.2f}</td>'
+                    f'<td class="num">{pct(sum(a["outcome"] == "hit" for a in asteroids), len(asteroids)):.0f}</td></tr>')
+    return f'<div class="scroll"><table>{head}{"".join(rows)}</table></div>'
+
+
+def legend(*items):
+    return '<div class="legend">' + "".join(f'<span><i style="background:{c}"></i>{ESC(t)}</span>' for c, t in items) + "</div>"
+
+
+def info(what, why, read, hypothesis):
+    return (f'<dl><div><dt>What it is</dt><dd>{what}</dd></div><div><dt>Why we track it</dt><dd>{why}</dd></div>'
+            f'<div><dt>How to read it</dt><dd>{read}</dd></div><div><dt>Hypothesis</dt><dd>{hypothesis}</dd></div></dl>')
+
+
+def fmt_ms(v):
+    return "n/a" if v is None else f"{v:+.0f} ms"
+
+
+def build_page(runs, source_note, simulated):
+    songs = level_ids(runs)
+    players = len({r["player"] for r in runs})
+    options, heat, timeline = [], [], []
+    for i, song in enumerate(songs):
+        group = [r for r in runs if r["song"] == song]
+        options.append(f'<option value="{i}">{i + 1}. {ESC(song)}</option>')
+        hd, td = heat_data(group), timeline_data(group)
+        camp = f"Median run spent {hd['camp']:.0f}% of its time at its most-used spot." if hd["camp"] is not None else ""
+        flags = ", ".join(f"{b * BIN}-{(b + 1) * BIN}s" for b in td["flagged"])
+        flag_text = f"▲ Hit share at least 1.5× the level average in a quieter stretch: {flags}." if flags else "No quiet stretch has an unusually high hit share."
+        heat.append(f'<div data-level="{i}">{heat_svg(hd)}<p class="stat">{camp}</p></div>')
+        timeline.append(f'<div data-level="{i}">{timeline_svg(td)}<p class="stat">Level average: {td["avg_hit"]:.0f}% of asteroids hit the ship. {flag_text}</p></div>')
+    t = timing_data(runs)
+    narrowing = (f'Among {t["pairs"]} player-level pairs who retried, the middle half of shots went from {t["pair_first"]:.0f} ms wide to {t["pair_later"]:.0f} ms wide.'
+                 if t["pairs"] and t["pair_first"] and t["pair_later"] else "Not enough retries yet to compare the same players.")
+    banner = ('<div class="banner"><strong>Simulated data.</strong> These charts show generated sample responses until Beta playtest data arrives. '
+              'They exercise the full pipeline, but no number here is a real result.</div>') if simulated else ""
+    updated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return PAGE.format(
-        generated=generated,
-        source=html.escape(source),
-        events=len(events),
-        sessions=len(sessions),
-        sections="".join(sections),
+        banner=banner, players=players, runs=len(runs), asteroids=sum(len(r["asteroids"]) for r in runs), updated=updated, source=ESC(source_note),
+        levels=level_table(runs, songs), options="".join(options), heat="".join(heat), timeline="".join(timeline),
+        heat_info=info("Where the ship was during the song. Each column is 5 seconds and adds to 100% of the time runs spent in it.",
+                       "The ship can only be at W, A, S or D, so this is the true map of the game and entirely the player's choice. Alpha players said dodging felt pointless.",
+                       "A row that stays dark means players camp there. Compare with ▲ big asteroids and ★ stars, which show what the level asked for, so the player's choice isn't confused with our design.",
+                       "On levels with big asteroids and stars, the median player spends under 60% of the run at any one spot."),
+        heat_legend=f'<div class="legend"><span>Share of time<span class="ramp"></span>0 to 100%</span><span>▲ big asteroid</span><span>★ star</span><span><i style="background:var(--empty)"></i>Fewer than {MIN_RUNS} runs</span></div>',
+        timeline_info=info("How every asteroid ended, in 5-second columns, under the number of asteroids per second. Each asteroid has exactly one outcome.",
+                           "Shows whether players get hit where we meant the song to be hard. It uses hits and not deaths, because healing can make deaths rare.",
+                           "Orange at the bottom is the hit share. It should rise and fall with the grey density bars. Orange that grows where the bars are low is a spot to investigate.",
+                           "Hit share rises and falls with density, and no quiet stretch is well above the level's average hit share."),
+        timeline_legend=legend(("var(--s2)", HIT), ("var(--s3)", AVOIDED + " (dodged, shielded or bombed)"), ("var(--s1)", DESTROYED), ("var(--density)", "Asteroids per second")),
+        timing=timing_svg(t),
+        timing_info=info("How early or late the first shot at each asteroid was. Leaves out big asteroids, slow-mo shots and Hold to Fire runs.",
+                         "The game is usually played muted, so this tests whether players can read the lock-on cue, and whether they improve when they retry.",
+                         "One tight peak near zero means the cue is readable. A peak off to one side means players share the wrong moment. A wide, flat curve means guessing.",
+                         "The median offset stays within ±40 ms, and the middle half of shots is narrower on later attempts for the same players."),
+        timing_legend=legend(("var(--s1)", f"Attempt 1 ({len(t['first'])} shots)"), ("var(--s2)", f"Attempt 2 or later ({len(t['later'])} shots)")),
+        timing_stat=f'Median offset: attempt 1 {fmt_ms(median(t["first"]))}, later {fmt_ms(median(t["later"]))}. {narrowing} Clicks at nothing: {t["empty"] / max(1, t["runs"]):.1f} per run.',
+        power=power_svg(power_data(runs)),
+        power_info=info("For each power-up: how often its star was taken, and how often a ship hit followed in the next 10 song-seconds, collected vs missed.",
+                        "Shows whether power-ups are noticed and whether they change the outcome.",
+                        "A blue bar shorter than its orange bar means fewer hits after collecting. Stronger players may also collect more, so check it against the other graphs.",
+                        "Each type is collected more than half the time, and collected stars are followed by a hit less often than missed ones."),
+        power_legend=legend(("var(--s1)", "Star collected"), ("var(--s2)", "Star missed")) ,
     )
 
 
-def section(title, summary, *charts):
-    body = "".join(f'<div class="chart">{c}</div>' for c in charts)
-    return f'<section><h2>{html.escape(title)}</h2><p>{html.escape(summary)}</p><div class="charts">{body}</div></section>'
-
-
 PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bullet Beats Analytics</title>
 <style>
-  :root {{ --bg:#ffffff; --fg:#1d2230; --muted:#5d6475; --line:#d9dde6; --card:#f5f7fb; }}
-  @media (prefers-color-scheme: dark) {{
-    :root {{ --bg:#11141b; --fg:#e7eaf1; --muted:#9aa2b4; --line:#2c3240; --card:#1a1f2a; }}
-  }}
-  body {{ margin:0; padding:24px 16px; background:var(--bg); color:var(--fg);
-         font:15px/1.5 system-ui, -apple-system, sans-serif; }}
-  main {{ max-width:1040px; margin:0 auto; }}
-  h1 {{ margin:0 0 4px; font-size:24px; }}
-  .meta {{ color:var(--muted); margin:0 0 24px; font-size:13px; }}
-  section {{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin:0 0 16px; }}
-  h2 {{ margin:0 0 4px; font-size:18px; }}
-  section > p {{ margin:0 0 12px; color:var(--muted); }}
-  .charts {{ display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap:12px; }}
-  .chart {{ min-width:0; }}
-  svg text {{ fill:var(--fg); font-size:11px; }}
-  .title {{ text-anchor:middle; font-size:13px; font-weight:600; }}
-  .val {{ text-anchor:middle; font-size:10px; }}
-  .lbl {{ text-anchor:middle; fill:var(--muted); }}
-  .tick {{ text-anchor:end; fill:var(--muted); font-size:10px; }}
-  .axis-title {{ text-anchor:middle; fill:var(--muted); }}
-  .leg {{ font-size:11px; }}
-  .ax {{ stroke:var(--muted); }}
-  .grid {{ stroke:var(--line); stroke-dasharray:2 3; }}
-  .empty {{ border:1px dashed var(--line); border-radius:8px; padding:24px; color:var(--muted); text-align:center; }}
-</style></head>
-<body><main>
-<h1>Bullet Beats Analytics</h1>
-<p class="meta">Generated {generated} from {source} &middot; {events} events &middot; {sessions} sessions</p>
-{sections}
-</main></body></html>
+:root{{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--fg:#14171f;--muted:#59606e;--line:#dfe3ea;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--seq:#184f95;--density:#8a93a3;--empty:#e9ecf1;--band:#dcf0f1;--warn:#fbeecb;--warn-fg:#6a4700}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#12151c;--panel:#1b1f29;--fg:#eef0f4;--muted:#a9b0be;--line:#2f3543;--s1:#3987e5;--s2:#d95926;--s3:#199e70;--seq:#6da7ec;--density:#7d8799;--empty:#262b37;--band:#17383d;--warn:#3a2d0e;--warn-fg:#f0c766}}}}
+body{{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}}
+main{{max-width:940px;margin:0 auto;padding:32px 16px 64px;display:grid;gap:24px}}
+main>*{{min-width:0}}
+h1{{margin:0;font-size:2rem}}h2{{margin:0;font-size:1.3rem}}p{{margin:0}}
+.sub,.stat,.legend{{color:var(--muted);font-size:.9rem}}
+.banner{{background:var(--warn);color:var(--warn-fg);padding:12px 14px;border-radius:6px}}
+.card{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;display:grid;gap:14px}}
+.card>*{{min-width:0}}
+.facts{{display:flex;flex-wrap:wrap;gap:8px 28px}}.facts b{{display:block;font-size:1.4rem;font-variant-numeric:tabular-nums}}
+.scroll{{overflow-x:auto}}svg{{display:block;width:100%;min-width:600px;height:auto}}
+svg text{{fill:var(--muted);font:11px ui-monospace,Menlo,monospace}}svg text.on{{fill:var(--fg);font-weight:600}}svg .grid{{stroke:var(--line)}}
+.legend{{display:flex;flex-wrap:wrap;gap:6px 16px}}.legend i{{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-1px}}
+.ramp{{display:inline-block;width:100px;height:10px;margin:0 6px;background:linear-gradient(90deg,var(--empty),var(--seq));vertical-align:-1px}}
+dl{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 20px;margin:0}}dt{{font-weight:600;font-size:.82rem;color:var(--muted)}}dd{{margin:0;font-size:.95rem}}
+table{{border-collapse:collapse;width:100%}}th,td{{padding:8px 10px 8px 0;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}}th{{font-size:.8rem;color:var(--muted)}}.num{{text-align:right;font-variant-numeric:tabular-nums}}
+label{{font-weight:600}}select{{font:inherit;padding:4px 8px;margin-left:8px}}
+</style></head><body><main>
+<header><h1>Bullet Beats Analytics</h1><p class="sub">Beta dashboard for CSCI 526 Team 30. Updated {updated}. Source: {source}.</p></header>
+{banner}
+<div class="facts"><div><b>{players}</b>players</div><div><b>{runs}</b>runs</div><div><b>{asteroids}</b>asteroids logged</div></div>
+<section class="card"><h2>Levels at a glance</h2>{levels}</section>
+<div><label for="level">Level shown in the first two graphs<select id="level">{options}</select></label></div>
+<section class="card"><h2>1. Ship Position Heat Map</h2>{heat_info}{heat}{heat_legend}</section>
+<section class="card"><h2>2. Asteroid Outcome Timeline</h2>{timeline_info}{timeline}{timeline_legend}</section>
+<section class="card"><h2>3. Timing Profile</h2>{timing_info}{timing}{timing_legend}<p class="stat">{timing_stat}</p></section>
+<section class="card"><h2>4. Power-up Value</h2>{power_info}{power}{power_legend}<p class="stat">All levels combined. Lower is better.</p></section>
+<p class="sub">One graph can suggest a cause but can't prove one. Read each graph against the others and the Beta survey.</p>
+</main><script>
+var s=document.getElementById('level'),b=document.querySelectorAll('[data-level]');
+function show(){{b.forEach(function(e){{e.hidden=e.getAttribute('data-level')!==s.value}})}}
+s.addEventListener('change',show);show();
+</script></body></html>
 """
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("source", help="Responses CSV file, or the Google Sheet's CSV export URL")
-    parser.add_argument("-o", "--output", default="analytics_report.html", help="HTML report to write")
-    parser.add_argument("--bin", type=float, default=5.0, help="Seconds per bar in the time histograms")
+    parser.add_argument("source", help="responses CSV file or link")
+    parser.add_argument("-o", "--output", default="analytics_report.html")
+    parser.add_argument("--fallback", help="sample CSV to use, labelled as simulated, when source has no Beta rows")
+    parser.add_argument("--simulated", action="store_true", help="label the source itself as simulated")
     args = parser.parse_args(argv)
 
-    events = load_events(args.source)
-    if not events:
-        print("No responses found in", args.source, file=sys.stderr)
-    report = build_report(events, args.source, args.bin)
+    simulated, note = args.simulated, "Google Form responses"
+    try:
+        runs = build_runs(load_rows(args.source))
+    except Exception as error:  # a broken link shouldn't take the dashboard down
+        print(f"Could not read the source: {error}", file=sys.stderr)
+        runs = []
+    if not runs and args.fallback:
+        runs, simulated = build_runs(load_rows(args.fallback)), True
+    if simulated:
+        note = "simulated sample responses"
+    if not runs:
+        print("No Beta-format rows found, nothing to draw.", file=sys.stderr)
+        return 1
     with open(args.output, "w", encoding="utf-8") as f:
-        f.write(report)
-    print(f"Wrote {args.output}: {len(events)} events")
+        f.write(build_page(runs, note, simulated))
+    print(f"Wrote {args.output}: {len(runs)} runs{' (simulated)' if simulated else ''}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
