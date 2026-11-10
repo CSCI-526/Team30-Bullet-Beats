@@ -12,9 +12,9 @@ using UnityEngine.UI;
 /// <see cref="failsBeforeDemo"/> fails the ghost shows it again. Prompts are one or two words; key caps,
 /// glowing spots, arrows and marks on the asteroids (<see cref="TutorialCues"/>) do the rest. After each
 /// step a check mark waits for NEXT (the button, Space or Enter).
-/// Steps, each with a big title and one line under it: shoot on the cue (3 in a row, with SHOOT NOW when
-/// the brackets turn gold), PERFECT (2), move (W A S D), dodge big red asteroids (two ways), a turbo
-/// asteroid, the shield star, the Freeze and Bomb stars, a practice run, then the goal and a 3-2-1
+/// Steps, each with a big title and one line under it: shoot (3 in a row; SHOOT NOW shows when the
+/// brackets turn gold, which is PERFECT), move (W A S D), dodge big red asteroids (two ways), a turbo
+/// asteroid, the Shield star, the Freeze and Bomb stars, a practice run, then the goal and a 3-2-1
 /// into the first level on Easy. The ship can't die here.
 /// Only players who finished the tutorial before can skip it (Skip button or ESC); for everyone else
 /// ESC opens the pause menu.
@@ -30,6 +30,12 @@ public class Tutorial : MonoBehaviour
     [Range(0.02f, 1f)] public float slowScale = 0.1f;
     [Tooltip("Real seconds to slow down or speed back up.")]
     public float rampSeconds = 0.35f;
+    [Tooltip("Time scale while an asteroid's brackets close in, before the timing window.")]
+    [Range(0.05f, 1f)] public float approachScale = 0.6f;
+    [Tooltip("Time scale during the timing window, so there is time to react to SHOOT NOW.")]
+    [Range(0.05f, 1f)] public float windowScale = 0.3f;
+    [Tooltip("Beats before a timed asteroid reaches its beat.")]
+    [Min(1f)] public float shotLeadBeats = 1.15f;
     [Tooltip("Fails before the ghost shows the step again.")]
     [Min(1)] public int failsBeforeDemo = 2;
 
@@ -182,8 +188,7 @@ public class Tutorial : MonoBehaviour
 
     IEnumerator Run()
     {
-        yield return RunStep("shoot", ShootDemo, ShootTry);
-        yield return RunStep("perfect", PerfectDemo, PerfectTry);
+        yield return RunStep("shoot", null, ShootTry); // the player shoots straight away
         yield return RunStep("move", ControlsDemo, ControlsTry);
         yield return RunStep("big", BigDemo, BigTry);
         yield return RunStep("turbo", null, TurboTry);
@@ -303,20 +308,7 @@ public class Tutorial : MonoBehaviour
 
     static int SpotBit(PlayerMovement.Spot spot) => 1 << (int)spot;
 
-    // Step 1: shoot as the brackets close, 3 in a row.
-
-    IEnumerator ShootDemo()
-    {
-        ShowStep("shoot");
-        ChartTarget demo = null;
-        yield return SpawnOne(NoteLane.RightUpper, false, t => demo = t);
-        if (demo == null) yield break;
-        demo.shipHitRadius = -1f;
-        ghost.Show(movement.Current, true);
-        yield return new WaitUntil(() => demo == null || RingShowing(demo));
-        yield return SlowTo(slowScale * 1.5f);
-        if (demo != null) yield return ghost.Shoot(demo, () => SongTime, demo.hitTime, 0.3f, true);
-    }
+    // Step 1: shoot when the brackets turn gold (PERFECT), 3 in a row. No demo: the player starts right away.
 
     IEnumerator ShootTry(Try result)
     {
@@ -339,7 +331,7 @@ public class Tutorial : MonoBehaviour
     IEnumerator OneTimedShot(NoteLane lane, bool turbo, Action<bool> hit, BeatJudgment needed = BeatJudgment.Good)
     {
         ChartTarget target = null;
-        yield return SpawnOne(lane, turbo, t => target = t);
+        yield return SpawnOne(lane, turbo, t => target = t, false, shotLeadBeats);
         if (target == null)
         {
             hit(false);
@@ -363,9 +355,9 @@ public class Tutorial : MonoBehaviour
         shooter.ShotFired += track;
 
         yield return new WaitUntil(() => target == null || RingShowing(target));
-        yield return SlowTo(slowScale * 1.5f);
+        yield return SlowTo(approachScale);
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - GoodWindow);
-        if (target != null) yield return SlowTo(slowScale);
+        if (target != null) yield return SlowTo(windowScale);
         // The brackets turn gold for the PERFECT window: that is when to shoot.
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - PerfectWindow);
         if (target != null) cues.ShowNow(target);
@@ -384,42 +376,6 @@ public class Tutorial : MonoBehaviour
         yield return SpeedUp();
         // Judgments run Perfect < Good < Miss, so "worst <= needed" means every shot was good enough.
         hit(broke && shotAt && worst <= needed);
-    }
-
-    // Step 2: PERFECT, with early and late.
-
-    IEnumerator PerfectDemo()
-    {
-        ShowStep("perfect");
-        foreach (float offset in new[] { -0.45f, 0.45f })
-        {
-            ChartTarget demo = null;
-            yield return SpawnOne(NextLane(), false, t => demo = t);
-            if (demo == null) continue;
-            demo.shipHitRadius = -1f;
-            ghost.Show(movement.Current, true);
-            yield return new WaitUntil(() => demo == null || RingShowing(demo));
-            yield return SlowTo(slowScale * 1.5f);
-            string label = offset < 0f ? "TOO EARLY" : "TOO LATE";
-            ChartTarget shot = demo;
-            yield return ghost.Shoot(demo, () => SongTime, demo.hitTime + offset, 0.25f, false,
-                at => cues.Float(label, DisplayCamera.Find().WorldToScreenPoint(at), warnColor));
-            yield return new WaitUntil(() => shot == null || SongTime > shot.hitTime + 0.5f);
-            if (shot != null) Destroy(shot.gameObject);
-            yield return SpeedUp();
-        }
-    }
-
-    IEnumerator PerfectTry(Try result)
-    {
-        ShowStep("perfect");
-        cues.ShowProgress(State("perfects"), 2);
-        bool perfect = false;
-        yield return OneTimedShot(NextLane(), false, h => perfect = h, BeatJudgment.Perfect);
-        if (perfect) SetState("perfects", State("perfects") + 1);
-        cues.ShowProgress(State("perfects"), 2);
-        result.passed = State("perfects") >= 2;
-        result.failed = !perfect;
     }
 
     // Step 4: big red asteroids can't be shot; move out of the way, two different ways.
@@ -524,7 +480,7 @@ public class Tutorial : MonoBehaviour
         if (star == null) yield break;
         PlayerMovement.Spot spot = SpotOf(star);
         ShowStep("shield");
-        cues.TagWorld(star.transform, "SHIELD: blocks one hit", shieldTagColor);
+        cues.TagWorld(star.transform, "SHIELD", shieldTagColor);
         ghost.Show(movement.Current);
         cues.ShowArrow(movement.Current, spot);
         cues.Glow(spot, true);
@@ -546,7 +502,7 @@ public class Tutorial : MonoBehaviour
         if (!shield.Active)
         {
             PowerUpPickup star = EnsureStar(PowerUpPickup.Kind.Shield);
-            if (star != null) cues.TagWorld(star.transform, "SHIELD: blocks one hit", shieldTagColor);
+            if (star != null) cues.TagWorld(star.transform, "SHIELD", shieldTagColor);
             float giveUp = Time.unscaledTime + 18f;
             cues.ShowKeys(true);
             while (!shield.Active && star != null && Time.unscaledTime < giveUp)
@@ -571,7 +527,7 @@ public class Tutorial : MonoBehaviour
         }
 
         // The shield takes the next hit: hold still and let one land.
-        ShowBanner("SHIELD", "Stay put. The shield blocks the next hit.", shieldTagColor);
+        ShowBanner("POWER-UPS", "SHIELD is on. Stay put: it blocks the next hit.", shieldTagColor);
         LockShooter(true);
         LockMovement(true);
         int healthBefore = health.Health;
@@ -613,12 +569,12 @@ public class Tutorial : MonoBehaviour
             if (!gotFreeze && freezeStar == null && !slowMo.Active)
             {
                 freezeStar = SpawnStar(PowerUpPickup.Kind.SlowMo, bombStar);
-                if (freezeStar != null) cues.TagWorld(freezeStar.transform, "FREEZE: slows time", freezeTagColor);
+                if (freezeStar != null) cues.TagWorld(freezeStar.transform, "FREEZE", freezeTagColor);
             }
             if (!gotBomb && bombStar == null && !bomb.Active)
             {
                 bombStar = SpawnStar(PowerUpPickup.Kind.Bomb, freezeStar);
-                if (bombStar != null) cues.TagWorld(bombStar.transform, "BOMB: clears every asteroid", warnColor);
+                if (bombStar != null) cues.TagWorld(bombStar.transform, "BOMB", warnColor);
             }
             gotFreeze |= slowMo.Active;
             gotBomb |= bomb.Active;
@@ -776,10 +732,10 @@ public class Tutorial : MonoBehaviour
 
     // ------------------------------------------------------------------ asteroids
 
-    IEnumerator SpawnOne(NoteLane lane, bool turbo, Action<ChartTarget> got, bool big = false)
+    IEnumerator SpawnOne(NoteLane lane, bool turbo, Action<ChartTarget> got, bool big = false, float leadBeats = 2f)
     {
         var list = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (2f, lane, turbo) }, list, big);
+        yield return SpawnWave(new[] { (leadBeats, lane, turbo) }, list, big);
         got(list.Count > 0 ? list[0] : null);
     }
 
@@ -907,13 +863,12 @@ public class Tutorial : MonoBehaviour
     /// <summary>What each step says: a big title and one short line under it.</summary>
     static readonly Dictionary<string, (string title, string line)> Words = new Dictionary<string, (string, string)>
     {
-        ["shoot"] = ("SHOOT", "Click when the brackets close in on the asteroid."),
-        ["perfect"] = ("PERFECT", "Shoot the moment the brackets turn gold."),
+        ["shoot"] = ("SHOOT", "Click the moment the brackets turn gold for a PERFECT."),
         ["move"] = ("MOVE", "Press W A S D to move your ship."),
         ["big"] = ("DODGE", "Big red asteroids can't be shot. Move out of the way!"),
         ["turbo"] = ("TURBO", "Shoot the orange asteroid twice to break it."),
-        ["shield"] = ("SHIELD", "Move onto the purple star to collect it."),
-        ["stars"] = ("POWER-UPS", "Move onto each glowing star to collect it."),
+        ["shield"] = ("POWER-UPS", "SHIELD: move onto the purple star. It blocks one hit."),
+        ["stars"] = ("POWER-UPS", "FREEZE and BOMB: move onto the blue and the orange star."),
         ["practice"] = ("YOUR TURN", "Shoot on the beat, dodge red asteroids, grab stars."),
     };
 
