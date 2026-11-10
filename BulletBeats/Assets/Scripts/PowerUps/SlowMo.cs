@@ -46,6 +46,14 @@ public class SlowMo : MonoBehaviour
         if (!was) Changed?.Invoke(true);
     }
 
+    /// <summary>Ends slow motion now. The speed eases back up as usual.</summary>
+    public void Cancel()
+    {
+        if (!Active) return;
+        remaining = 0f;
+        Changed?.Invoke(false);
+    }
+
     void Update()
     {
         if (Active)

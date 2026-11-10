@@ -11,12 +11,13 @@ using UnityEngine.UI;
 /// does it. A step only passes once the player has really done it, and after every
 /// <see cref="failsBeforeDemo"/> fails the ghost shows it again. Prompts are one or two words; key caps,
 /// glowing spots, arrows and marks on the asteroids (<see cref="TutorialCues"/>) do the rest. After each
-/// step a check mark waits for NEXT (the button, Space or Enter).
+/// step a check mark waits for SPACE (or Enter).
 /// Steps, each with a big title and one line under it: shoot (3 in a row; SHOOT NOW shows when the
 /// brackets turn gold, which is PERFECT), move (W A S D), dodge big red asteroids (two ways), a turbo
 /// asteroid, the Shield star, the Freeze and Bomb stars, a practice run, then the goal and a 3-2-1
 /// into the first level on Easy. The ship can't die here.
-/// Only players who finished the tutorial before can skip it (Skip button or ESC); for everyone else
+/// Only players who finished the tutorial before can skip it (Skip button or ESC), and only in the first
+/// <see cref="skipSeconds"/> seconds; after that, and for everyone else,
 /// ESC opens the pause menu.
 /// Added by <see cref="GameFlow"/> for a tutorial run. It runs on the scene clock (no song), so
 /// slowing <see cref="Time.timeScale"/> slows the asteroids, brackets and timing together.
@@ -39,6 +40,8 @@ public class Tutorial : MonoBehaviour
     [Range(0.05f, 1f)] public float quickWindowScale = 0.6f;
     [Tooltip("Beats before a timed asteroid reaches its beat.")]
     [Min(1f)] public float shotLeadBeats = 1.15f;
+    [Tooltip("Returning players see Skip (and ESC skips) only for this many real seconds at the start.")]
+    public float skipSeconds = 30f;
     [Tooltip("Fails before the ghost shows the step again.")]
     [Min(1)] public int failsBeforeDemo = 2;
 
@@ -57,11 +60,13 @@ public class Tutorial : MonoBehaviour
     public bool IsFinishing { get; private set; }
     /// <summary>True for players who finished the tutorial before: only they can skip it.</summary>
     public bool CanSkip { get; private set; }
-    /// <summary>ESC pauses only for first-time players; for returning players it skips.</summary>
-    public bool CanPause => !CanSkip && !IsFinishing;
+    /// <summary>Returning players can skip only in the first <see cref="skipSeconds"/> of the tutorial.</summary>
+    public bool SkipAvailable => CanSkip && !IsFinishing && Time.unscaledTime - startedAt < skipSeconds;
+    /// <summary>ESC pauses, except while Skip is available (returning players, first 30 s), when it skips.</summary>
+    public bool CanPause => !SkipAvailable && !IsFinishing;
     /// <summary>The spot the player is being sent to right now (the glowing one), if any.</summary>
     public PlayerMovement.Spot? GoalSpot { get; private set; }
-    /// <summary>True while the check mark waits for NEXT.</summary>
+    /// <summary>True while the check mark waits for SPACE.</summary>
     public bool WaitingForNext => cues != null && cues.WaitingForNext;
 
     GameFlow flow;
@@ -81,7 +86,10 @@ public class Tutorial : MonoBehaviour
     ChartTarget lastShotTarget;
     int damageTaken;
     bool shooterLocked, movementLocked;
-    float baseFixedDeltaTime;
+    float baseFixedDeltaTime, startedAt;
+    /// <summary>While true no asteroid can hurt the ship: the power-ups step is for learning, not surviving.</summary>
+    bool harmless;
+    float savedPlanetLead = -1f;
     float wantedTimeScale = 1f;
     NoteLane nextLane = NoteLane.RightUpper;
 
@@ -90,6 +98,7 @@ public class Tutorial : MonoBehaviour
     Graphic[] livesHighlightParts, timeHighlightParts;
     Text clockSample;
     Text bannerTitle, bannerDesc, countdown;
+    RectTransform bannerRect;
     Font font;
     TutorialCues cues;
     TutorialGhost ghost;
@@ -116,6 +125,7 @@ public class Tutorial : MonoBehaviour
         powerUps = FindFirstObjectByType<PowerUpSpawner>();
         baseFixedDeltaTime = Time.fixedDeltaTime;
         CanSkip = GameFlow.TutorialDone;
+        startedAt = Time.unscaledTime;
 
         if (health != null)
         {
@@ -154,6 +164,7 @@ public class Tutorial : MonoBehaviour
         if (flow != null) flow.PausedChanged -= OnPausedChanged;
         if (spawner != null) spawner.Spawned -= OnSpawned;
         Time.fixedDeltaTime = baseFixedDeltaTime;
+        RestoreAsteroidSpeed();
         if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = false;
         ghost?.Destroy();
         if (canvasObject != null) Destroy(canvasObject);
@@ -161,20 +172,22 @@ public class Tutorial : MonoBehaviour
 
     void Update()
     {
-        if (CanSkip && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
+        if (skipButton != null && skipButton.activeSelf != SkipAvailable) skipButton.SetActive(SkipAvailable); // gone after the first 30 s
+        if (SkipAvailable && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
-        if (shooter != null && shooterLocked && shooter.enabled) shooter.enabled = false;
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
+        FitBanner();
         PulseLivesHighlight();
         ghost.Update();
         cues.Update(DisplayCamera.Find());
     }
 
-    /// <summary>Ends the tutorial early (returning players only): clears everything and goes to the countdown.</summary>
+    /// <summary>Ends the tutorial early (returning players, in the first 30 s): clears everything and goes to the countdown.</summary>
     public void Skip()
     {
-        if (IsFinishing || !CanSkip) return;
+        if (!SkipAvailable) return;
         StopAllCoroutines();
+        RestoreAsteroidSpeed();
         ShowLivesHighlight(false);
         if (timeHighlight != null) timeHighlight.SetActive(false);
         if (clockSample != null) clockSample.gameObject.SetActive(false);
@@ -214,7 +227,7 @@ public class Tutorial : MonoBehaviour
 
     /// <summary>
     /// Plays a step until the player passes it: the ghost demo first, then tries; after every
-    /// <see cref="failsBeforeDemo"/> fails the demo plays again. Then the check mark waits for NEXT.
+    /// <see cref="failsBeforeDemo"/> fails the demo plays again. Then the check mark waits for SPACE.
     /// Logs the step's tries and seconds.
     /// </summary>
     IEnumerator RunStep(string step, Func<IEnumerator> demo, Func<Try, IEnumerator> attempt)
@@ -263,13 +276,10 @@ public class Tutorial : MonoBehaviour
     IEnumerator WaitForNext()
     {
         yield return SpeedUp();
-        bool wasLocked = shooterLocked;
-        LockShooter(true); // clicking NEXT shouldn't fire
-        cues.ShowPopup();
+        cues.ShowPopup(); // SPACE continues; the mouse and crosshair stay free
         yield return new WaitUntil(() => cues.NextPressed);
         cues.HidePopup();
         yield return null;
-        LockShooter(wasLocked);
     }
 
     // Step 3: W A S D, every spot once.
@@ -572,18 +582,28 @@ public class Tutorial : MonoBehaviour
         bool gotFreeze = false, gotBomb = false, slowed = false;
         PowerUpPickup freezeStar = null, bombStar = null;
         var targets = new List<ChartTarget>();
-        float nextWave = Time.unscaledTime;
+
+        // Calm on purpose: asteroids drift in slowly, one at a time and three at most, and none can hurt.
+        // Freeze then slows them more, and the Bomb clears whatever is on screen.
+        harmless = true;
+        if (spawner != null)
+        {
+            savedPlanetLead = spawner.planetLeadSeconds;
+            spawner.planetLeadSeconds = 3.5f; // about 3.5 s from appearing to arriving, instead of 1
+        }
+        int sent = 0;
+        float nextAsteroid = Time.unscaledTime + 1.5f;
 
         float giveUp = Time.unscaledTime + 45f;
+        float bothAt = -1f;
         cues.ShowKeys(true);
-        while (!(gotFreeze && gotBomb) && Time.unscaledTime < giveUp)
+        while (Time.unscaledTime < giveUp)
         {
-            foreach (ChartTarget t in targets) if (t != null) t.shipHitRadius = -1f;
-            // Keep a few asteroids coming until the Bomb is taken, so it has something to clear.
-            if (!gotBomb && Time.unscaledTime >= nextWave)
+            if (!gotBomb && sent < 3 && Time.unscaledTime >= nextAsteroid && ChartTarget.Active.Count == 0)
             {
-                nextWave = Time.unscaledTime + 5f;
-                StartCoroutine(SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (2.7f, NoteLane.RightUpper, false), (3.4f, NoteLane.LeftUpper, false) }, targets));
+                sent++;
+                nextAsteroid = Time.unscaledTime + 4f;
+                StartCoroutine(SpawnWave(new[] { (3.7f, sent % 2 == 0 ? NoteLane.RightUpper : NoteLane.LeftUpper, false) }, targets));
             }
             // Stars wait until grabbed; one that's gone without being grabbed comes back.
             if (!gotFreeze && freezeStar == null && !slowMo.Active)
@@ -598,6 +618,12 @@ public class Tutorial : MonoBehaviour
             }
             gotFreeze |= slowMo.Active;
             gotBomb |= bomb.Active;
+            if (gotFreeze && gotBomb)
+            {
+                // Both taken: a moment to see them work, then on. No waiting for Freeze to run out.
+                if (bothAt < 0f) bothAt = Time.unscaledTime;
+                if (Time.unscaledTime - bothAt > 1.8f) break;
+            }
 
             // No song here for Freeze to slow, so slow the scene clock while it lasts.
             if (slowMo.Active && !slowed)
@@ -620,11 +646,24 @@ public class Tutorial : MonoBehaviour
         cues.ClearGuides();
         if (freezeStar != null) Destroy(freezeStar.gameObject);
         if (bombStar != null) Destroy(bombStar.gameObject);
-        yield return new WaitUntil(() => !slowMo.Active && !bomb.Active);
+        slowMo.Cancel();
+        yield return new WaitUntil(() => !bomb.Active);
         yield return SpeedUp();
         yield return WaitUntilCleared(targets, 0.5f);
+        RestoreAsteroidSpeed();
         result.passed = gotFreeze && gotBomb;
         result.failed = !result.passed;
+    }
+
+    /// <summary>Back to normal asteroids: they can hurt again and arrive at the usual speed.</summary>
+    void RestoreAsteroidSpeed()
+    {
+        harmless = false;
+        if (spawner != null && savedPlanetLead >= 0f)
+        {
+            spawner.planetLeadSeconds = savedPlanetLead;
+            savedPlanetLead = -1f;
+        }
     }
 
     // Step 7: a short run on your own.
@@ -632,28 +671,29 @@ public class Tutorial : MonoBehaviour
     IEnumerator PracticeTry(Try result)
     {
         ShowStep("practice");
-        yield return new WaitForSecondsRealtime(3f);
+        yield return new WaitForSecondsRealtime(2.5f);
         HideBanner();
-        int hitsBefore = damageTaken;
         var targets = new List<ChartTarget>();
+        // A short run on a timer: seven asteroids (one turbo), a big one and a star. It ends on time even if
+        // the spawner skips a note, because only four asteroids can be on screen at once.
         StartCoroutine(SpawnWave(new[]
         {
             (2f, NoteLane.LeftUpper, false), (4f, NoteLane.RightUpper, false), (6f, NoteLane.LeftUpper, false),
             (8f, NoteLane.RightUpper, true), (10f, NoteLane.LeftUpper, false), (12f, NoteLane.RightUpper, false),
-            (14f, NoteLane.LeftUpper, false), (16f, NoteLane.RightUpper, false), (18f, NoteLane.LeftUpper, false),
-            (20f, NoteLane.RightUpper, false), (22f, NoteLane.LeftUpper, false)
+            (14f, NoteLane.LeftUpper, false)
         }, targets));
         bool bigSent = false, starSent = false;
         float start = SongTime;
-        float giveUp = Time.unscaledTime + 60f;
-        while (!(targets.Count == 11 && targets.TrueForAll(t => t == null || SongTime > t.hitTime + Beat)) && Time.unscaledTime < giveUp)
+        float end = start + 17f * Beat;
+        float giveUp = Time.unscaledTime + 40f;
+        while (SongTime < end && Time.unscaledTime < giveUp)
         {
-            if (!bigSent && SongTime - start > 11f * Beat)
+            if (!bigSent && SongTime - start > 9f * Beat)
             {
                 bigSent = true;
                 StartCoroutine(SpawnWave(new[] { (2f, LaneToward(movement.Current), false) }, new List<ChartTarget>(), true));
             }
-            if (!starSent && SongTime - start > 6f * Beat)
+            if (!starSent && SongTime - start > 4f * Beat)
             {
                 starSent = true;
                 SpawnStar(PowerUpPickup.Kind.Shield, null);
@@ -662,11 +702,8 @@ public class Tutorial : MonoBehaviour
         }
         yield return WaitUntilCleared(targets, 0.5f);
 
-        // Losing 3 or more hearts plays it once more; after that the tutorial moves on either way.
-        bool rough = damageTaken - hitsBefore >= 3 && State("again") == 0;
-        SetState("again", 1);
-        result.passed = !rough;
-        result.failed = rough;
+        // Practice is just practice: no replay if it goes badly, since that only meant another empty wait.
+        result.passed = true;
     }
 
     // Step 8: where your lives and time are, and what the ship's colour means. One go, no NEXT.
@@ -682,8 +719,9 @@ public class Tutorial : MonoBehaviour
         // Lives: top left.
         ShowBanner("YOUR LIVES", "Each heart is a life. A hit costs one.");
         ShowLivesHighlight(true);
-        cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(300f, -32f), true);
-        yield return new WaitForSecondsRealtime(3.4f);
+        // Under the banner and the hearts, pointing up at them.
+        cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(-10f, -125f), TutorialCues.CalloutArrow.Up);
+        yield return new WaitForSecondsRealtime(4.2f);
         ShowLivesHighlight(false);
         cues.HideCallout();
 
@@ -691,8 +729,8 @@ public class Tutorial : MonoBehaviour
         ShowBanner("YOUR TIME", "The clock counts down the time left in the song.");
         clockSample.gameObject.SetActive(true);
         timeHighlight.SetActive(true);
-        cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(-250f, -32f), false);
-        yield return new WaitForSecondsRealtime(3.4f);
+        cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(24f, -125f), TutorialCues.CalloutArrow.Up);
+        yield return new WaitForSecondsRealtime(4.2f);
         timeHighlight.SetActive(false);
         clockSample.gameObject.SetActive(false);
         cues.HideCallout();
@@ -851,6 +889,7 @@ public class Tutorial : MonoBehaviour
     void OnSpawned(ChartTarget target)
     {
         spawned.Add(target);
+        if (harmless) target.shipHitRadius = -1f;
         int big = bigTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
         if (big >= 0)
         {
@@ -896,7 +935,8 @@ public class Tutorial : MonoBehaviour
     void LockShooter(bool locked)
     {
         shooterLocked = locked;
-        if (shooter != null) shooter.enabled = !locked;
+        // Only the firing is blocked: the crosshair keeps following the mouse the whole time.
+        if (shooter != null) shooter.fireBlocked = locked;
     }
 
     void LockMovement(bool locked)
@@ -964,6 +1004,17 @@ public class Tutorial : MonoBehaviour
         banner.SetActive(true);
     }
 
+    /// <summary>The banner stays clear of the hearts hint at the top left, so it is narrower in a narrow window.</summary>
+    void FitBanner()
+    {
+        if (bannerRect == null || canvas == null) return;
+        float width = Mathf.Clamp(Screen.width / Mathf.Max(0.01f, canvas.scaleFactor) - 700f, 640f, 1100f);
+        if (Mathf.Approximately(bannerRect.sizeDelta.x, width)) return;
+        bannerRect.sizeDelta = new Vector2(width, bannerRect.sizeDelta.y);
+        bannerTitle.rectTransform.sizeDelta = new Vector2(width - 30f, bannerTitle.rectTransform.sizeDelta.y);
+        bannerDesc.rectTransform.sizeDelta = new Vector2(width - 30f, bannerDesc.rectTransform.sizeDelta.y);
+    }
+
     void HideBanner() => banner.SetActive(false);
 
     void BuildCanvas()
@@ -982,13 +1033,19 @@ public class Tutorial : MonoBehaviour
         panel.rectTransform.SetParent(canvasObject.transform, false);
         panel.rectTransform.anchorMin = panel.rectTransform.anchorMax = new Vector2(0.5f, 1f);
         panel.rectTransform.pivot = new Vector2(0.5f, 1f);
-        panel.rectTransform.anchoredPosition = new Vector2(0f, -30f);
-        panel.rectTransform.sizeDelta = new Vector2(1100f, 156f);
+        // Compact and at the very top, so it ends above the ship when it sits at the W spot.
+        panel.rectTransform.anchoredPosition = new Vector2(0f, -8f);
+        panel.rectTransform.sizeDelta = new Vector2(1100f, 112f);
         panel.color = panelColor;
         panel.raycastTarget = false;
         banner = panel.gameObject;
-        bannerTitle = AddText(banner.transform, 64, FontStyle.Bold, new Vector2(0f, 32f));
-        bannerDesc = AddText(banner.transform, 32, FontStyle.Normal, new Vector2(0f, -38f));
+        bannerRect = panel.rectTransform;
+        bannerTitle = AddText(banner.transform, 56, FontStyle.Bold, new Vector2(0f, 24f));
+        bannerDesc = AddText(banner.transform, 29, FontStyle.Normal, new Vector2(0f, -30f));
+        // Long lines shrink to fit when the window is narrow.
+        bannerDesc.resizeTextForBestFit = true;
+        bannerDesc.resizeTextMinSize = 18;
+        bannerDesc.resizeTextMaxSize = 29;
         banner.SetActive(false);
 
         countdown = AddText(canvasObject.transform, 220, FontStyle.Bold, Vector2.zero);
@@ -1103,9 +1160,10 @@ public class Tutorial : MonoBehaviour
         var image = new GameObject("SKIP TUTORIAL", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
         RectTransform rect = image.rectTransform;
         rect.SetParent(canvasObject.transform, false);
+        // Right edge, above the ship's bottom-right spot, so it never covers the ship or the D glow.
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 0f);
-        rect.anchoredPosition = new Vector2(-40f, 40f);
-        rect.sizeDelta = new Vector2(380f, 64f);
+        rect.anchoredPosition = new Vector2(-30f, 330f);
+        rect.sizeDelta = new Vector2(340f, 56f);
         image.color = new Color(0.08f, 0.08f, 0.16f, 0.9f);
         image.GetComponent<Outline>().effectColor = accentColor;
         image.GetComponent<Button>().onClick.AddListener(Skip);
