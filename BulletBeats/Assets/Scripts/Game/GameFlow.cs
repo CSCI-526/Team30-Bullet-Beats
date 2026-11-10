@@ -38,6 +38,8 @@ public class GameFlow : MonoBehaviour
         public float bpm;
         [Tooltip("Seconds from the start of the file to beat 1. 0 if the downbeat is at the start.")]
         public float firstBeatOffset;
+        [Tooltip("Hand-made charts in Resources/Charts: <name>_easy, <name>_medium, <name>_hard. Empty builds the chart from MIDI or the song.")]
+        public string chartJson;
         [Tooltip("Chart rating, 1 to 10, for the Easy / Medium / Hard charts of this song.")]
         public int easyLevel;
         public int mediumLevel;

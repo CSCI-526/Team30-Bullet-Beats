@@ -77,6 +77,9 @@ public class PickupStar : MonoBehaviour
         return true;
     }
 
+    /// <summary>Makes a star already flying land at this exact song time.</summary>
+    public void LandAt(float songTime) => landTime = songTime;
+
     void Update()
     {
         if (star == null) return;
