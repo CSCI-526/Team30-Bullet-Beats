@@ -48,13 +48,16 @@ public class TutorialCues
     Button next;
     bool nextPressed;
     RectTransform cursor;
+    RectTransform callout, calloutArrow;
+    Text calloutText;
+    bool calloutArrowLeft;
 
     // Labels that follow an asteroid or a star.
     Text nowLabel, tagLabel;
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
 
-    static Sprite ring, disc, heart, pointer;
+    static Sprite ring, disc, heart, pointer, triangle;
 
     public TutorialCues(Canvas canvas, Font font, PlayerMovement movement, Color accent, Color good, Color warn)
     {
@@ -106,6 +109,7 @@ public class TutorialCues
         ClearTag();
         HideNow();
         ClearWorldTags();
+        HideCallout();
     }
 
     // ---------------------------------------------------------------- mouse
@@ -123,6 +127,29 @@ public class TutorialCues
         marked = target;
         markKind = target != null ? kind : MarkKind.None;
     }
+
+    // ---------------------------------------------------------------- callout
+
+    /// <summary>
+    /// A name with an arrow pointing at part of the screen, e.g. YOUR LIVES next to the hearts.
+    /// <paramref name="anchor"/> is the screen corner it hangs from, <paramref name="position"/> the offset from it,
+    /// and <paramref name="arrowOnLeft"/> puts the arrow on the left (pointing left) or the right (pointing right).
+    /// </summary>
+    public void ShowCallout(string text, Vector2 anchor, Vector2 position, bool arrowOnLeft)
+    {
+        callout.anchorMin = callout.anchorMax = callout.pivot = anchor;
+        callout.anchoredPosition = position;
+        calloutText.text = text;
+        calloutText.alignment = arrowOnLeft ? TextAnchor.MiddleLeft : TextAnchor.MiddleRight;
+        calloutText.rectTransform.offsetMin = new Vector2(arrowOnLeft ? 64f : 0f, 0f);
+        calloutText.rectTransform.offsetMax = new Vector2(arrowOnLeft ? 0f : -64f, 0f);
+        calloutArrow.anchorMin = calloutArrow.anchorMax = new Vector2(arrowOnLeft ? 0f : 1f, 0.5f);
+        calloutArrow.localRotation = Quaternion.Euler(0f, 0f, arrowOnLeft ? 180f : 0f);
+        calloutArrowLeft = arrowOnLeft;
+        callout.gameObject.SetActive(true);
+    }
+
+    public void HideCallout() => callout.gameObject.SetActive(false);
 
     // ---------------------------------------------------------------- labels that follow things
 
@@ -267,6 +294,8 @@ public class TutorialCues
         UpdateFloaters(scale);
         UpdateLabels(cam, scale, pulse);
         UpdateCursor();
+        if (callout.gameObject.activeSelf)
+            calloutArrow.anchoredPosition = new Vector2((calloutArrowLeft ? 28f : -28f) + (calloutArrowLeft ? -1f : 1f) * 8f * pulse, 0f);
 
         if (popup.activeSelf)
         {
@@ -301,7 +330,12 @@ public class TutorialCues
             bool alive = follow != null;
             text.gameObject.SetActive(alive);
             // Stacked, so two stars flying in from the same point don't print over each other.
-            if (alive) text.rectTransform.position = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * (110f + 48f * i) * scale;
+            if (!alive) continue;
+            Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * (110f + 48f * i) * scale;
+            // Keep the whole label on screen, e.g. above a ship parked at the right edge.
+            float half = text.preferredWidth * 0.5f * scale + 14f * scale;
+            at.x = Mathf.Clamp(at.x, half, Mathf.Max(half, Screen.width - half));
+            text.rectTransform.position = at;
         }
     }
 
@@ -452,6 +486,17 @@ public class TutorialCues
         tagLabel.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
         tagLabel.gameObject.SetActive(false);
 
+        callout = new GameObject("Callout", typeof(RectTransform)).GetComponent<RectTransform>();
+        callout.SetParent(canvas.transform, false);
+        callout.sizeDelta = new Vector2(440f, 70f);
+        calloutText = AddText(callout, 44, FontStyle.Bold, good);
+        calloutText.rectTransform.anchorMin = Vector2.zero;
+        calloutText.rectTransform.anchorMax = Vector2.one;
+        calloutText.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
+        calloutArrow = AddImage(callout, TriangleSprite(), Vector2.one * 44f).rectTransform;
+        calloutArrow.GetComponent<Image>().color = good;
+        callout.gameObject.SetActive(false);
+
         BuildPopup();
 
         // Drawn last so it sits over everything, with its tip on the mouse.
@@ -556,6 +601,22 @@ public class TutorialCues
             for (int i = 0, j = outline.Length - 1; i < outline.Length; j = i++)
                 if ((outline[i].y > y) != (outline[j].y > y) &&
                     x < (outline[j].x - outline[i].x) * (y - outline[i].y) / (outline[j].y - outline[i].y) + outline[i].x)
+                    inside = !inside;
+            return inside;
+        });
+    }
+
+    /// <summary>A triangle pointing right.</summary>
+    static Sprite TriangleSprite()
+    {
+        if (triangle != null) return triangle;
+        var tri = new[] { new Vector2(-0.6f, 0.85f), new Vector2(0.85f, 0f), new Vector2(-0.6f, -0.85f) };
+        return triangle = Shape(64, (x, y) =>
+        {
+            bool inside = false;
+            for (int i = 0, j = tri.Length - 1; i < tri.Length; j = i++)
+                if ((tri[i].y > y) != (tri[j].y > y) &&
+                    x < (tri[j].x - tri[i].x) * (y - tri[i].y) / (tri[j].y - tri[i].y) + tri[i].x)
                     inside = !inside;
             return inside;
         });

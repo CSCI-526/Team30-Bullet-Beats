@@ -21,6 +21,9 @@ public class Bomb : MonoBehaviour
     [Tooltip("How far a +N label floats up, in reference pixels (1080p).")]
     public float labelRise = 70f;
 
+    [Tooltip("Goes off the moment it is collected instead of on the next beat. The tutorial turns this on.")]
+    public bool goOffImmediately;
+
     /// <summary>True from pickup until the ring has finished.</summary>
     public bool Active => armed || sweeping;
 
@@ -75,7 +78,7 @@ public class Bomb : MonoBehaviour
         if (Active) return;
         armed = true;
         goOffTime = SongTime;
-        if (Clock != null)
+        if (Clock != null && !goOffImmediately)
         {
             float beat = Clock.SecondsPerBeat;
             goOffTime = Clock.firstBeatOffset + Mathf.Ceil((SongTime - Clock.firstBeatOffset) / beat) * beat;

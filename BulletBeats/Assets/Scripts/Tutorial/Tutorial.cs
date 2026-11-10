@@ -34,6 +34,9 @@ public class Tutorial : MonoBehaviour
     [Range(0.05f, 1f)] public float approachScale = 0.6f;
     [Tooltip("Time scale during the timing window, so there is time to react to SHOOT NOW.")]
     [Range(0.05f, 1f)] public float windowScale = 0.3f;
+    [Tooltip("The two quicker shots after the first: time scale while the brackets close in, and during the window.")]
+    [Range(0.05f, 1f)] public float quickApproachScale = 1f;
+    [Range(0.05f, 1f)] public float quickWindowScale = 0.6f;
     [Tooltip("Beats before a timed asteroid reaches its beat.")]
     [Min(1f)] public float shotLeadBeats = 1.15f;
     [Tooltip("Fails before the ghost shows the step again.")]
@@ -83,8 +86,9 @@ public class Tutorial : MonoBehaviour
     NoteLane nextLane = NoteLane.RightUpper;
 
     Canvas canvas;
-    GameObject canvasObject, banner, livesHighlight, skipButton;
-    Graphic[] livesHighlightParts;
+    GameObject canvasObject, banner, livesHighlight, timeHighlight, skipButton;
+    Graphic[] livesHighlightParts, timeHighlightParts;
+    Text clockSample;
     Text bannerTitle, bannerDesc, countdown;
     Font font;
     TutorialCues cues;
@@ -134,6 +138,7 @@ public class Tutorial : MonoBehaviour
             spawner.Spawned += OnSpawned;
         }
         if (powerUps != null) powerUps.enabled = false; // the tutorial spawns its own stars
+        if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = true; // no waiting for a beat here
 
         BuildCanvas();
         cues = new TutorialCues(canvas, font, movement, accentColor, goodColor, warnColor);
@@ -149,6 +154,7 @@ public class Tutorial : MonoBehaviour
         if (flow != null) flow.PausedChanged -= OnPausedChanged;
         if (spawner != null) spawner.Spawned -= OnSpawned;
         Time.fixedDeltaTime = baseFixedDeltaTime;
+        if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = false;
         ghost?.Destroy();
         if (canvasObject != null) Destroy(canvasObject);
     }
@@ -170,6 +176,8 @@ public class Tutorial : MonoBehaviour
         if (IsFinishing || !CanSkip) return;
         StopAllCoroutines();
         ShowLivesHighlight(false);
+        if (timeHighlight != null) timeHighlight.SetActive(false);
+        if (clockSample != null) clockSample.gameObject.SetActive(false);
         cues.ClearGuides();
         cues.HidePopup();
         cues.ShowProgress(0, 0);
@@ -198,7 +206,8 @@ public class Tutorial : MonoBehaviour
 
         CurrentStep = "done";
         Analytics.Instance?.LogTutorial("complete", CurrentStep);
-        ClearAsteroids(); // a star from the practice run shouldn't sit behind the goal card
+        ClearAsteroids(); // a star from the practice run shouldn't sit behind the cards
+        yield return HudTour();
         yield return GoalCard();
         yield return CountdownThenFinish();
     }
@@ -315,7 +324,9 @@ public class Tutorial : MonoBehaviour
         ShowStep("shoot");
         cues.ShowProgress(State("streak"), 3);
         bool hit = false;
-        yield return OneTimedShot(NextLane(), false, h => hit = h);
+        bool first = State("streak") == 0; // the first shot of the three has the most time
+        yield return OneTimedShot(NextLane(), false, h => hit = h, BeatJudgment.Good,
+            first ? approachScale : quickApproachScale, first ? windowScale : quickWindowScale);
         int streak = hit ? State("streak") + 1 : 0;
         SetState("streak", streak);
         cues.ShowProgress(streak, 3);
@@ -328,8 +339,11 @@ public class Tutorial : MonoBehaviour
     /// timing window is open. <paramref name="hit"/> gets whether it broke with <paramref name="needed"/>
     /// or better.
     /// </summary>
-    IEnumerator OneTimedShot(NoteLane lane, bool turbo, Action<bool> hit, BeatJudgment needed = BeatJudgment.Good)
+    IEnumerator OneTimedShot(NoteLane lane, bool turbo, Action<bool> hit, BeatJudgment needed = BeatJudgment.Good,
+        float approach = -1f, float window = -1f)
     {
+        if (approach < 0f) approach = approachScale;
+        if (window < 0f) window = windowScale;
         ChartTarget target = null;
         yield return SpawnOne(lane, turbo, t => target = t, false, shotLeadBeats);
         if (target == null)
@@ -355,9 +369,9 @@ public class Tutorial : MonoBehaviour
         shooter.ShotFired += track;
 
         yield return new WaitUntil(() => target == null || RingShowing(target));
-        yield return SlowTo(approachScale);
+        yield return SlowTo(approach);
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - GoodWindow);
-        if (target != null) yield return SlowTo(windowScale);
+        if (target != null) yield return SlowTo(window);
         // The brackets turn gold for the PERFECT window: that is when to shoot.
         yield return new WaitUntil(() => target == null || SongTime >= target.hitTime - PerfectWindow);
         if (target != null) cues.ShowNow(target);
@@ -558,13 +572,19 @@ public class Tutorial : MonoBehaviour
         bool gotFreeze = false, gotBomb = false, slowed = false;
         PowerUpPickup freezeStar = null, bombStar = null;
         var targets = new List<ChartTarget>();
-        StartCoroutine(SpawnWave(new[] { (3f, NoteLane.LeftUpper, false), (4.5f, NoteLane.RightUpper, false), (6f, NoteLane.LeftUpper, false), (7.5f, NoteLane.RightUpper, false) }, targets));
+        float nextWave = Time.unscaledTime;
 
         float giveUp = Time.unscaledTime + 45f;
         cues.ShowKeys(true);
         while (!(gotFreeze && gotBomb) && Time.unscaledTime < giveUp)
         {
             foreach (ChartTarget t in targets) if (t != null) t.shipHitRadius = -1f;
+            // Keep a few asteroids coming until the Bomb is taken, so it has something to clear.
+            if (!gotBomb && Time.unscaledTime >= nextWave)
+            {
+                nextWave = Time.unscaledTime + 5f;
+                StartCoroutine(SpawnWave(new[] { (2f, NoteLane.LeftUpper, false), (2.7f, NoteLane.RightUpper, false), (3.4f, NoteLane.LeftUpper, false) }, targets));
+            }
             // Stars wait until grabbed; one that's gone without being grabbed comes back.
             if (!gotFreeze && freezeStar == null && !slowMo.Active)
             {
@@ -649,13 +669,70 @@ public class Tutorial : MonoBehaviour
         result.failed = rough;
     }
 
-    // Step 8: the goal, then into the first level.
+    // Step 8: where your lives and time are, and what the ship's colour means. One go, no NEXT.
+
+    IEnumerator HudTour()
+    {
+        LockShooter(true);
+        LockMovement(true);
+        BasicShield shield = health.GetComponent<BasicShield>();
+        if (shield != null && shield.Active) shield.TryAbsorb(); // a shield would soak up the demo hits
+        health.Heal(health.maxHealth);
+
+        // Lives: top left.
+        ShowBanner("YOUR LIVES", "Each heart is a life. A hit costs one.");
+        ShowLivesHighlight(true);
+        cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(300f, -32f), true);
+        yield return new WaitForSecondsRealtime(3.4f);
+        ShowLivesHighlight(false);
+        cues.HideCallout();
+
+        // Time: top right, where the clock sits in a level.
+        ShowBanner("YOUR TIME", "The clock counts down the time left in the song.");
+        clockSample.gameObject.SetActive(true);
+        timeHighlight.SetActive(true);
+        cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(-250f, -32f), false);
+        yield return new WaitForSecondsRealtime(3.4f);
+        timeHighlight.SetActive(false);
+        clockSample.gameObject.SetActive(false);
+        cues.HideCallout();
+
+        // Ship colour: blue, then orange at 2 lives, then red at 1.
+        ShowBanner("SHIP COLOR", "Your ship changes color as you lose lives.");
+        cues.TagWorld(health.transform, "BLUE: healthy", accentColor);
+        yield return new WaitForSecondsRealtime(2f);
+        yield return LoseLives(2);
+        cues.ClearWorldTags();
+        cues.TagWorld(health.transform, "ORANGE: 2 lives left", warnColor);
+        yield return new WaitForSecondsRealtime(2f);
+        yield return LoseLives(1);
+        cues.ClearWorldTags();
+        cues.TagWorld(health.transform, "RED: last life!", new Color(1f, 0.35f, 0.35f));
+        yield return new WaitForSecondsRealtime(2f);
+
+        cues.ClearWorldTags();
+        health.Heal(health.maxHealth);
+        LockShooter(false);
+        LockMovement(false);
+    }
+
+    /// <summary>Takes hits, one at a time, until the ship is down to <paramref name="lives"/>.</summary>
+    IEnumerator LoseLives(int lives)
+    {
+        for (int tries = 0; health.Health > lives && tries < 8; tries++)
+        {
+            health.TakeDamage(1);
+            yield return new WaitForSecondsRealtime(0.85f); // past the ship's short invulnerable time
+        }
+    }
+
+    // Step 9: the goal, then into the first level.
 
     IEnumerator GoalCard()
     {
         ShowBanner("SURVIVE THE SONG", "Hits cost hearts. Perfect shots win them back.", goodColor);
         cues.ShowHearts(health.Health, health.Health, accentColor);
-        yield return new WaitForSecondsRealtime(4.5f);
+        yield return new WaitForSecondsRealtime(3.5f);
         cues.ShowHearts(0, 0, accentColor);
         HideBanner();
     }
@@ -922,6 +999,7 @@ public class Tutorial : MonoBehaviour
 
         if (CanSkip) BuildSkipButton();
         BuildLivesHighlight();
+        BuildClockSample();
     }
 
     /// <summary>A frame around the lives in the top left (same layout as <see cref="HealthHUD"/>).</summary>
@@ -959,6 +1037,46 @@ public class Tutorial : MonoBehaviour
         livesHighlight.SetActive(false);
     }
 
+    /// <summary>The game's clock is hidden in the tutorial, so show a sample where it sits in a level, with a frame.</summary>
+    void BuildClockSample()
+    {
+        // LevelClock: 56 pt bold, 28 in from the top-right corner.
+        clockSample = AddText(canvasObject.transform, 56, FontStyle.Bold, Vector2.zero);
+        RectTransform rect = clockSample.rectTransform;
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-28f, -28f);
+        rect.sizeDelta = new Vector2(220f, 73f);
+        clockSample.alignment = TextAnchor.UpperRight;
+        clockSample.text = "1:30";
+        clockSample.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.6f);
+        clockSample.gameObject.SetActive(false);
+
+        const float pad = 12f, thickness = 7f;
+        var root = new GameObject("TimeHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
+        root.SetParent(canvasObject.transform, false);
+        root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 1f);
+        root.anchoredPosition = new Vector2(-28f + pad, -28f + pad);
+        root.sizeDelta = new Vector2(170f + pad * 2f, 66f + pad * 2f);
+        var parts = new List<Graphic>();
+        void Bar(Vector2 min, Vector2 max, Vector2 sizeDelta)
+        {
+            var bar = new GameObject("Edge", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+            bar.rectTransform.SetParent(root, false);
+            bar.rectTransform.anchorMin = min;
+            bar.rectTransform.anchorMax = max;
+            bar.rectTransform.sizeDelta = sizeDelta;
+            bar.raycastTarget = false;
+            parts.Add(bar);
+        }
+        Bar(new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, thickness));
+        Bar(new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, thickness));
+        Bar(new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(thickness, 0f));
+        Bar(new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(thickness, 0f));
+        timeHighlight = root.gameObject;
+        timeHighlightParts = parts.ToArray();
+        timeHighlight.SetActive(false);
+    }
+
     void ShowLivesHighlight(bool show)
     {
         if (livesHighlight != null) livesHighlight.SetActive(show);
@@ -966,12 +1084,18 @@ public class Tutorial : MonoBehaviour
 
     void PulseLivesHighlight()
     {
-        if (livesHighlight == null || !livesHighlight.activeSelf) return;
+        PulseFrame(livesHighlight, livesHighlightParts);
+        PulseFrame(timeHighlight, timeHighlightParts);
+    }
+
+    void PulseFrame(GameObject frame, Graphic[] parts)
+    {
+        if (frame == null || !frame.activeSelf) return;
         Color c = goodColor;
         float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 6f);
         c.a = Mathf.Lerp(0.5f, 1f, pulse);
-        livesHighlight.transform.localScale = Vector3.one * Mathf.Lerp(1f, 1.06f, pulse);
-        foreach (Graphic g in livesHighlightParts) g.color = c;
+        frame.transform.localScale = Vector3.one * Mathf.Lerp(1f, 1.06f, pulse);
+        foreach (Graphic g in parts) g.color = c;
     }
 
     void BuildSkipButton()
