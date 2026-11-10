@@ -30,7 +30,7 @@ public class GameMenus : MonoBehaviour
     Button yourSongButton;
     readonly Button[] difficultyButtons = new Button[3];
     GameFlow.Level difficultyLevel;
-    Text endReason, endHint;
+    Text endReason;
     readonly Image[] endStars = new Image[3];
     Button endNext, endLevelSelect;
     static Sprite starSprite;
@@ -93,12 +93,10 @@ public class GameMenus : MonoBehaviour
                 : $"High score  {ScoreKeeper.FormatPoints(Mathf.Max(keeper.Score, keeper.PreviousHighScore))}";
             endStats.text = $"{level}\n\nScore  {ScoreKeeper.FormatPoints(keeper.Score)}\n{best}\n" +
                             $"Perfect  {Percent(keeper.PerfectShare)}     Best streak  {bestStreak}";
-            endHint.text = won ? StarHint(keeper, stars) : "";
         }
         else
         {
             endStats.text = $"{level}\n\nBest streak  {bestStreak}";
-            endHint.text = "";
         }
 
         for (int i = 0; i < endStars.Length; i++)
@@ -116,15 +114,6 @@ public class GameMenus : MonoBehaviour
     }
 
     static string Percent(float share) => $"{Mathf.RoundToInt(share * 100f)}%";
-
-    /// <summary>How the stars were earned, and what the next one takes.</summary>
-    static string StarHint(ScoreKeeper keeper, int stars)
-    {
-        string onBeat = $"{Percent(keeper.OnBeatShare)} of the asteroids hit on the beat";
-        if (stars >= 3) return onBeat;
-        float goal = stars <= 1 ? keeper.twoStarShare : keeper.threeStarShare;
-        return $"{onBeat}. {Percent(goal)} for {stars + 1} stars.";
-    }
 
     GameFlow.Level NextLevel()
     {
@@ -612,7 +601,6 @@ public class GameMenus : MonoBehaviour
             endStars[i] = AddStar(endPanel, (i - 1) * 110f, 205f, 90f);
         endStats = AddText(endPanel, "", 30, Color.white, 40f);
         endStats.rectTransform.sizeDelta = new Vector2(1200f, 250f);
-        endHint = AddText(endPanel, "", 24, accentColor, -95f);
 
         endFirst = AddButton(endPanel, "RETRY", -180f, flow.Retry);
         endNext = AddButton(endPanel, "NEXT LEVEL", -270f, () => { });
