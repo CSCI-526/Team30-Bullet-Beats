@@ -26,9 +26,9 @@ public class GameMenus : MonoBehaviour
     GameObject canvasObject;
     GameObject titlePanel, levelPanel, difficultyPanel, endPanel;
     Button titleFirst, levelFirst, endFirst;
-    Text endHeading, endStats, difficultySong, yourSongLabel;
+    Text endHeading, endStats, yourSongLabel;
     Button yourSongButton;
-    readonly Button[] difficultyButtons = new Button[3];
+    LevelSelectOrbs difficultyOrbs;
     GameFlow.Level difficultyLevel;
     Text endReason;
     readonly Image[] endStars = new Image[3];
@@ -353,7 +353,7 @@ public class GameMenus : MonoBehaviour
     void BuildLevelPanel()
     {
         levelPanel = NewPanel("LevelSelect");
-        AddText(levelPanel, "SELECT LEVEL", 72, accentColor, 460f, FontStyle.Bold);
+        AddText(levelPanel, "SELECT SONG", 72, accentColor, 460f, FontStyle.Bold);
 
         var viewport = new GameObject("SongList", typeof(RectTransform), typeof(Image), typeof(RectMask2D), typeof(ScrollRect));
         var viewportRect = viewport.GetComponent<RectTransform>();
@@ -531,41 +531,22 @@ public class GameMenus : MonoBehaviour
     void BuildDifficultyPanel()
     {
         difficultyPanel = NewPanel("Difficulty");
-        AddText(difficultyPanel, "SELECT DIFFICULTY", 72, accentColor, 300f, FontStyle.Bold);
-        difficultySong = AddText(difficultyPanel, "", 36, Color.white, 210f);
-
-        float y = 90f;
-        for (int i = 0; i < difficultyButtons.Length; i++)
+        // Easy / Medium / Hard are three circles; the player shoots one to start (see LevelSelectOrbs).
+        difficultyOrbs = difficultyPanel.AddComponent<LevelSelectOrbs>();
+        difficultyOrbs.Init(flow, font, accentColor, () => Show(GameState.LevelSelect), (level, difficulty) =>
         {
-            var difficulty = (Difficulty)i;
-            difficultyButtons[i] = AddButton(difficultyPanel, ScoreKeeper.DifficultyName(difficulty), y,
-                () => StartLevel(difficulty), WideButton);
-            y -= 90f;
-        }
-
-        AddButton(difficultyPanel, "BACK", y - 40f, () => Show(GameState.LevelSelect));
+            difficultyLevel = level;
+            StartLevel(difficulty);
+        });
     }
 
-    /// <summary>Second step of level select: pick a difficulty for <paramref name="level"/>.</summary>
+    /// <summary>Second step of level select: shoot a difficulty for <paramref name="level"/>.</summary>
     void ShowDifficultySelect(GameFlow.Level level)
     {
         difficultyLevel = level;
         levelPanel.SetActive(false);
         difficultyPanel.SetActive(true);
-        difficultySong.text = level.displayName;
-
-        for (int i = 0; i < difficultyButtons.Length; i++)
-        {
-            var difficulty = (Difficulty)i;
-            int high = ScoreKeeper.GetHighScore(level, difficulty);
-            int chartLevel = level.ChartLevel(difficulty);
-            string rating = ShowDifficultyNumbers && chartLevel > 0 ? $"LV {chartLevel}      " : "";
-            difficultyButtons[i].GetComponentInChildren<Text>().text =
-                $"{ScoreKeeper.DifficultyName(difficulty)}  {rating}HIGH SCORE  {(high >= 0 ? ScoreKeeper.FormatPoints(high) : "-")}";
-        }
-
-        Button selected = difficultyButtons[(int)ScoreKeeper.SelectedDifficulty];
-        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(selected.gameObject);
+        difficultyOrbs.Open(level);
     }
 
     void StartLevel(Difficulty difficulty)
