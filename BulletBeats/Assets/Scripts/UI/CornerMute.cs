@@ -1,17 +1,13 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// Global mute control. Hidden until the cursor is in the top-right corner.
-/// Each play session starts muted; the choice is kept across scene loads in that session.
+/// Global mute control, always visible in the top-right corner.
+/// Each play session starts with sound on; the choice is kept across scene loads in that session.
 /// </summary>
 public class CornerMute : MonoBehaviour
 {
-    public static bool Muted { get; private set; } = true;
-
-    const float CornerWidth = 0.2f;
-    const float CornerHeight = 0.18f;
+    public static bool Muted { get; private set; }
 
     Button button;
     Text label;
@@ -41,20 +37,6 @@ public class CornerMute : MonoBehaviour
         Build();
         Apply();
         Refresh();
-    }
-
-    void Update()
-    {
-        Mouse mouse = Mouse.current;
-        bool show = false;
-        if (mouse != null)
-        {
-            Vector2 cursor = mouse.position.ReadValue();
-            show = cursor.x >= Screen.width * (1f - CornerWidth)
-                && cursor.y >= Screen.height * (1f - CornerHeight);
-        }
-        if (button != null && button.gameObject.activeSelf != show)
-            button.gameObject.SetActive(show);
     }
 
     void Toggle()
@@ -104,7 +86,6 @@ public class CornerMute : MonoBehaviour
         colors.pressedColor = new Color(0.95f, 0.78f, 0.35f, 1f);
         button.colors = colors;
         button.onClick.AddListener(Toggle);
-        button.gameObject.SetActive(false);
 
         label = new GameObject("Label", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
         RectTransform labelRect = label.rectTransform;
