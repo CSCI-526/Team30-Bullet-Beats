@@ -63,6 +63,12 @@ public class ChartTarget : MonoBehaviour, IShootable
     float baseScale = 1f;
     bool isBig;
     bool isTurbo;
+    // Two-hit (orange) asteroid: it spawns big and shrinks on each hit so players see it needs another shot.
+    int turboHitsTotal = 1;
+    float turboShrinkTo = 0.5f;
+    Vector3 turboSpawnScale, shrinkFrom, shrinkGoal;
+    float shrinkT = 1f;
+    const float ShrinkSeconds = 0.18f, ShrinkPop = 1.15f;
     Color bigWarnColor;
     /// <summary>Keeps a big asteroid solid red instead of pulsing to white (the tutorial uses this).</summary>
     [HideInInspector] public bool steadyWarning;
@@ -205,7 +211,11 @@ public class ChartTarget : MonoBehaviour, IShootable
         hitsLeft--;
         if(hitsLeft > 0)
         {
-            transform.localScale *= 0.9f;
+            // Shrink toward turboShrinkTo of the spawn size by the last hit, with a quick pop.
+            float done = (turboHitsTotal - hitsLeft) / (float)Mathf.Max(1, turboHitsTotal - 1);
+            shrinkGoal = (turboHitsTotal > 1 ? turboSpawnScale : transform.localScale) * Mathf.Lerp(1f, turboShrinkTo, done);
+            shrinkFrom = transform.localScale * ShrinkPop;
+            shrinkT = 0f;
             return;
         }
 
@@ -269,12 +279,23 @@ public class ChartTarget : MonoBehaviour, IShootable
         transform.localScale *= scale;
         bigRenderers = GetComponentsInChildren<Renderer>();
     }
-    public void MakeTurbo(int hits, int heal, float scale, Color tint)
+    /// <param name="shrinkTo">Size after the last-but-one hit, as a fraction of the spawn size (0.5 = half).</param>
+    public void MakeTurbo(int hits, int heal, float scale, Color tint, float shrinkTo = 0.5f, float widen = 1f)
     {
         isTurbo = true;
         hitsLeft = hits;
+        turboHitsTotal = hits;
+        turboShrinkTo = Mathf.Clamp(shrinkTo, 0.1f, 1f);
         healOnDestroy = heal;
         transform.localScale *= scale;
+        if (widen != 1f)
+        {
+            // Stretch sideways into an oval. Spin only around the sideways axis so the stretch stays horizontal on screen.
+            Vector3 ls = transform.localScale; ls.x *= widen; transform.localScale = ls;
+            transform.rotation = Quaternion.identity;
+            spinAxis = Vector3.right;
+        }
+        turboSpawnScale = transform.localScale;
         foreach (Renderer r in GetComponentsInChildren<Renderer>())
             r.material.color = tint;
     }
@@ -312,6 +333,11 @@ public class ChartTarget : MonoBehaviour, IShootable
 
     void Update()
     {
+        if (shrinkT < 1f)
+        {
+            shrinkT = Mathf.Min(1f, shrinkT + Time.unscaledDeltaTime / ShrinkSeconds);
+            transform.localScale = Vector3.Lerp(shrinkFrom, shrinkGoal, 1f - (1f - shrinkT) * (1f - shrinkT));
+        }
         if (!armed) return;
 
         BeatClock clock = BeatClock.Instance;
