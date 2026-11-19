@@ -4,7 +4,7 @@ using UnityEngine;
 
 /// <summary>
 /// Minimal Type-0/1 MIDI reader for a single usable note track.
-/// Maps pitch 36 → LeftUpper and 38 → RightUpper; other pitches are ignored.
+/// Maps pitch 36 → Left and 38 → Right; other pitches are ignored.
 /// </summary>
 public static class MidiChartReader
 {
@@ -133,7 +133,7 @@ public static class MidiChartReader
             else
             {
                 // Melodic file (no kick/snare): low notes left, high notes right.
-                lane = pitch < MelodicSplitPitch ? NoteLane.LeftUpper : NoteLane.RightUpper;
+                lane = pitch < MelodicSplitPitch ? NoteLane.Left : NoteLane.Right;
             }
             if (!seen.Add((tick, lane))) continue;
             notes.Add(new ChartNote(TicksToSeconds(tick, division, tempoMap), pitch, lane));
@@ -148,12 +148,12 @@ public static class MidiChartReader
     {
         if (pitch == PitchLeft)
         {
-            lane = NoteLane.LeftUpper;
+            lane = NoteLane.Left;
             return true;
         }
         if (pitch == PitchRight)
         {
-            lane = NoteLane.RightUpper;
+            lane = NoteLane.Right;
             return true;
         }
         lane = default;

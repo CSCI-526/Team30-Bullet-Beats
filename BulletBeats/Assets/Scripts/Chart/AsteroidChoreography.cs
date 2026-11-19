@@ -148,10 +148,27 @@ public class AsteroidChoreography : MonoBehaviour
         public float peak;
         public float lastSpawn = float.NegativeInfinity;
         public readonly System.Collections.Generic.Queue<float> hits = new System.Collections.Generic.Queue<float>();
+        public float[] energyTrack;
     }
+
+    struct ScheduledSpawn
+    {
+        public float spawnAt;
+        public float hitTime;
+        public Rect area;
+        public bool centered;
+        public bool ignoreCap;
+    }
+
+    const float BakeStep = 1f / 60f;
 
     Stem[] stems;
     float[] sampleBuf;
+    readonly System.Collections.Generic.List<ScheduledSpawn> chart = new System.Collections.Generic.List<ScheduledSpawn>();
+    int nextChart;
+    bool baked;
+    bool recording;
+    float stepNoteTime;
     AudioSource music;
     ChartTargetSpawner spawner;
     float lead;
@@ -201,6 +218,57 @@ public class AsteroidChoreography : MonoBehaviour
         stems = found;
     }
 
+    /// <summary>
+    /// Runs the stem analysis for the whole song before playback, then <see cref="Update"/> only spawns
+    /// what was already decided. The count-in can keep going while this yields.
+    /// </summary>
+    public IEnumerator Prepare(AudioSource song, ChartTargetSpawner targetSpawner, float leadSeconds, float songLength)
+    {
+        Play(song, targetSpawner, leadSeconds);
+        chart.Clear();
+        nextChart = 0;
+        baked = false;
+        recording = true;
+
+        float length = Mathf.Max(0f, songLength);
+        if (stems != null)
+        {
+            foreach (Stem stem in stems)
+                if (stem.clip != null) length = Mathf.Max(length, stem.clip.length);
+        }
+
+        if (stems != null)
+        {
+            foreach (Stem stem in stems)
+            {
+                stem.energyTrack = BuildTrack(stem.clip, length + lead);
+                yield return null;
+            }
+        }
+
+        float songTime = 0f;
+        float yielded = 0f;
+        while (songTime <= length)
+        {
+            Step(songTime + lead, BakeStep);
+            songTime += BakeStep;
+            if (songTime - yielded >= 2f)
+            {
+                yielded = songTime;
+                yield return null;
+            }
+        }
+
+        if (stems != null)
+        {
+            foreach (Stem stem in stems)
+                stem.energyTrack = null;
+        }
+        recording = false;
+        baked = true;
+        Debug.Log($"AsteroidChoreography: baked {chart.Count} asteroids before playback.", this);
+    }
+
     /// <summary>Arms stem analysis <paramref name="leadSeconds"/> ahead of <paramref name="song"/>.</summary>
     public void Play(AudioSource song, ChartTargetSpawner targetSpawner, float leadSeconds)
     {
@@ -230,6 +298,10 @@ public class AsteroidChoreography : MonoBehaviour
     public void Stop()
     {
         music = null;
+        chart.Clear();
+        nextChart = 0;
+        baked = false;
+        recording = false;
         if (stems == null) return;
         foreach (Stem stem in stems)
             if (stem.source != null) Destroy(stem.source.gameObject);
@@ -244,15 +316,24 @@ public class AsteroidChoreography : MonoBehaviour
         BeatClock clock = BeatClock.Instance;
         // music.isPlaying is true while the song runs, even if CornerMute set listener volume to 0.
         if (clock == null || !music.isPlaying) return;
+        if (baked)
+        {
+            DrainChart(clock.SongTime + lead);
+            return;
+        }
 
-        float noteTime = clock.SongTime + lead;
-        float dt = Time.unscaledDeltaTime;
+        Step(clock.SongTime + lead, Time.unscaledDeltaTime);
+    }
+
+    void Step(float noteTime, float dt)
+    {
+        stepNoteTime = noteTime;
 
         // Read every stem from clip PCM (works while muted), then only the loudest may spawn.
         Stem loudest = null;
         foreach (Stem stem in stems)
         {
-            stem.energy = EnergyAt(stem.clip, noteTime);
+            stem.energy = EnergyOf(stem, noteTime);
             stem.peak = Mathf.Max(stem.peak * (1f - 0.05f * dt), stem.energy);
 
             if (loudest == null || stem.energy > loudest.energy) loudest = stem;
@@ -342,7 +423,7 @@ public class AsteroidChoreography : MonoBehaviour
                     point = CirclePoint(circleIndex);
                 }
                 circleIndex++;
-                spawner.SpawnInArea(noteTime, new Rect(point.x, point.y, 0f, 0f), true, shapesIgnoreCap);
+                Emit(noteTime, noteTime, new Rect(point.x, point.y, 0f, 0f), true, shapesIgnoreCap);
                 lastAnySpawn = noteTime;
                 nextCircleTime = noteTime + Mathf.Max(0.05f, circleSpacing * circleScale);
 
@@ -444,9 +525,84 @@ public class AsteroidChoreography : MonoBehaviour
     bool TrySpawn(float time, Rect area, bool centered)
     {
         if (time - lastAnySpawn < minSpawnInterval) return false;
-        if (!spawner.SpawnInArea(time, area, centered)) return false;
+        if (!Emit(stepNoteTime, time, area, centered, false)) return false;
         lastAnySpawn = time;
         return true;
+    }
+
+    void DrainChart(float now)
+    {
+        while (nextChart < chart.Count && chart[nextChart].spawnAt <= now + 0.0005f)
+        {
+            ScheduledSpawn spawn = chart[nextChart++];
+            spawner.SpawnInArea(spawn.hitTime, spawn.area, spawn.centered, spawn.ignoreCap);
+        }
+    }
+
+    bool Emit(float spawnAt, float hitTime, Rect area, bool centered, bool ignoreCap)
+    {
+        if (recording)
+        {
+            chart.Add(new ScheduledSpawn
+            {
+                spawnAt = spawnAt,
+                hitTime = hitTime,
+                area = area,
+                centered = centered,
+                ignoreCap = ignoreCap
+            });
+            return true;
+        }
+        return spawner.SpawnInArea(hitTime, area, centered, ignoreCap);
+    }
+
+    float EnergyOf(Stem stem, float time)
+    {
+        if (stem.energyTrack == null) return EnergyAt(stem.clip, time);
+        if (time < 0f) return 0f;
+        int i = Mathf.FloorToInt(time / BakeStep);
+        if (i < 0 || i >= stem.energyTrack.Length) return 0f;
+        return stem.energyTrack[i];
+    }
+
+    float[] BuildTrack(AudioClip clip, float length)
+    {
+        int count = Mathf.Max(1, Mathf.CeilToInt(Mathf.Max(0f, length) / BakeStep) + 1);
+        var track = new float[count];
+        if (clip == null || clip.samples <= 0) return track;
+
+        int channels = Mathf.Max(1, clip.channels);
+        int frames = clip.samples;
+        var pcm = new float[frames * channels];
+        if (!clip.GetData(pcm, 0))
+        {
+            Debug.LogWarning($"AsteroidChoreography: couldn't read {clip.name}; that stem stays live.", this);
+            return null;
+        }
+
+        int rate = Mathf.Max(1, clip.frequency);
+        int window = Mathf.Max(64, spectrumSize);
+        for (int i = 0; i < count; i++)
+            track[i] = Rms(pcm, rate, channels, frames, i * BakeStep, window);
+        clip.UnloadAudioData();
+        return track;
+    }
+
+    static float Rms(float[] pcm, int rate, int channels, int totalFrames, float time, int window)
+    {
+        if (time < 0f) return 0f;
+        int start = Mathf.FloorToInt(time * rate);
+        if (start >= totalFrames) return 0f;
+        int frames = Mathf.Min(window, totalFrames - start);
+        int samples = frames * channels;
+        int offset = start * channels;
+        double sum = 0.0;
+        for (int i = 0; i < samples; i++)
+        {
+            float sample = pcm[offset + i];
+            sum += sample * sample;
+        }
+        return (float)System.Math.Sqrt(sum / samples);
     }
 
     /// <summary>

@@ -16,11 +16,11 @@ public struct ChartNote
     }
 }
 
-/// <summary>Screen quadrant a chart note flies into.</summary>
+/// <summary>Screen column a chart note flies into, across the top two thirds.</summary>
 public enum NoteLane
 {
-    LeftUpper,
-    RightUpper,
-    LeftLower,
-    RightLower
+    Left,
+    Right,
+    FarLeft,
+    FarRight
 }

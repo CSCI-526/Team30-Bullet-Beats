@@ -91,7 +91,7 @@ public class Tutorial : MonoBehaviour
     bool harmless;
     float savedPlanetLead = -1f;
     float wantedTimeScale = 1f;
-    NoteLane nextLane = NoteLane.RightUpper;
+    NoteLane nextLane = NoteLane.Right;
 
     Canvas canvas;
     GameObject canvasObject, banner, livesHighlight, timeHighlight, skipButton;
@@ -144,6 +144,7 @@ public class Tutorial : MonoBehaviour
             spawner.noteStride = 1;
             spawner.turboEveryN = 0; // turbo and big asteroids only where a step asks for one
             spawner.bigEveryN = 0;
+            spawner.spotAimChance = 0f; // lessons aim at the ship so dodge and shoot stay predictable
             spawner.maxViewportY = 0.68f; // keep asteroids under the prompt
             spawner.Spawned += OnSpawned;
         }
@@ -603,7 +604,7 @@ public class Tutorial : MonoBehaviour
             {
                 sent++;
                 nextAsteroid = Time.unscaledTime + 4f;
-                StartCoroutine(SpawnWave(new[] { (3.7f, sent % 2 == 0 ? NoteLane.RightUpper : NoteLane.LeftUpper, false) }, targets));
+                StartCoroutine(SpawnWave(new[] { (3.7f, sent % 2 == 0 ? NoteLane.Right : NoteLane.Left, false) }, targets));
             }
             // Stars wait until grabbed; one that's gone without being grabbed comes back.
             if (!gotFreeze && freezeStar == null && !slowMo.Active)
@@ -678,9 +679,9 @@ public class Tutorial : MonoBehaviour
         // the spawner skips a note, because only four asteroids can be on screen at once.
         StartCoroutine(SpawnWave(new[]
         {
-            (2f, NoteLane.LeftUpper, false), (4f, NoteLane.RightUpper, false), (6f, NoteLane.LeftUpper, false),
-            (8f, NoteLane.RightUpper, true), (10f, NoteLane.LeftUpper, false), (12f, NoteLane.RightUpper, false),
-            (14f, NoteLane.LeftUpper, false)
+            (2f, NoteLane.Left, false), (4f, NoteLane.Right, false), (6f, NoteLane.Left, false),
+            (8f, NoteLane.Right, true), (10f, NoteLane.Left, false), (12f, NoteLane.Right, false),
+            (14f, NoteLane.Left, false)
         }, targets));
         bool bigSent = false, starSent = false;
         float start = SongTime;
@@ -907,12 +908,12 @@ public class Tutorial : MonoBehaviour
     NoteLane NextLane()
     {
         NoteLane lane = nextLane;
-        nextLane = nextLane == NoteLane.RightUpper ? NoteLane.LeftUpper : NoteLane.RightUpper;
+        nextLane = nextLane == NoteLane.Right ? NoteLane.Left : NoteLane.Right;
         return lane;
     }
 
     /// <summary>The lane on the ship's side of the screen, for an asteroid meant to reach it.</summary>
-    static NoteLane LaneToward(PlayerMovement.Spot spot) => spot == PlayerMovement.Spot.Right ? NoteLane.RightUpper : NoteLane.LeftUpper;
+    static NoteLane LaneToward(PlayerMovement.Spot spot) => spot == PlayerMovement.Spot.Right ? NoteLane.Right : NoteLane.Left;
 
     void OnShotFired(BeatJudgment judgment) => lastShotTarget = shooter.LastShotTarget;
 
