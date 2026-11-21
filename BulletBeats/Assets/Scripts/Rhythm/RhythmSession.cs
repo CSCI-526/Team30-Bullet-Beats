@@ -186,7 +186,7 @@ public class RhythmSession : MonoBehaviour
 
         if (notes != null && notes.Count > 0 && spawner != null)
         {
-            spawner.SetNotes(notes);
+            spawner.SetNotes(notes, chartFromAudio);
             if (metronome != null) metronome.SetChartNotes(spawner.Notes);
             chartEnd = notes[notes.Count - 1].time + chartOffsetSeconds + 2f;
         }
@@ -242,6 +242,10 @@ public class RhythmSession : MonoBehaviour
 
     IEnumerator CountInThenPlay()
     {
+        Coroutine prepared = null;
+        if (musicSource.clip != null && choreography != null && choreography.HasLoadedStems && spawner != null)
+            prepared = StartCoroutine(choreography.Prepare(musicSource, spawner, spawner.LeadTime, musicSource.clip.length));
+
         float quarter = beatClock.SecondsPerBeat;
         int beats = Mathf.Max(0, countInBeats);
         if (scheduleDelay > 0f)
@@ -264,9 +268,8 @@ public class RhythmSession : MonoBehaviour
             musicSource.volume = muteMusicForDemo ? 0f : musicVolume;
             beatClock.ResetBeatTracking();
             if (metronome != null) metronome.RewindNotes();
+            if (prepared != null) yield return prepared;
             musicSource.Play();
-            if (choreography != null && spawner != null)
-                choreography.Play(musicSource, spawner, spawner.LeadTime);
             Debug.Log($"RhythmSession: playing {musicSource.clip.name} (listeners {CountEnabledListeners()}, pause {AudioListener.pause}).", this);
         }
     }
