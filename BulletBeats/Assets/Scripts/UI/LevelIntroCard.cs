@@ -1,41 +1,42 @@
 using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Card shown before each level for <see cref="showSeconds"/>: the level number, the song, the difficulty
-/// as bars, and the goal in one line ("Survive the next 90 seconds", or "Survive the song" with sound on).
-/// Then it counts 3, 2, 1 on the session's count-in beats and disappears when the song starts.
-/// <see cref="GameFlow"/> waits for <see cref="Show"/> before it starts the count-in.
-/// Builds its own overlay canvas, so it needs no scene setup.
+/// Floating card shown before each level over the blurred, dimmed game, for <see cref="showSeconds"/>:
+/// the song name, the difficulty, how long the level lasts and the goal ("SURVIVE THE SONG").
+/// Then the card goes and a big 3, 2, 1 counts on the session's count-in beats, with GO! as the song
+/// starts; the blur clears and play begins. <see cref="GameFlow"/> waits for <see cref="Show"/> before
+/// it starts the count-in. Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(GameFlow))]
 public class LevelIntroCard : MonoBehaviour
 {
     [Tooltip("Seconds the card stays up before the count-in starts.")]
     public float showSeconds = 2f;
-    public Color accentColor = new Color(0.3f, 0.9f, 1f);
-    public Color panelColor = new Color(0.02f, 0.01f, 0.06f, 0.88f);
+    [Tooltip("Seconds GO! stays on screen once the song starts.")]
+    public float goSeconds = 0.6f;
 
     const float GiveUpSeconds = 8f;
 
     GameFlow flow;
     RhythmSession session;
-    Font font;
-    GameObject canvasObject, card;
-    Text levelLabel, songLabel, difficultyLabel, goalLabel, countLabel;
-    readonly Image[] bars = new Image[3];
-    float shownAt;
+    RectTransform root, card;
+    BlurBackdrop backdrop;
+    TextMeshProUGUI songLabel, difficultyLabel, lengthLabel, goalLabel, countLabel;
+    GameObject lengthGroup;
+    float shownAt, goUntil = -1f;
+    bool showing;
 
     /// <summary>True while the card or its countdown is on screen.</summary>
-    public bool IsShowing => canvasObject != null && canvasObject.activeSelf;
+    public bool IsShowing => showing;
 
     void Awake()
     {
         flow = GetComponent<GameFlow>();
         session = FindFirstObjectByType<RhythmSession>();
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        BuildCanvas();
+        Build();
     }
 
     void OnEnable()
@@ -50,115 +51,191 @@ public class LevelIntroCard : MonoBehaviour
 
     void OnDestroy()
     {
-        if (canvasObject != null) Destroy(canvasObject);
+        if (root != null) Destroy(root.gameObject);
     }
 
     /// <summary>Shows the card for <paramref name="level"/>. Finishes when the count-in should start.</summary>
     public IEnumerator Show(GameFlow.Level level)
     {
         Fill(level);
-        canvasObject.SetActive(true);
-        card.SetActive(true);
-        countLabel.gameObject.SetActive(false);
+        showing = true;
+        goUntil = -1f;
         shownAt = Time.time;
+        card.gameObject.SetActive(false);
+        countLabel.gameObject.SetActive(false);
+        root.gameObject.SetActive(true);
+        backdrop.Show(this, () =>
+        {
+            if (!showing) return;
+            StartCoroutine(ScreenTransition.PopIn(card));
+        });
         // Scaled time, so the card waits too if the game is frozen.
         for (float t = 0f; t < showSeconds; t += Time.deltaTime) yield return null;
     }
 
     void Update()
     {
-        if (!IsShowing) return;
+        if (!showing) return;
         BeatClock clock = BeatClock.Instance;
         bool songStarted = clock != null && clock.IsMusicPlaying;
-        // Gone once the song plays, or if the level ended or never started a count-in.
-        if (songStarted || flow.State != GameState.Playing || Time.time - shownAt > showSeconds + GiveUpSeconds)
-            canvasObject.SetActive(false);
+
+        if (songStarted && goUntil < 0f)
+        {
+            // The song is on: GO!, clear the blur, then hide.
+            goUntil = Time.unscaledTime + goSeconds;
+            card.gameObject.SetActive(false);
+            backdrop.Hide();
+            SetCount("GO!", UITheme.ImpactOrange);
+        }
+        bool goDone = goUntil >= 0f && Time.unscaledTime >= goUntil;
+        // Gone after GO!, or if the level ended or never started a count-in.
+        if (goDone || flow.State != GameState.Playing || Time.time - shownAt > showSeconds + GiveUpSeconds)
+            Hide();
+
+        if (countLabel.gameObject.activeSelf)
+        {
+            // Each number lands big and settles, in a few pixel-style steps.
+            float age = Mathf.Clamp01((Time.unscaledTime - countShownAt) / 0.2f);
+            float step = Mathf.Ceil(age * 4f) / 4f;
+            countLabel.rectTransform.localScale = Vector3.one * Mathf.Lerp(1.35f, 1f, step);
+        }
     }
+
+    float countShownAt;
 
     void OnCountInBeat(int beatsLeft)
     {
-        if (!IsShowing) return;
-        card.SetActive(false);
+        if (!showing || goUntil >= 0f) return;
+        card.gameObject.SetActive(false);
+        SetCount(beatsLeft.ToString(), UITheme.White);
+    }
+
+    void SetCount(string text, Color color)
+    {
         countLabel.gameObject.SetActive(true);
-        countLabel.text = beatsLeft.ToString();
+        countLabel.text = text;
+        countLabel.color = color;
+        countShownAt = Time.unscaledTime;
+    }
+
+    void Hide()
+    {
+        showing = false;
+        backdrop.Hide();
+        root.gameObject.SetActive(false);
     }
 
     void Fill(GameFlow.Level level)
     {
-        int index = level != null ? System.Array.IndexOf(flow.levels, level) : -1;
-        levelLabel.text = index >= 0 ? $"LEVEL {index + 1}" : "YOUR SONG";
-        songLabel.text = level != null ? level.displayName : "";
-
-        Difficulty difficulty = ScoreKeeper.SelectedDifficulty;
-        difficultyLabel.text = ScoreKeeper.DifficultyName(difficulty);
-        for (int i = 0; i < bars.Length; i++)
-            bars[i].color = i <= (int)difficulty ? accentColor : new Color(1f, 1f, 1f, 0.2f);
-
-        goalLabel.text = Goal(level);
+        songLabel.text = level != null ? level.displayName : "YOUR SONG";
+        difficultyLabel.text = ResultCard.DifficultyLabel(ScoreKeeper.SelectedDifficulty);
+        int seconds = LengthSeconds(level);
+        lengthGroup.SetActive(seconds > 0);
+        lengthLabel.text = $"{seconds} SECONDS";
+        goalLabel.text = Goal(level, seconds);
     }
 
-    static string Goal(GameFlow.Level level)
+    /// <summary>Length of this level: the hand-made chart's end for the chosen difficulty, else the song.</summary>
+    static int LengthSeconds(GameFlow.Level level)
     {
-        if (!CornerMute.Muted) return "Survive the song";
-        if (level != null && level.music != null) return $"Survive the next {Mathf.CeilToInt(level.music.length)} seconds";
-        return "Survive till the end";
+        if (level == null) return 0;
+        if (!string.IsNullOrEmpty(level.chartJson))
+        {
+            var file = Resources.Load<TextAsset>("Charts/" + ScriptedLevel.ChartName(level.chartJson, ScoreKeeper.SelectedDifficulty));
+            if (file != null)
+            {
+                var data = JsonUtility.FromJson<ScriptedLevel.Data>(file.text);
+                if (data != null && data.endTime > 0f) return Mathf.CeilToInt(data.endTime);
+            }
+        }
+        return level.music != null ? Mathf.CeilToInt(level.music.length) : 0;
     }
 
-    void BuildCanvas()
+    static string Goal(GameFlow.Level level, int seconds)
     {
-        canvasObject = new GameObject("LevelIntroCard", typeof(Canvas), typeof(CanvasScaler));
+        if (!CornerMute.Muted) return "SURVIVE THE SONG";
+        if (seconds > 0) return $"SURVIVE {seconds} SECONDS";
+        return "SURVIVE TILL THE END";
+    }
+
+    void Build()
+    {
+        var canvasObject = new GameObject("LevelIntroCard", typeof(Canvas), typeof(CanvasScaler));
         var canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
         canvas.sortingOrder = 150;
         var scaler = canvasObject.GetComponent<CanvasScaler>();
         scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.matchWidthOrHeight = 1f;
+        scaler.matchWidthOrHeight = 0.5f;
+        root = (RectTransform)canvasObject.transform;
+        backdrop = BlurBackdrop.Create(root);
 
-        var panel = new GameObject("Card", typeof(RectTransform), typeof(Image), typeof(Outline)).GetComponent<Image>();
-        panel.rectTransform.SetParent(canvasObject.transform, false);
-        panel.rectTransform.sizeDelta = new Vector2(760f, 380f);
-        panel.color = panelColor;
-        panel.raycastTarget = false;
-        Outline outline = panel.GetComponent<Outline>();
-        outline.effectColor = accentColor;
-        outline.effectDistance = new Vector2(2f, -2f);
-        card = panel.gameObject;
+        card = PixelPanel.Create(root, new Vector2(1000f, 460f), Vector2.zero, "IntroCard");
 
-        levelLabel = AddText(card.transform, 64, FontStyle.Bold, accentColor, 120f);
-        songLabel = AddText(card.transform, 34, FontStyle.Normal, Color.white, 50f);
-        for (int i = 0; i < bars.Length; i++)
+        songLabel = UITheme.Text(card, "", 84f, UITheme.White);
+        songLabel.rectTransform.sizeDelta = new Vector2(920f, 110f);
+        songLabel.rectTransform.anchoredPosition = new Vector2(0f, 125f);
+        songLabel.enableAutoSizing = true;
+        songLabel.fontSizeMin = 40f;
+        songLabel.fontSizeMax = 84f;
+
+        // Divider: two thin cyan lines with equalizer bars in the middle.
+        for (int side = -1; side <= 1; side += 2)
         {
-            var bar = new GameObject("Bar", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
-            bar.rectTransform.SetParent(card.transform, false);
-            bar.rectTransform.sizeDelta = new Vector2(44f, 14f);
-            bar.rectTransform.anchoredPosition = new Vector2(-160f + i * 54f, -12f);
-            bar.raycastTarget = false;
-            bars[i] = bar;
+            var line = new GameObject("Line", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+            line.rectTransform.SetParent(card, false);
+            line.rectTransform.sizeDelta = new Vector2(330f, 4f);
+            line.rectTransform.anchoredPosition = new Vector2(side * 230f, 45f);
+            line.color = new Color(UITheme.ElectricCyan.r, UITheme.ElectricCyan.g, UITheme.ElectricCyan.b, 0.6f);
+            line.raycastTarget = false;
         }
-        difficultyLabel = AddText(card.transform, 26, FontStyle.Bold, Color.white, -12f);
-        difficultyLabel.alignment = TextAnchor.MiddleLeft;
-        difficultyLabel.rectTransform.sizeDelta = new Vector2(240f, 40f);
-        difficultyLabel.rectTransform.anchoredPosition = new Vector2(110f, -12f);
-        goalLabel = AddText(card.transform, 38, FontStyle.Bold, Color.white, -100f);
+        PixelArt.IconImage(card, PixelArt.Icon.Equalizer, 70f, UITheme.ElectricCyan).rectTransform.anchoredPosition = new Vector2(0f, 45f);
 
-        countLabel = AddText(canvasObject.transform, 160, FontStyle.Bold, Color.white, 0f);
-        countLabel.rectTransform.sizeDelta = new Vector2(400f, 240f);
+        // Difficulty pill | clock + length.
+        RectTransform pill = Frame(card, "btn_blue_normal", new Vector2(240f, 84f), new Vector2(-190f, -40f));
+        difficultyLabel = UITheme.Text(pill, "", 36f, UITheme.ElectricCyan);
+        difficultyLabel.rectTransform.sizeDelta = new Vector2(220f, 60f);
+
+        var divider = new GameObject("Divider", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        divider.rectTransform.SetParent(card, false);
+        divider.rectTransform.sizeDelta = new Vector2(4f, 60f);
+        divider.rectTransform.anchoredPosition = new Vector2(-40f, -40f);
+        divider.color = new Color(UITheme.ElectricCyan.r, UITheme.ElectricCyan.g, UITheme.ElectricCyan.b, 0.6f);
+        divider.raycastTarget = false;
+
+        lengthGroup = new GameObject("Length", typeof(RectTransform)).gameObject;
+        var lengthRect = (RectTransform)lengthGroup.transform;
+        lengthRect.SetParent(card, false);
+        lengthRect.anchoredPosition = new Vector2(150f, -40f);
+        PixelArt.IconImage(lengthRect, PixelArt.Icon.Clock, 54f, UITheme.ImpactOrange).rectTransform.anchoredPosition = new Vector2(-150f, 0f);
+        lengthLabel = UITheme.Text(lengthRect, "", 40f, UITheme.White, align: TextAlignmentOptions.Left);
+        lengthLabel.rectTransform.sizeDelta = new Vector2(320f, 60f);
+        lengthLabel.rectTransform.anchoredPosition = new Vector2(70f, 0f);
+
+        // Goal in an orange outline frame.
+        RectTransform goal = Frame(card, "btn_outline_normal", new Vector2(780f, 104f), new Vector2(0f, -150f));
+        goalLabel = UITheme.Text(goal, "", 46f, UITheme.White);
+        goalLabel.rectTransform.sizeDelta = new Vector2(740f, 70f);
+
+        countLabel = UITheme.Text(root, "", 220f, UITheme.White);
+        countLabel.rectTransform.sizeDelta = new Vector2(900f, 300f);
+        countLabel.outlineWidth = 0.15f;
+        countLabel.outlineColor = new Color32(11, 15, 26, 255);
+
         canvasObject.SetActive(false);
     }
 
-    Text AddText(Transform parent, int size, FontStyle style, Color color, float y)
+    static RectTransform Frame(RectTransform parent, string art, Vector2 size, Vector2 position)
     {
-        var text = new GameObject("Text", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
-        text.rectTransform.SetParent(parent, false);
-        text.rectTransform.sizeDelta = new Vector2(720f, size * 1.4f);
-        text.rectTransform.anchoredPosition = new Vector2(0f, y);
-        text.font = font;
-        text.fontSize = size;
-        text.fontStyle = style;
-        text.color = color;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.raycastTarget = false;
-        return text;
+        var image = new GameObject(art, typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        image.rectTransform.SetParent(parent, false);
+        image.rectTransform.sizeDelta = size;
+        image.rectTransform.anchoredPosition = position;
+        image.sprite = UITheme.Art(art);
+        image.type = Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 256f / size.y;
+        image.raycastTarget = false;
+        return image.rectTransform;
     }
 }

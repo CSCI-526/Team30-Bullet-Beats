@@ -25,7 +25,7 @@ public class SettingsScreen : UIScreen
     PixelButton back;
     Action onBack;
 
-    protected override int SortingOrder => 220;
+    protected override int SortingOrder => 260; // above the pause card, which can open it
     protected override Selectable FirstSelected => rows[0]?.toggle.Button;
 
     protected override void Build()
