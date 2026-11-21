@@ -902,7 +902,7 @@ public class Tutorial : MonoBehaviour
         int turbo = turboTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
         if (turbo < 0) return;
         turboTimes.RemoveAt(turbo);
-        target.MakeTurbo(spawner.turboHits, spawner.turboHeal, spawner.turboScale, spawner.turboColor);
+        target.MakeTurbo(spawner.turboHits, spawner.turboHeal, spawner.turboScale, spawner.turboColor, spawner.turboShrinkTo, spawner.turboWiden, spawner.turboFirstHitDelay, spawner.turboWindowScale);
     }
 
     NoteLane NextLane()
