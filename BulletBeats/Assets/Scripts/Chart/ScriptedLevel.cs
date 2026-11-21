@@ -96,7 +96,7 @@ public class ScriptedLevel : MonoBehaviour
     }
 
     /// <summary>Seconds this asteroid flies. The first few of a chart can be slower.</summary>
-    float FlightOf(Note n) => n.fly > 0f ? n.fly : Chart.flyIn;
+    float FlightOf(Note n) => (n.fly > 0f ? n.fly : Chart.flyIn) * (n.turbo && spawner != null ? spawner.turboSlow : 1f);
 
     static void ApplyOffset(Data chart, float offset)
     {
