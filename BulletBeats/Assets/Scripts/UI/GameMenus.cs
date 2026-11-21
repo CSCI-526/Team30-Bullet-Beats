@@ -36,6 +36,7 @@ public class GameMenus : MonoBehaviour
     Button endNext, endLevelSelect;
     static Sprite starSprite;
     MainMenuScreen mainMenu;
+    SongSelectScreen songSelect;
 
     void Awake()
     {
@@ -45,6 +46,7 @@ public class GameMenus : MonoBehaviour
         BuildCanvas();
         mainMenu = gameObject.AddComponent<MainMenuScreen>();
         gameObject.AddComponent<SettingsScreen>();
+        songSelect = gameObject.AddComponent<SongSelectScreen>();
         Show(flow.State);
     }
 
@@ -58,15 +60,14 @@ public class GameMenus : MonoBehaviour
 
     void Show(GameState state)
     {
-        canvasObject.SetActive(state != GameState.Playing && state != GameState.Title);
+        bool newScreen = state == GameState.Title || state == GameState.LevelSelect;
+        canvasObject.SetActive(state != GameState.Playing && !newScreen);
         titlePanel.SetActive(false);
-        if (state == GameState.Title) mainMenu.Open();
-        else
-        {
-            mainMenu.Close();
-            GetComponent<SettingsScreen>()?.Close();
-        }
-        levelPanel.SetActive(state == GameState.LevelSelect);
+        // Song select is SongSelectScreen now; the old list stays hidden until the cleanup PR.
+        levelPanel.SetActive(false);
+        if (state == GameState.Title) mainMenu.Open(); else mainMenu.Close();
+        if (state == GameState.LevelSelect) songSelect.Open(); else songSelect.Close();
+        if (!newScreen) GetComponent<SettingsScreen>()?.Close();
         difficultyPanel.SetActive(false);
         endPanel.SetActive(state == GameState.Ended);
 
@@ -80,7 +81,7 @@ public class GameMenus : MonoBehaviour
             _ => null
         };
         // Select a button so the menus also work with the keyboard (arrows + Enter).
-        if (EventSystem.current != null && state != GameState.Title) EventSystem.current.SetSelectedGameObject(first != null ? first.gameObject : null);
+        if (EventSystem.current != null && !newScreen) EventSystem.current.SetSelectedGameObject(first != null ? first.gameObject : null);
     }
 
     void FillEndScreen()
