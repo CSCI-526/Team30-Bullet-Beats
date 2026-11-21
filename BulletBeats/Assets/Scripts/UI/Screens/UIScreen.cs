@@ -18,6 +18,11 @@ public abstract class UIScreen : MonoBehaviour
     protected RectTransform Root { get; private set; }
     protected RectTransform Content { get; private set; }
     public bool IsOpen { get; private set; }
+    /// <summary>Frame the screen last opened or closed. A key press that opened or closed one screen
+    /// must not also act on the screen underneath in the same frame.</summary>
+    public int OpenedFrame { get; private set; } = -1;
+    public int ClosedFrame { get; private set; } = -1;
+    protected bool ChangedThisFrame => OpenedFrame == Time.frameCount || ClosedFrame == Time.frameCount;
 
     /// <summary>Draw order; later screens (Settings) sit above earlier ones (Main Menu).</summary>
     protected abstract int SortingOrder { get; }
@@ -58,6 +63,7 @@ public abstract class UIScreen : MonoBehaviour
     {
         if (!IsOpen) openCount++;
         IsOpen = true;
+        OpenedFrame = Time.frameCount;
         Root.gameObject.SetActive(true);
         StopAllCoroutines();
         StartCoroutine(ScreenTransition.PopIn(Content));
@@ -71,6 +77,7 @@ public abstract class UIScreen : MonoBehaviour
         if (!IsOpen) return;
         openCount--;
         IsOpen = false;
+        ClosedFrame = Time.frameCount;
         StopAllCoroutines();
         Root.gameObject.SetActive(false);
     }
