@@ -6,8 +6,7 @@ using UnityEngine.UI;
 /// The on-screen cues the <see cref="Tutorial"/> draws next to its words: W/A/S/D key caps at the
 /// spots (lit when that's the key to press), a glowing "go here" ring and an arrow between spots, a mouse
 /// with a pulsing button for shooting, hit pips and labels on asteroids and stars (TURBO, SHOOT NOW),
-/// short labels that float up, a heart row for the goal, and the check mark + "press SPACE" pop-up after each
-/// step. The mouse and crosshair are never locked.
+/// short labels that float up, progress dots and callouts. The mouse and crosshair are never locked.
 /// Everything is drawn from code on the tutorial's canvas and animates on unscaled time.
 /// </summary>
 public class TutorialCues
@@ -38,15 +37,11 @@ public class TutorialCues
     RectTransform pips, crossed;
     readonly List<Image> pipImages = new List<Image>();
 
-    RectTransform hearts, progress;
-    readonly List<Image> heartImages = new List<Image>();
+    RectTransform progress;
     readonly List<Image> progressDots = new List<Image>();
 
     readonly List<(Text text, Vector2 from, float start)> floaters = new List<(Text, Vector2, float)>();
 
-    GameObject popup;
-    bool nextPressed;
-    RectTransform popupKey;
     RectTransform callout, calloutArrow;
     Text calloutText;
     CalloutArrow calloutArrowDir;
@@ -56,7 +51,7 @@ public class TutorialCues
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
 
-    static Sprite ring, disc, heart, triangle;
+    static Sprite ring, disc, triangle;
 
     public TutorialCues(Canvas canvas, Font font, PlayerMovement movement, Color accent, Color good, Color warn)
     {
@@ -68,9 +63,6 @@ public class TutorialCues
         this.warn = warn;
         Build();
     }
-
-    /// <summary>True while the check mark pop-up waits for SPACE.</summary>
-    public bool WaitingForNext => popup != null && popup.activeSelf;
 
     // ---------------------------------------------------------------- keys, glows, arrow
 
@@ -189,7 +181,7 @@ public class TutorialCues
         worldTags.Clear();
     }
 
-    // ---------------------------------------------------------------- labels and hearts
+    // ---------------------------------------------------------------- labels and progress
 
     /// <summary>A short label that floats up from a screen point and fades.</summary>
     public void Float(string text, Vector2 screenPoint, Color color)
@@ -198,23 +190,6 @@ public class TutorialCues
         label.text = text;
         label.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.7f);
         floaters.Add((label, screenPoint, Time.unscaledTime));
-    }
-
-    /// <summary>A row of hearts under the banner, e.g. the lives you take into the level. 0 hides it.</summary>
-    public void ShowHearts(int count, int filled, Color color)
-    {
-        hearts.gameObject.SetActive(count > 0);
-        while (heartImages.Count < count)
-        {
-            var image = AddImage(hearts, HeartSprite(), Vector2.one * 56f);
-            heartImages.Add(image);
-        }
-        for (int i = 0; i < heartImages.Count; i++)
-        {
-            heartImages[i].gameObject.SetActive(i < count);
-            heartImages[i].rectTransform.anchoredPosition = new Vector2((i - (count - 1) * 0.5f) * 66f, 0f);
-            heartImages[i].color = i < filled ? color : new Color(1f, 1f, 1f, 0.2f);
-        }
     }
 
     /// <summary>Dots under the prompt, <paramref name="done"/> of <paramref name="total"/> filled. A total of 0 hides them.</summary>
@@ -229,19 +204,6 @@ public class TutorialCues
             progressDots[i].color = i < done ? good : new Color(1f, 1f, 1f, 0.25f);
         }
     }
-
-    // ---------------------------------------------------------------- pop-up
-
-    /// <summary>Shows the check mark and "press SPACE". <see cref="NextPressed"/> turns true on Space or Enter.</summary>
-    public void ShowPopup()
-    {
-        nextPressed = false;
-        popup.SetActive(true);
-    }
-
-    public bool NextPressed => nextPressed;
-
-    public void HidePopup() => popup.SetActive(false);
 
     // ---------------------------------------------------------------- per frame
 
@@ -297,17 +259,10 @@ public class TutorialCues
         UpdateMark(cam, scale);
         UpdateFloaters(scale);
         UpdateLabels(cam, scale, pulse);
-        if (popup.activeSelf) popupKey.localScale = Vector3.one * Mathf.Lerp(1f, 1.08f, pulse);
         if (callout.gameObject.activeSelf)
             calloutArrow.anchoredPosition = calloutArrowDir == CalloutArrow.Up
                 ? new Vector2(0f, -26f + 8f * pulse)
                 : new Vector2((calloutArrowDir == CalloutArrow.Left ? 28f : -28f) + (calloutArrowDir == CalloutArrow.Left ? -1f : 1f) * 8f * pulse, 0f);
-
-        if (popup.activeSelf)
-        {
-            var keyboard = UnityEngine.InputSystem.Keyboard.current;
-            if (keyboard != null && (keyboard.spaceKey.wasPressedThisFrame || keyboard.enterKey.wasPressedThisFrame)) nextPressed = true;
-        }
     }
 
     void UpdateLabels(Camera cam, float scale, float pulse)
@@ -460,12 +415,6 @@ public class TutorialCues
         bar.color = warn;
         crossed.gameObject.SetActive(false);
 
-        hearts = new GameObject("Hearts", typeof(RectTransform)).GetComponent<RectTransform>();
-        hearts.SetParent(canvas.transform, false);
-        hearts.anchorMin = hearts.anchorMax = new Vector2(0.5f, 1f);
-        hearts.anchoredPosition = new Vector2(0f, -186f);
-        hearts.gameObject.SetActive(false);
-
         progress = new GameObject("Progress", typeof(RectTransform)).GetComponent<RectTransform>();
         progress.SetParent(canvas.transform, false);
         progress.anchorMin = progress.anchorMax = new Vector2(0.5f, 1f);
@@ -493,43 +442,6 @@ public class TutorialCues
         calloutArrow = AddImage(callout, TriangleSprite(), Vector2.one * 44f).rectTransform;
         calloutArrow.GetComponent<Image>().color = good;
         callout.gameObject.SetActive(false);
-
-        BuildPopup();
-    }
-
-    void BuildPopup()
-    {
-        var panel = AddImage(canvas.transform, null, new Vector2(380f, 260f));
-        panel.color = new Color(0.02f, 0.01f, 0.06f, 1f); // opaque, or the gold outline shows through
-        panel.gameObject.AddComponent<Outline>().effectColor = good;
-        popup = panel.gameObject;
-
-        // Check mark from two bars.
-        Image shortArm = AddImage(panel.transform, null, new Vector2(16f, 50f));
-        shortArm.rectTransform.anchoredPosition = new Vector2(-28f, 70f);
-        shortArm.rectTransform.localRotation = Quaternion.Euler(0f, 0f, 45f);
-        shortArm.color = good;
-        Image longArm = AddImage(panel.transform, null, new Vector2(16f, 96f));
-        longArm.rectTransform.anchoredPosition = new Vector2(10f, 84f);
-        longArm.rectTransform.localRotation = Quaternion.Euler(0f, 0f, -38f);
-        longArm.color = good;
-
-        // CONTINUE sits in the box and "Press SPACE" under it. It is not a button, so the mouse is never needed.
-        Image cap = AddImage(panel.transform, null, new Vector2(250f, 68f));
-        cap.rectTransform.anchoredPosition = new Vector2(0f, -40f);
-        cap.color = new Color(0.08f, 0.08f, 0.16f, 1f);
-        cap.gameObject.AddComponent<Outline>().effectColor = accent;
-        Text keyLabel = AddText(cap.transform, 36, FontStyle.Bold, Color.white);
-        keyLabel.rectTransform.sizeDelta = cap.rectTransform.sizeDelta;
-        keyLabel.text = "CONTINUE";
-        popupKey = cap.rectTransform;
-
-        Text hint = AddText(panel.transform, 26, FontStyle.Normal, new Color(1f, 1f, 1f, 0.85f));
-        hint.rectTransform.anchoredPosition = new Vector2(0f, -100f);
-        hint.rectTransform.sizeDelta = new Vector2(340f, 36f);
-        hint.text = "Press SPACE";
-
-        popup.SetActive(false);
     }
 
     static string KeyFor(PlayerMovement.Spot spot) => spot switch
@@ -585,15 +497,6 @@ public class TutorialCues
     }
 
     static Sprite DiscSprite() => disc != null ? disc : disc = Shape(64, (x, y) => x * x + y * y <= 1f);
-
-    static Sprite HeartSprite() => heart != null ? heart : heart = Shape(64, (x, y) =>
-    {
-        // Heart curve (x² + y² - 1)³ - x²y³ <= 0, fitted to the square (same as the HUD's).
-        x *= 1.3f;
-        y = y * 1.3f + 0.15f;
-        float a = x * x + y * y - 1f;
-        return a * a * a - x * x * y * y * y <= 0f;
-    });
 
     /// <summary>A white anti-aliased shape; <paramref name="inside"/> gets points in -1..1.</summary>
     static Sprite Shape(int size, System.Func<float, float, bool> inside)
