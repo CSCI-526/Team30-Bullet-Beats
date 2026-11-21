@@ -37,6 +37,7 @@ public class GameMenus : MonoBehaviour
     static Sprite starSprite;
     MainMenuScreen mainMenu;
     SongSelectScreen songSelect;
+    ResultCard resultCard;
 
     void Awake()
     {
@@ -47,6 +48,7 @@ public class GameMenus : MonoBehaviour
         mainMenu = gameObject.AddComponent<MainMenuScreen>();
         gameObject.AddComponent<SettingsScreen>();
         songSelect = gameObject.AddComponent<SongSelectScreen>();
+        resultCard = gameObject.AddComponent<ResultCard>();
         Show(flow.State);
     }
 
@@ -60,18 +62,18 @@ public class GameMenus : MonoBehaviour
 
     void Show(GameState state)
     {
-        bool newScreen = state == GameState.Title || state == GameState.LevelSelect;
+        bool newScreen = state == GameState.Title || state == GameState.LevelSelect || state == GameState.Ended;
         canvasObject.SetActive(state != GameState.Playing && !newScreen);
         titlePanel.SetActive(false);
         // Song select is SongSelectScreen now; the old list stays hidden until the cleanup PR.
         levelPanel.SetActive(false);
         if (state == GameState.Title) mainMenu.Open(); else mainMenu.Close();
         if (state == GameState.LevelSelect) songSelect.Open(); else songSelect.Close();
+        // The end screen is ResultCard now; the old panel stays hidden until the cleanup PR.
+        endPanel.SetActive(false);
+        if (state == GameState.Ended) resultCard.Open(); else resultCard.Close();
         if (!newScreen) GetComponent<SettingsScreen>()?.Close();
         difficultyPanel.SetActive(false);
-        endPanel.SetActive(state == GameState.Ended);
-
-        if (state == GameState.Ended) FillEndScreen();
 
         Button first = state switch
         {
