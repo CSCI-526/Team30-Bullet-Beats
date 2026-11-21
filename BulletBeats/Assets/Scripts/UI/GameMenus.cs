@@ -35,6 +35,7 @@ public class GameMenus : MonoBehaviour
     readonly Image[] endStars = new Image[3];
     Button endNext, endLevelSelect;
     static Sprite starSprite;
+    MainMenuScreen mainMenu;
 
     void Awake()
     {
@@ -42,6 +43,8 @@ public class GameMenus : MonoBehaviour
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         EnsureEventSystem();
         BuildCanvas();
+        mainMenu = gameObject.AddComponent<MainMenuScreen>();
+        gameObject.AddComponent<SettingsScreen>();
         Show(flow.State);
     }
 
@@ -55,8 +58,14 @@ public class GameMenus : MonoBehaviour
 
     void Show(GameState state)
     {
-        canvasObject.SetActive(state != GameState.Playing);
-        titlePanel.SetActive(state == GameState.Title);
+        canvasObject.SetActive(state != GameState.Playing && state != GameState.Title);
+        titlePanel.SetActive(false);
+        if (state == GameState.Title) mainMenu.Open();
+        else
+        {
+            mainMenu.Close();
+            GetComponent<SettingsScreen>()?.Close();
+        }
         levelPanel.SetActive(state == GameState.LevelSelect);
         difficultyPanel.SetActive(false);
         endPanel.SetActive(state == GameState.Ended);
@@ -65,13 +74,13 @@ public class GameMenus : MonoBehaviour
 
         Button first = state switch
         {
-            GameState.Title => titleFirst,
+            GameState.Title => null,
             GameState.LevelSelect => levelFirst,
             GameState.Ended => endFirst,
             _ => null
         };
         // Select a button so the menus also work with the keyboard (arrows + Enter).
-        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(first != null ? first.gameObject : null);
+        if (EventSystem.current != null && state != GameState.Title) EventSystem.current.SetSelectedGameObject(first != null ? first.gameObject : null);
     }
 
     void FillEndScreen()
@@ -194,7 +203,8 @@ public class GameMenus : MonoBehaviour
         Stretch(backdrop.rectTransform, canvasObject.transform);
         backdrop.color = backdropColor;
 
-        BuildTitlePanel();
+        // The title screen is MainMenuScreen now; the old panel stays empty until the cleanup PR.
+        titlePanel = NewPanel("Title");
         BuildLevelPanel();
         BuildDifficultyPanel();
         BuildEndPanel();
