@@ -61,7 +61,9 @@ public abstract class UIScreen : MonoBehaviour
         Root.gameObject.SetActive(true);
         StopAllCoroutines();
         StartCoroutine(ScreenTransition.PopIn(Content));
-        Focus();
+        // No button starts highlighted, so the menu sits still until the mouse or keyboard is used;
+        // the first arrow key, Tab or Enter gives focus to the first button (see Update).
+        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
     }
 
     public virtual void Close()
