@@ -38,29 +38,35 @@ public class PixelButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHand
         rect.sizeDelta = new Vector2(width, height);
         rect.anchoredPosition = new Vector2(0f, y);
 
-        string art = UITheme.ButtonArt(style);
         var image = go.GetComponent<Image>();
-        image.sprite = UITheme.Art(art + "_normal");
         image.type = Image.Type.Sliced;
         // Source frames are 256 px tall; keep the pixel border thickness in proportion to the button.
         image.pixelsPerUnitMultiplier = 256f / height;
 
         var button = go.GetComponent<Button>();
         button.transition = Selectable.Transition.SpriteSwap;
-        button.spriteState = new SpriteState
+        if (onClick != null) button.onClick.AddListener(onClick);
+
+        var pixelButton = go.GetComponent<PixelButton>();
+        pixelButton.Button = button;
+        pixelButton.SetStyle(style);
+        pixelButton.Label = UITheme.Text(rect, text, fontSize, UITheme.White);
+        Stretch(pixelButton.Label.rectTransform);
+        return pixelButton;
+    }
+
+    /// <summary>Swaps the frame art, e.g. an ON/OFF toggle switching between orange and blue.</summary>
+    public void SetStyle(UITheme.ButtonStyle style)
+    {
+        string art = UITheme.ButtonArt(style);
+        GetComponent<Image>().sprite = UITheme.Art(art + "_normal");
+        Button.spriteState = new SpriteState
         {
             highlightedSprite = UITheme.Art(art + "_hover"),
             selectedSprite = UITheme.Art(art + "_hover"),
             pressedSprite = UITheme.Art(art + "_pressed"),
             disabledSprite = UITheme.Art(art + "_normal")
         };
-        if (onClick != null) button.onClick.AddListener(onClick);
-
-        var pixelButton = go.GetComponent<PixelButton>();
-        pixelButton.Button = button;
-        pixelButton.Label = UITheme.Text(rect, text, fontSize, UITheme.White);
-        Stretch(pixelButton.Label.rectTransform);
-        return pixelButton;
     }
 
     void Awake()
