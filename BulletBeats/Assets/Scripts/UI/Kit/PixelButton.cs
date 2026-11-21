@@ -7,7 +7,7 @@ using UnityEngine.UI;
 /// <summary>
 /// A menu button in the theme's look: a 9-sliced pixel frame that swaps to its glowing frame on
 /// hover or keyboard focus and to its pressed frame on click, with white pixel text on top.
-/// The selected button also pulses gently. Animations use unscaled time, because the game is
+/// Animations use unscaled time, because the game is
 /// paused (time scale 0) while menus are up. Build one with <see cref="Create"/>.
 /// </summary>
 [RequireComponent(typeof(Button))]
@@ -18,8 +18,6 @@ public class PixelButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHand
 
     [Tooltip("How much the button grows while hovered or selected.")]
     public float hoverScale = 1.04f;
-    [Tooltip("Pulses per second of the selected button.")]
-    public float pulseSpeed = 1.6f;
 
     public Button Button { get; private set; }
     public TextMeshProUGUI Label { get; private set; }
@@ -85,8 +83,6 @@ public class PixelButton : MonoBehaviour, IPointerEnterHandler, IPointerExitHand
     {
         bool active = (hovered || selected) && Button.interactable;
         float target = active ? hoverScale : 1f;
-        if (selected && Button.interactable)
-            target += 0.012f * Mathf.Sin(Time.unscaledTime * pulseSpeed * Mathf.PI * 2f);
         scale = Mathf.MoveTowards(scale, target, Time.unscaledDeltaTime * 0.6f);
         transform.localScale = new Vector3(scale, scale, 1f);
 

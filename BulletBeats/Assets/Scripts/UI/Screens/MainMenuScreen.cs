@@ -60,7 +60,7 @@ public class MainMenuScreen : UIScreen
     {
         SettingsScreen settings = GetComponent<SettingsScreen>();
         if (settings == null) return;
-        settings.Open(onBack: Focus);
+        settings.Open(onBack: null);
     }
 
     RectTransform ArtImage(string art, float width)
