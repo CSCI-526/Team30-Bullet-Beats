@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Spawns chart targets from MIDI notes. LeftUpper / RightUpper map to the top-left and
-/// top-right approach lanes. Targets are spawned early so they reach the hit plane on time.
+/// Spawns chart targets from MIDI notes. Lanes are four columns across the top two thirds
+/// of the screen: far left, left, right, far right. Targets spawn early so they reach the hit plane on time.
 /// </summary>
 public class ChartTargetSpawner : MonoBehaviour
 {
@@ -31,10 +31,14 @@ public class ChartTargetSpawner : MonoBehaviour
     public float spawnDistanceMultiplier = 1f;
     [Tooltip("How close a planet must get to the ship to deal damage.")]
     public float shipHitRadius = 3f;
+    [Tooltip("Share of asteroids that fly to a random W/A/S/D spot instead of the ship. The rest still aim at the ship, so dodging alone is not enough.")]
+    [Range(0f, 1f)] public float spotAimChance = 0.5f;
 
-    [Header("Screen quadrants")]
-    [Tooltip("Inset so targets stay inside the quarter and off the center cross.")]
+    [Header("Screen columns")]
+    [Tooltip("Inset so targets stay inside their column and off the screen edge.")]
     public float quadrantMargin = 0.08f;
+    /// <summary>No asteroid aims in the bottom third of the screen.</summary>
+    public const float PlayfieldMinY = 1f / 3f;
     [Tooltip("Highest point on screen (0-1) an asteroid aims for, e.g. to keep them under a banner. 1 = no limit.")]
     [Range(0.5f, 1f)] public float maxViewportY = 1f;
     [Tooltip("Minimum viewport distance between two live targets.")]
@@ -121,7 +125,7 @@ public class ChartTargetSpawner : MonoBehaviour
     /// <summary>Raised for every target right after it spawns (and after it is made turbo).</summary>
     public event System.Action<ChartTarget> Spawned;
 
-    public void SetNotes(List<ChartNote> chartNotes)
+    public void SetNotes(List<ChartNote> chartNotes, bool keepBandsTogether = false)
     {
         notes.Clear();
         if (chartNotes != null)
@@ -143,8 +147,95 @@ public class ChartTargetSpawner : MonoBehaviour
             notes.Clear();
             notes.AddRange(thinned);
         }
+        if (keepBandsTogether) KeepBandsInReach();
         nextIndex = 0;
         shapeCycle = 0;
+    }
+
+    /// <summary>
+    /// Audio charts ignore the frequency-to-column map. Each band keeps a home column, and a note
+    /// can only land on the previous note's column or a neighbor. Dense clusters are left alone
+    /// so the shape burst can place them.
+    /// </summary>
+    void KeepBandsInReach()
+    {
+        var home = new Dictionary<int, int>();
+        int previous = 1;
+        int i = 0;
+        while (i < notes.Count)
+        {
+            if (shapeBursts)
+            {
+                int end = i + 1;
+                while (end < notes.Count && notes[end].time - notes[i].time <= shapeClusterWindow)
+                    end++;
+                if (end - i >= shapeMinCount)
+                {
+                    i = end;
+                    continue;
+                }
+            }
+
+            ChartNote note = notes[i];
+            int column = ColumnForBand(note.pitch, previous, home);
+            note.lane = LaneOf(column);
+            notes[i] = note;
+            previous = column;
+            i++;
+        }
+    }
+
+    static int ColumnForBand(int pitch, int previous, Dictionary<int, int> home)
+    {
+        if (!home.TryGetValue(pitch, out int preferred))
+        {
+            preferred = ClaimHome(previous, home);
+            home[pitch] = preferred;
+        }
+
+        int column = Mathf.Clamp(preferred, previous - 1, previous + 1);
+        return Mathf.Clamp(column, 0, 3);
+    }
+
+    // The first band keeps the column we are already on. Later bands take a free column,
+    // choosing the side that still has more open cells so the right half is not left empty.
+    static int ClaimHome(int previous, Dictionary<int, int> home)
+    {
+        if (!ColumnTaken(home, previous)) return previous;
+
+        int leftFree = 0;
+        int rightFree = 0;
+        for (int c = 0; c < previous; c++)
+            if (!ColumnTaken(home, c)) leftFree++;
+        for (int c = previous + 1; c < 4; c++)
+            if (!ColumnTaken(home, c)) rightFree++;
+
+        bool goRight = rightFree > leftFree || (rightFree == leftFree && rightFree > 0 && home.Count % 2 == 0);
+        if (goRight && previous < 3 && !ColumnTaken(home, previous + 1)) return previous + 1;
+        if (!goRight && previous > 0 && !ColumnTaken(home, previous - 1)) return previous - 1;
+        if (previous < 3 && !ColumnTaken(home, previous + 1)) return previous + 1;
+        if (previous > 0 && !ColumnTaken(home, previous - 1)) return previous - 1;
+
+        int best = previous;
+        int bestDist = 99;
+        for (int c = 0; c < 4; c++)
+        {
+            if (ColumnTaken(home, c)) continue;
+            int dist = Mathf.Abs(c - previous);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    static bool ColumnTaken(Dictionary<int, int> home, int column)
+    {
+        foreach (int claimed in home.Values)
+            if (claimed == column) return true;
+        return false;
     }
 
     /// <summary>Seconds into the current note window for HUD (0 = just after note, 1 = next note).</summary>
@@ -264,7 +355,7 @@ public class ChartTargetSpawner : MonoBehaviour
         if (!ignoreCap && maxLiveAsteroids > 0 && liveViewports.Count >= maxLiveAsteroids) return false;
         BeatClock clock = BeatClock.Instance;
         float quarter = clock != null ? clock.SecondsPerBeat : 0.5f;
-        var note = new ChartNote(noteTime, 0, NoteLane.LeftUpper);
+        var note = new ChartNote(noteTime, 0, NoteLane.Left);
         Vector2 viewport = centered
             ? new Vector2(area.center.x, Mathf.Min(area.center.y, maxViewportY))
             : PickInArea(area.xMin, area.xMax, area.yMin, area.yMax);
@@ -346,7 +437,7 @@ public class ChartTargetSpawner : MonoBehaviour
     void SpawnAt(ChartNote note, float quarter, float lead, Vector2 viewport)
     {
         viewport = AwayFromShip(viewport);
-        viewport.y = Mathf.Min(viewport.y, maxViewportY);
+        viewport.y = Mathf.Clamp(viewport.y, PlayfieldMinY, Mathf.Max(maxViewportY, PlayfieldMinY));
 
         Camera cam = DisplayCamera.Find();
         if (cam == null) cam = Camera.main;
@@ -355,14 +446,22 @@ public class ChartTargetSpawner : MonoBehaviour
             cam.farClipPlane = spawnDistance + 50f;
         Vector3 hit = cam != null
             ? cam.ViewportToWorldPoint(new Vector3(viewport.x, viewport.y, distanceFromCamera))
-            : new Vector3(note.lane == NoteLane.LeftUpper ? -8f : 8f, 8f, 0f);
+            : new Vector3(FallbackX(note.lane), 8f, 0f);
         Vector3 spawn = cam != null
             ? cam.ViewportToWorldPoint(new Vector3(viewport.x, viewport.y, spawnDistance))
             : hit + Vector3.forward * 80f;
         liveViewports.Add(viewport);
 
+        bool aimAtSpot = false;
+        if (spotAimChance > 0f && Random.value < spotAimChance && TryRandomSpot(out Vector3 spot)
+            && TryAimOnHitPlane(cam, spawn, hit, spot, out Vector3 aimed))
+        {
+            hit = aimed;
+            aimAtSpot = true;
+        }
+
         ChartTarget target = CreateTarget(note, spawn);
-        target.Arm(note, spawn, hit);
+        target.Arm(note, spawn, hit, aimAtSpot);
         target.shipHitRadius = shipHitRadius;
         target.SetLifetime(quarter, lead, viewport);
 
@@ -376,6 +475,35 @@ public class ChartTargetSpawner : MonoBehaviour
         }
 
         Spawned?.Invoke(target);
+    }
+
+    /// <summary>One of the four places the ship can stand. The asteroid flies toward that point and hits anyone standing there.</summary>
+    static bool TryRandomSpot(out Vector3 world)
+    {
+        world = default;
+        PlayerMovement movement = PlayerHealth.Instance != null
+            ? PlayerHealth.Instance.GetComponent<PlayerMovement>()
+            : null;
+        if (movement == null) return false;
+        var spot = (PlayerMovement.Spot)Random.Range(0, 4);
+        world = movement.WorldPositionOf(spot);
+        return true;
+    }
+
+    /// <summary>
+    /// Point on the usual hit plane, on the line from <paramref name="aim"/> through <paramref name="spawn"/>.
+    /// Keeps the lock-on the normal size; the flight still continues on toward the spot.
+    /// </summary>
+    static bool TryAimOnHitPlane(Camera cam, Vector3 spawn, Vector3 hit, Vector3 aim, out Vector3 aimed)
+    {
+        aimed = hit;
+        if (cam == null) return false;
+        Vector3 fwd = cam.transform.forward;
+        float spawnDepth = Vector3.Dot(spawn - aim, fwd);
+        float hitDepth = Vector3.Dot(hit - aim, fwd);
+        if (spawnDepth <= 0.01f || hitDepth <= 0f) return false;
+        aimed = Vector3.Lerp(aim, spawn, hitDepth / spawnDepth);
+        return true;
     }
 
     public enum ScriptedKind { Normal, Turbo, Big }
@@ -460,14 +588,37 @@ public class ChartTargetSpawner : MonoBehaviour
 
     Vector2 PickViewport(NoteLane lane)
     {
-        bool left = lane == NoteLane.LeftUpper || lane == NoteLane.LeftLower;
-        bool upper = lane == NoteLane.LeftUpper || lane == NoteLane.RightUpper;
-        float xMin = left ? quadrantMargin : 0.5f + quadrantMargin;
-        float xMax = left ? 0.5f - quadrantMargin : 1f - quadrantMargin;
-        float yMin = upper ? 0.5f + quadrantMargin : quadrantMargin;
-        float yMax = upper ? 1f - quadrantMargin : 0.5f - quadrantMargin;
-        return PickInArea(xMin, xMax, yMin, yMax);
+        int column = ColumnOf(lane);
+        float width = 0.25f;
+        float xMin = column * width;
+        float xMax = xMin + width;
+        float inset = Mathf.Min(quadrantMargin, width * 0.22f);
+        return PickInArea(xMin + inset, xMax - inset, PlayfieldMinY, 1f);
     }
+
+    static int ColumnOf(NoteLane lane) => lane switch
+    {
+        NoteLane.FarLeft => 0,
+        NoteLane.Left => 1,
+        NoteLane.Right => 2,
+        _ => 3
+    };
+
+    static NoteLane LaneOf(int column) => column switch
+    {
+        0 => NoteLane.FarLeft,
+        1 => NoteLane.Left,
+        2 => NoteLane.Right,
+        _ => NoteLane.FarRight
+    };
+
+    static float FallbackX(NoteLane lane) => lane switch
+    {
+        NoteLane.FarLeft => -18f,
+        NoteLane.Left => -8f,
+        NoteLane.Right => 8f,
+        _ => 18f
+    };
 
     Vector2 PickInArea(float xMin, float xMax, float yMin, float yMax)
     {
@@ -542,7 +693,7 @@ public class ChartTargetSpawner : MonoBehaviour
         }
 
         viewport.x = Mathf.Clamp01(viewport.x);
-        viewport.y = Mathf.Clamp(viewport.y, 0f, maxViewportY);
+        viewport.y = Mathf.Clamp(viewport.y, PlayfieldMinY, Mathf.Max(maxViewportY, PlayfieldMinY));
         if (banBelowShip && IsBelowShip(viewport, ship))
             viewport.y = Mathf.Min(maxViewportY, ship.y + Mathf.Max(belowShipPadding, 0.02f));
         return viewport;

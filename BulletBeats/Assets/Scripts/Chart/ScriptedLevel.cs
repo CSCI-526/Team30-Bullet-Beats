@@ -78,7 +78,7 @@ public class ScriptedLevel : MonoBehaviour
         foreach (Note n in Chart.notes)
         {
             Note note = n;
-            shots.Add(new ChartNote(n.t, 0, NoteLane.LeftUpper));
+            shots.Add(new ChartNote(n.t, 0, NoteLane.Left));
             events.Add(new Timed { at = n.t - FlightOf(n), run = () => SpawnAsteroid(note) });
         }
         foreach (float big in Chart.bigAsteroids)
@@ -189,7 +189,7 @@ public class ScriptedLevel : MonoBehaviour
         Vector2 v = ViewportOf(n, cam);
         Vector3 hit = cam.ViewportToWorldPoint(new Vector3(v.x, v.y, spawner.distanceFromCamera));
         Vector3 from = OnLineFromShip(cam, hit, spawner.PrepareSpawnDistance(cam));
-        ChartNote note = new ChartNote(n.t, 0, v.x < 0.5f ? NoteLane.LeftUpper : NoteLane.RightUpper);
+        ChartNote note = new ChartNote(n.t, 0, v.x < 0.5f ? NoteLane.Left : NoteLane.Right);
         var kind = n.turbo ? ChartTargetSpawner.ScriptedKind.Turbo : ChartTargetSpawner.ScriptedKind.Normal;
         ChartTarget target = spawner.SpawnScripted(note, from, hit, FlightOf(n), n.cue > 0f ? n.cue : Chart.cue, kind);
         if (Verbose) Debug.Log($"UI L1 spawn shot t={n.t:F3} expected={n.t - FlightOf(n):F3} actual={now:F3} late={now - (n.t - FlightOf(n)):F3}");
@@ -205,7 +205,7 @@ public class ScriptedLevel : MonoBehaviour
         Vector3 hit = ship.transform.position;
         Vector3 v = cam.WorldToViewportPoint(hit);
         v.z = spawner.PrepareSpawnDistance(cam);
-        ChartNote note = new ChartNote(time, 0, NoteLane.LeftLower);
+        ChartNote note = new ChartNote(time, 0, NoteLane.FarLeft);
         ChartTarget target = spawner.SpawnScripted(note, cam.ViewportToWorldPoint(v), hit, Chart.flyIn, Chart.cue, ChartTargetSpawner.ScriptedKind.Big);
         flights.Add(new Flight { target = target });
         if (Verbose) Debug.Log($"UI L1 spawn big t={time:F3} expected={time - Chart.flyIn:F3} actual={now:F3}");

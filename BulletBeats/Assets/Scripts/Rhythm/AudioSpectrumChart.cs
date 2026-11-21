@@ -2,8 +2,9 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Builds chart notes from an audio clip. Four frequency bands become the four screen quadrants.
-/// Call this when a clip is dragged onto <see cref="RhythmSession"/>; there is no MIDI file.
+/// Builds chart notes from an audio clip. Which column a note uses is decided later:
+/// a repeated band stays in its cell, and a new one only steps into the same cell or a neighbor.
+/// Notes packed into the same instant are drawn as a shape instead.
 /// </summary>
 public static class AudioSpectrumChart
 {
@@ -21,10 +22,10 @@ public static class AudioSpectrumChart
 
     static readonly Band[] Bands =
     {
-        new Band { minHz = 40f, maxHz = 150f, pitch = 36, lane = NoteLane.LeftLower },
-        new Band { minHz = 150f, maxHz = 400f, pitch = 43, lane = NoteLane.RightLower },
-        new Band { minHz = 400f, maxHz = 1600f, pitch = 55, lane = NoteLane.LeftUpper },
-        new Band { minHz = 1600f, maxHz = 5000f, pitch = 67, lane = NoteLane.RightUpper },
+        new Band { minHz = 40f, maxHz = 150f, pitch = 36, lane = NoteLane.FarLeft },
+        new Band { minHz = 150f, maxHz = 400f, pitch = 43, lane = NoteLane.Left },
+        new Band { minHz = 400f, maxHz = 1600f, pitch = 55, lane = NoteLane.Right },
+        new Band { minHz = 1600f, maxHz = 5000f, pitch = 67, lane = NoteLane.FarRight },
     };
 
     public static List<ChartNote> Build(AudioClip clip, out float bpm)
