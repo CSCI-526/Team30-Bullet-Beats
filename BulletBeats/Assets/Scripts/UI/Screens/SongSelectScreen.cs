@@ -7,13 +7,14 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Song select as a pixel iPod.
-/// <para><b>Browse:</b> the iPod is centred and its screen shows three songs: the highlighted one in the
-/// middle with the previous and next above and below. ▲/▼ show only when there are more songs that way.
+/// <para><b>Browse:</b> the iPod is centred and its screen always shows three songs: the highlighted one in
+/// the middle with the previous and next around it (at the ends of the list the highlight moves to the top or
+/// bottom row instead). ▲/▼ show only when there are songs off the screen that way.
 /// Up/Down keys, the mouse wheel, the wheel's top/bottom and clicking a row move the highlight; the
 /// centre SELECT button or Enter confirms.</para>
 /// <para><b>Details:</b> confirming slides the iPod left and the details card in on the right (song,
 /// high score, EASY / MEDIUM / HARD, START). The iPod keeps working, so the song can change without going
-/// back. No difficulty is picked to begin with, and START needs one.</para>
+/// back. Easy is picked to begin with, so START works at once.</para>
 /// <para>Keys in details: Up/Down change song, Left/Right pick difficulty, Enter starts. Esc goes from
 /// details back to browsing, and from browsing back to the main menu.</para>
 /// </summary>
@@ -236,8 +237,11 @@ public class SongSelectScreen : UIScreen
     {
         int next = Mathf.Clamp(index + direction, 0, Levels.Length - 1);
         if (next == index) return;
+        int oldStart = WindowStart;
         index = next;
         Refresh();
+        // At the ends of the list only the highlight moves; the rows themselves stay put.
+        if (WindowStart == oldStart) return;
         if (scroll != null) StopCoroutine(scroll);
         // Rows start one step away and glide into place, so the list scrolls instead of jumping.
         rowsRoot.anchoredPosition = new Vector2(0f, -direction * RowHeight * 0.6f);
@@ -246,14 +250,21 @@ public class SongSelectScreen : UIScreen
 
     void ClickRow(int slot)
     {
-        if (slot == 1) Confirm();
-        else Step(slot - 1);
+        int song = WindowStart + slot;
+        if (song == index) Confirm();
+        else Step(song - index);
     }
+
+    /// <summary>First song shown. The highlight sits in the middle, except at the ends of the list,
+    /// where the three rows stay full and the highlight moves to the top or bottom row.</summary>
+    int WindowStart => Mathf.Clamp(index - 1, 0, Mathf.Max(0, Levels.Length - 3));
 
     void Confirm()
     {
         if (showingDetails || !GameFlow.CanLoad(Levels[index])) return;
         showingDetails = true;
+        // Easy is picked to begin with, so START works straight away; Medium or Hard is one click.
+        if (!difficulty.HasValue) difficulty = 0;
         Refresh();
         if (move != null) StopCoroutine(move);
         move = StartCoroutine(ShowDetails());
@@ -299,17 +310,21 @@ public class SongSelectScreen : UIScreen
     void Refresh()
     {
         if (Levels == null || Levels.Length == 0) return;
+        int first = WindowStart;
         for (int i = 0; i < 3; i++)
         {
-            int song = index - 1 + i;
+            int song = first + i;
             bool exists = song >= 0 && song < Levels.Length;
             rowFrames[i].gameObject.SetActive(exists);
             if (!exists) continue;
             GameFlow.Level level = Levels[song];
             rowLabels[i].text = GameFlow.CanLoad(level) ? level.displayName : level.displayName + " (soon)";
+            bool highlighted = song == index;
+            rowFrames[i].GetComponent<PixelButton>().SetStyle(highlighted ? UITheme.ButtonStyle.SolidOrange : UITheme.ButtonStyle.Secondary);
+            rowLabels[i].fontSize = highlighted ? 34f : 26f;
         }
-        upArrow.enabled = index > 0;
-        downArrow.enabled = index < Levels.Length - 1;
+        upArrow.enabled = first > 0;
+        downArrow.enabled = first + 3 < Levels.Length;
 
         GameFlow.Level selected = Levels[index];
         detailTitle.text = selected.displayName;
