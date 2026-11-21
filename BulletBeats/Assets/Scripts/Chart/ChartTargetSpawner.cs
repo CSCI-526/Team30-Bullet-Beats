@@ -95,6 +95,12 @@ public class ChartTargetSpawner : MonoBehaviour
     [Range(0.1f, 1f)] public float turboShrinkTo = 0.35f;
     [Tooltip("Extra sideways stretch for turbo asteroids so they look oval (1 = round).")]
     [Range(1f, 2f)] public float turboWiden = 1.3f;
+    [Tooltip("The first hit on a turbo asteroid counts this many beats before it arrives, so it isn't in your face. 0 = both on arrival.")]
+    [Range(0f, 2f)] public float turboLeadBeats = 1f;
+    [Tooltip("Perfect and Good windows for turbo asteroids, as a multiple of the normal windows.")]
+    [Range(1f, 2f)] public float turboWindowScale = 1.4f;
+    [Tooltip("Turbo asteroids take this many times longer to arrive than normal ones (scripted levels), or move this much slower (random levels).")]
+    [Range(1f, 2f)] public float turboSlow = 1.3f;
     public Color turboColor = new Color(1f, 0.45f, 0.1f);
     int spawnCount;
 
@@ -364,7 +370,10 @@ public class ChartTargetSpawner : MonoBehaviour
         if (bigEveryN > 0 && spawnCount % bigEveryN == 0)
             target.MakeBig(bigScale, bigHitRadius, bigColor);
         else if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
-            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor, turboShrinkTo, turboWiden);
+        {
+            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor, turboShrinkTo, turboWiden, turboLeadBeats, turboWindowScale);
+            target.SlowApproach(turboSlow);
+        }
 
         Spawned?.Invoke(target);
     }
@@ -380,7 +389,7 @@ public class ChartTargetSpawner : MonoBehaviour
         target.shipHitRadius = shipHitRadius;
         target.SetLifetime(cueSeconds, lead, Vector2.zero);
         if (kind == ScriptedKind.Big) target.MakeBig(bigScale, bigHitRadius, bigColor);
-        else if (kind == ScriptedKind.Turbo) target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor, turboShrinkTo, turboWiden);
+        else if (kind == ScriptedKind.Turbo) target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor, turboShrinkTo, turboWiden, turboLeadBeats, turboWindowScale);
         Spawned?.Invoke(target);
         return target;
     }

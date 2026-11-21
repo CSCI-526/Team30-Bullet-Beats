@@ -69,6 +69,9 @@ public class ChartTarget : MonoBehaviour, IShootable
     Vector3 turboSpawnScale, shrinkFrom, shrinkGoal;
     float shrinkT = 1f;
     const float ShrinkSeconds = 0.18f, ShrinkPop = 1.15f;
+    float turboLeadBeats;      // the first hit counts this many beats before arrival
+    float turboWindowScale = 1f; // wider Perfect/Good windows for two-hit asteroids
+    float hitScaleFloor;       // the click area never gets smaller than a normal asteroid
     Color bigWarnColor;
     /// <summary>Keeps a big asteroid solid red instead of pulsing to white (the tutorial uses this).</summary>
     [HideInInspector] public bool steadyWarning;
@@ -184,7 +187,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         center = point;
         radius = 0f;
         if (point.z <= 0f) return false;
-        radius = ScreenPixels(cam, center, baseRadius * transform.lossyScale.x / baseScale);
+        radius = ScreenPixels(cam, center, baseRadius * Mathf.Max(transform.lossyScale.x, hitScaleFloor) / baseScale);
         return true;
     }
 
@@ -271,6 +274,14 @@ public class ChartTarget : MonoBehaviour, IShootable
         hasViewport = true;
     }
 
+    /// <summary>Moves slower over the same flight time by starting closer to its hit point.</summary>
+    public void SlowApproach(float factor)
+    {
+        if (factor <= 1f) return;
+        spawnPoint = Vector3.Lerp(hitPoint, spawnPoint, 1f / factor);
+        transform.position = spawnPoint;
+    }
+
     public void MakeBig(float scale, float hitRadius, Color warnColor)
     {
         isBig = true;
@@ -280,8 +291,12 @@ public class ChartTarget : MonoBehaviour, IShootable
         bigRenderers = GetComponentsInChildren<Renderer>();
     }
     /// <param name="shrinkTo">Size after the last-but-one hit, as a fraction of the spawn size (0.5 = half).</param>
-    public void MakeTurbo(int hits, int heal, float scale, Color tint, float shrinkTo = 0.5f, float widen = 1f)
+    public void MakeTurbo(int hits, int heal, float scale, Color tint, float shrinkTo = 0.5f, float widen = 1f,
+        float leadBeats = 1f, float windowScale = 1.4f)
     {
+        hitScaleFloor = transform.lossyScale.x; // normal asteroid size, before the turbo scale-up
+        turboLeadBeats = Mathf.Max(0f, leadBeats);
+        turboWindowScale = Mathf.Max(1f, windowScale);
         isTurbo = true;
         hitsLeft = hits;
         turboHitsTotal = hits;
@@ -308,12 +323,44 @@ public class ChartTarget : MonoBehaviour, IShootable
     }
 
     float ShowSeconds => Mathf.Min(quarterSeconds * bracketBeats, approachSeconds);
-    float PerfectWindow { get { BeatClock c = BeatClock.Instance; return c != null ? c.perfectWindow : 0.12f; } }
-    float GoodWindow { get { BeatClock c = BeatClock.Instance; return c != null ? c.goodWindow : 0.25f; } }
+    float PerfectWindow { get { BeatClock c = BeatClock.Instance; return (c != null ? c.perfectWindow : 0.12f) * (isTurbo ? turboWindowScale : 1f); } }
+    float GoodWindow { get { BeatClock c = BeatClock.Instance; return (c != null ? c.goodWindow : 0.25f) * (isTurbo ? turboWindowScale : 1f); } }
+
+    /// <summary>
+    /// The beat the next shot is judged against. A two-hit asteroid's earlier hits land
+    /// <see cref="turboLeadBeats"/> beats before arrival (still mid-screen); the last hit lands on arrival.
+    /// </summary>
+    public float JudgeTime
+    {
+        get
+        {
+            if (!isTurbo || hitsLeft <= 1 || turboLeadBeats <= 0f) return hitTime;
+            BeatClock c = BeatClock.Instance;
+            float beat = c != null ? c.SecondsPerBeat : 0.5f;
+            float now = c != null ? c.SongTime : Time.time;
+            // Earliest beat whose window hasn't passed yet; if the player missed the early beat, fall back to arrival.
+            for (int k = hitsLeft - 1; k > 0; k--)
+            {
+                float t = hitTime - turboLeadBeats * beat * k;
+                if (now <= t + GoodWindow) return t;
+            }
+            return hitTime;
+        }
+    }
+
+    /// <summary>Judges a shot fired now against <see cref="JudgeTime"/>, using this asteroid's windows.</summary>
+    public BeatJudgment JudgeShot(float songTime, out float offset)
+    {
+        offset = songTime - JudgeTime;
+        float error = Mathf.Abs(offset);
+        if (error <= PerfectWindow) return BeatJudgment.Perfect;
+        if (error <= GoodWindow) return BeatJudgment.Good;
+        return BeatJudgment.Miss;
+    }
 
     bool RingIsShowing(float songTime, out float untilHit)
     {
-        untilHit = hitTime - songTime;
+        untilHit = JudgeTime - songTime;
         return armed && !isBig && untilHit <= ShowSeconds && untilHit >= -GoodWindow;
     }
 
