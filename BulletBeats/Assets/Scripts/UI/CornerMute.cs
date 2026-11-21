@@ -39,11 +39,22 @@ public class CornerMute : MonoBehaviour
         Refresh();
     }
 
-    void Toggle()
+    void Toggle() => SetMuted(!Muted);
+
+    /// <summary>Sets mute from anywhere (the Settings screen uses this).</summary>
+    public static void SetMuted(bool muted)
     {
-        Muted = !Muted;
+        Muted = muted;
         Apply();
-        Refresh();
+        FindFirstObjectByType<CornerMute>()?.Refresh();
+    }
+
+    // The redesigned menus have Sound in Settings, so the corner button hides while one is open.
+    void Update()
+    {
+        if (button == null) return;
+        bool show = !UIScreen.AnyOpen;
+        if (button.gameObject.activeSelf != show) button.gameObject.SetActive(show);
     }
 
     void Refresh()
