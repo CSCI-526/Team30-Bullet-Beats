@@ -47,13 +47,15 @@ public class AimHUD : MonoBehaviour
     Color judgmentColor;
     float judgmentTimer;
     Vector2 judgmentHome;
+    /// <summary>The rock the label belongs to; it follows the rock until the rock is gone.</summary>
+    ChartTarget judgmentTarget;
 
     // Hit feedback colours: gold Perfect, cyan Good, muted coral Miss.
     static readonly Color PerfectColor = new Color(1f, 0.835f, 0.302f);
     static readonly Color GoodColor = new Color(0.043f, 0.898f, 1f);
     static readonly Color MissColor = new Color(1f, 0.47f, 0.43f);
     /// <summary>Font size at 1080p. Small on purpose: about the height of a rock's bracket arm.</summary>
-    const float JudgmentSize = 13f;
+    const float JudgmentSize = 16f;
     /// <summary>Extra space between letters (in hundredths of an em); the wide spacing is the look.</summary>
     const float JudgmentSpacing = 24f;
     const float PopSeconds = 0.08f, DriftPixels = 10f;
@@ -102,6 +104,9 @@ public class AimHUD : MonoBehaviour
             // Pop in slightly larger, settle, and drift up a little over its life.
             float pop = Mathf.Lerp(1.25f, 1f, Mathf.Clamp01(age / PopSeconds));
             judgment.localScale = new Vector3(pop, pop, 1f);
+            // Stay with the rock while it's still there (a GOOD or MISS rock keeps flying).
+            if (judgmentTarget != null && judgmentTarget.isActiveAndEnabled)
+                judgmentHome = LabelSpot(judgmentTarget, judgmentHome);
             judgment.position = judgmentHome + Vector2.up * (DriftPixels * canvas.scaleFactor * (age / judgmentShowTime));
 
             Color c = judgmentColor;
@@ -169,13 +174,19 @@ public class AimHUD : MonoBehaviour
         judgmentTimer = judgmentShowTime;
         judgment.gameObject.SetActive(true);
 
-        // Just above the asteroid, as before.
-        float scale = canvas.scaleFactor;
-        if (shooter.LastShotTarget.TryGetScreenCircle(shooter.aimCamera, out Vector2 center, out float radius))
-            judgmentHome = center + Vector2.up * (radius + 22f * scale);
-        else
-            judgmentHome = shooter.AimScreenPosition + Vector2.down * (tickGap + TickLength + 30f) * scale;
+        // Just above the asteroid.
+        judgmentTarget = shooter.LastShotTarget;
+        judgmentHome = LabelSpot(judgmentTarget,
+            shooter.AimScreenPosition + Vector2.down * (tickGap + TickLength + 30f) * canvas.scaleFactor);
         judgment.position = judgmentHome;
+    }
+
+    /// <summary>Screen point just above <paramref name="target"/>'s outline, or <paramref name="fallback"/>.</summary>
+    Vector2 LabelSpot(ChartTarget target, Vector2 fallback)
+    {
+        if (target == null || !target.TryGetScreenCircle(shooter.aimCamera, out Vector2 center, out float radius))
+            return fallback;
+        return center + Vector2.up * (radius + 14f * canvas.scaleFactor);
     }
 
     void BuildCanvas()
@@ -211,6 +222,7 @@ public class AimHUD : MonoBehaviour
         judgment = AddGroup("Judgment", canvasObject.transform);
         judgmentLabel = AddText("Result", judgment, UITheme.HitFont, JudgmentSize, 0f);
         judgmentLabel.characterSpacing = JudgmentSpacing;
+        judgmentLabel.fontStyle = FontStyles.Bold; // a touch heavier so the thin letters stay readable
         judgment.gameObject.SetActive(false);
     }
 
@@ -234,7 +246,7 @@ public class AimHUD : MonoBehaviour
     {
         Material material = text.fontMaterial; // per-label copy, so other text keeps its look
         material.EnableKeyword(ShaderUtilities.Keyword_Underlay);
-        material.SetColor(ShaderUtilities.ID_UnderlayColor, new Color(color.r, color.g, color.b, 0.55f));
+        material.SetColor(ShaderUtilities.ID_UnderlayColor, new Color(color.r, color.g, color.b, 0.8f));
         material.SetFloat(ShaderUtilities.ID_UnderlaySoftness, 0.6f);
         material.SetFloat(ShaderUtilities.ID_UnderlayDilate, 0.4f);
         material.SetFloat(ShaderUtilities.ID_UnderlayOffsetX, 0f);
