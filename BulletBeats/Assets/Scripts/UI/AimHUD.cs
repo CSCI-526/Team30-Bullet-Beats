@@ -5,7 +5,8 @@ using UnityEngine.UI;
 /// <summary>
 /// Crosshair that stays exactly on the mouse. Timing is shown by the ring on each chart target, not here.
 /// After each shot at an asteroid it shows PERFECT / GOOD / MISS just above it: small, widely spaced
-/// letters in gold / cyan / coral. A shot at empty space shows nothing. The label is sleek and minimal
+/// letters in gold / cyan / coral, with a small white timing line under it
+/// (on the beat, slightly early/late, too early/late). A shot at empty space shows nothing. The label is sleek and minimal
 /// rather than pixel (gameplay effects are smooth; the menus stay pixel): it pops in with a soft glow
 /// and fades.
 /// Also draws lock-on brackets around
@@ -43,7 +44,7 @@ public class AimHUD : MonoBehaviour
     ChartTarget markedTarget;
     float lockInTimer;
     RectTransform judgment;
-    TextMeshProUGUI judgmentLabel;
+    TextMeshProUGUI judgmentLabel, judgmentDetail;
     Color judgmentColor;
     float judgmentTimer;
 
@@ -55,6 +56,8 @@ public class AimHUD : MonoBehaviour
     const float JudgmentSize = 16f;
     /// <summary>Extra space between letters (in hundredths of an em); the wide spacing is the look.</summary>
     const float JudgmentSpacing = 24f;
+    /// <summary>The timing line under it (on the beat / slightly early / too late): smaller and white.</summary>
+    const float DetailSize = 11f, DetailSpacing = 8f;
     const float PopSeconds = 0.08f;
 
     [Tooltip("Draw the white lock-on brackets here. Off: the timing brackets on the asteroid show the lock instead.")]
@@ -105,6 +108,7 @@ public class AimHUD : MonoBehaviour
             Color c = judgmentColor;
             c.a = alpha;
             judgmentLabel.color = c;
+            judgmentDetail.color = new Color(1f, 1f, 1f, alpha * 0.85f);
         }
         else if (judgment.gameObject.activeSelf)
         {
@@ -156,6 +160,7 @@ public class AimHUD : MonoBehaviour
         if (shooter.LastShotTarget == null) return;
 
         judgmentLabel.text = result.ToString().ToUpperInvariant();
+        judgmentDetail.text = Detail(result, shooter.LastShotOffset);
         judgmentColor = result switch
         {
             BeatJudgment.Perfect => PerfectColor,
@@ -209,7 +214,17 @@ public class AimHUD : MonoBehaviour
         judgmentLabel = AddText("Result", judgment, UITheme.HitFont, JudgmentSize, 0f);
         judgmentLabel.characterSpacing = JudgmentSpacing;
         judgmentLabel.fontStyle = FontStyles.Bold; // a touch heavier so the thin letters stay readable
+        judgmentDetail = AddText("Detail", judgment, UITheme.HitFont, DetailSize, -20f);
+        judgmentDetail.characterSpacing = DetailSpacing;
         judgment.gameObject.SetActive(false);
+    }
+
+    static string Detail(BeatJudgment result, float offset)
+    {
+        if (result == BeatJudgment.Perfect) return "on the beat";
+        bool early = offset < 0f;
+        if (result == BeatJudgment.Good) return early ? "slightly early" : "slightly late";
+        return early ? "too early" : "too late";
     }
 
     static TextMeshProUGUI AddText(string name, Transform parent, TMP_FontAsset font, float size, float y)
