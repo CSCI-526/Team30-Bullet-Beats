@@ -6,8 +6,8 @@ using UnityEngine.UI;
 /// Crosshair that stays exactly on the mouse. Timing is shown by the ring on each chart target, not here.
 /// After each shot at an asteroid it shows PERFECT / GOOD / MISS just above it: small, widely spaced
 /// letters in gold / cyan / coral. A shot at empty space shows nothing. The label is sleek and minimal
-/// rather than pixel (gameplay effects are smooth; the menus stay pixel): it pops in with a soft glow,
-/// drifts up a little and fades.
+/// rather than pixel (gameplay effects are smooth; the menus stay pixel): it pops in with a soft glow
+/// and fades.
 /// Also draws lock-on brackets around
 /// the rock the next shot goes to when aim assist has locked one (<see cref="PlayerShooter.LockedTarget"/>).
 /// Builds its own overlay canvas, so it needs no scene setup.
@@ -46,9 +46,6 @@ public class AimHUD : MonoBehaviour
     TextMeshProUGUI judgmentLabel;
     Color judgmentColor;
     float judgmentTimer;
-    Vector2 judgmentHome;
-    /// <summary>The rock the label belongs to; it follows the rock until the rock is gone.</summary>
-    ChartTarget judgmentTarget;
 
     // Hit feedback colours: gold Perfect, cyan Good, muted coral Miss.
     static readonly Color PerfectColor = new Color(1f, 0.835f, 0.302f);
@@ -58,7 +55,7 @@ public class AimHUD : MonoBehaviour
     const float JudgmentSize = 16f;
     /// <summary>Extra space between letters (in hundredths of an em); the wide spacing is the look.</summary>
     const float JudgmentSpacing = 24f;
-    const float PopSeconds = 0.08f, DriftPixels = 10f;
+    const float PopSeconds = 0.08f;
 
     [Tooltip("Draw the white lock-on brackets here. Off: the timing brackets on the asteroid show the lock instead.")]
     public bool showLockBrackets = false;
@@ -101,13 +98,9 @@ public class AimHUD : MonoBehaviour
             float age = judgmentShowTime - judgmentTimer;
             float alpha = Mathf.Clamp01(judgmentTimer / (judgmentShowTime * 0.5f));
 
-            // Pop in slightly larger, settle, and drift up a little over its life.
+            // Pop in slightly larger, then settle. Where it sits is unchanged from before.
             float pop = Mathf.Lerp(1.25f, 1f, Mathf.Clamp01(age / PopSeconds));
             judgment.localScale = new Vector3(pop, pop, 1f);
-            // Stay with the rock while it's still there (a GOOD or MISS rock keeps flying).
-            if (judgmentTarget != null && judgmentTarget.isActiveAndEnabled)
-                judgmentHome = LabelSpot(judgmentTarget, judgmentHome);
-            judgment.position = judgmentHome + Vector2.up * (DriftPixels * canvas.scaleFactor * (age / judgmentShowTime));
 
             Color c = judgmentColor;
             c.a = alpha;
@@ -174,19 +167,12 @@ public class AimHUD : MonoBehaviour
         judgmentTimer = judgmentShowTime;
         judgment.gameObject.SetActive(true);
 
-        // Just above the asteroid.
-        judgmentTarget = shooter.LastShotTarget;
-        judgmentHome = LabelSpot(judgmentTarget,
-            shooter.AimScreenPosition + Vector2.down * (tickGap + TickLength + 30f) * canvas.scaleFactor);
-        judgment.position = judgmentHome;
-    }
-
-    /// <summary>Screen point just above <paramref name="target"/>'s outline, or <paramref name="fallback"/>.</summary>
-    Vector2 LabelSpot(ChartTarget target, Vector2 fallback)
-    {
-        if (target == null || !target.TryGetScreenCircle(shooter.aimCamera, out Vector2 center, out float radius))
-            return fallback;
-        return center + Vector2.up * (radius + 14f * canvas.scaleFactor);
+        // Next to the asteroid, just above it (same placement as before; only the look changed).
+        float scale = canvas.scaleFactor;
+        if (shooter.LastShotTarget.TryGetScreenCircle(shooter.aimCamera, out Vector2 center, out float radius))
+            judgment.position = center + Vector2.up * (radius + 34f * scale);
+        else
+            judgment.position = shooter.AimScreenPosition + Vector2.down * (tickGap + TickLength + 30f) * scale;
     }
 
     void BuildCanvas()
