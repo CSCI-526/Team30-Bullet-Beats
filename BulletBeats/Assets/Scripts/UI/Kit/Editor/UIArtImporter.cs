@@ -3,7 +3,8 @@ using UnityEngine;
 
 /// <summary>
 /// Import rules for the menu art in Resources/UI/Art, so a replacement PNG dropped in with the
-/// same name is set up the same way: a single sprite, no mipmaps, full quality. Button frames
+/// same name is set up the same way: a single sprite, no mipmaps, full quality. Pixel-art icons
+/// (heart_*) use point filtering so they stay sharp. Button frames
 /// (btn_*) get 9-slice borders so they stretch to any width without blurring their corners.
 /// </summary>
 class UIArtImporter : AssetPostprocessor
@@ -22,7 +23,9 @@ class UIArtImporter : AssetPostprocessor
         importer.spriteImportMode = SpriteImportMode.Single;
         importer.mipmapEnabled = false;
         importer.alphaIsTransparency = true;
-        importer.filterMode = FilterMode.Bilinear;
+        // Small pixel-art icons (heart_*) stay crisp; the large menu art is smoothed.
+        string name = System.IO.Path.GetFileName(assetPath);
+        importer.filterMode = name.StartsWith("heart_") ? FilterMode.Point : FilterMode.Bilinear;
         importer.wrapMode = TextureWrapMode.Clamp;
         importer.maxTextureSize = 2048;
         importer.textureCompression = TextureImporterCompression.Uncompressed;
