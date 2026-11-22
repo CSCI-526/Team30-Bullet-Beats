@@ -49,14 +49,18 @@ public static class UITheme
     // Fonts in Resources/UI/Fonts.
     const string DisplayFontFile = "Silkscreen-Bold";
     const string BodyFontFile = "PixelifySans";
+    // Gameplay effects are smooth and futuristic rather than pixel (the menus stay pixel).
+    const string HitFontFile = "Michroma-Regular";
 
-    static TMP_FontAsset displayFont, bodyFont;
+    static TMP_FontAsset displayFont, bodyFont, hitFont;
     static readonly Dictionary<string, Sprite> sprites = new Dictionary<string, Sprite>();
 
     /// <summary>Chunky pixel font for titles, buttons and big labels.</summary>
     public static TMP_FontAsset DisplayFont => displayFont != null ? displayFont : displayFont = LoadFont(DisplayFontFile);
     /// <summary>Readable pixel font for small text.</summary>
     public static TMP_FontAsset BodyFont => bodyFont != null ? bodyFont : bodyFont = LoadFont(BodyFontFile);
+    /// <summary>Small, wide, futuristic font for in-game hit feedback (PERFECT / GOOD / MISS).</summary>
+    public static TMP_FontAsset HitFont => hitFont != null ? hitFont : hitFont = LoadFont(HitFontFile);
 
     /// <summary>A sprite from Resources/UI/Art, or null (with a warning) if the file is missing.</summary>
     public static Sprite Art(string name)
