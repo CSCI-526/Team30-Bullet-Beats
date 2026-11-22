@@ -14,6 +14,8 @@ public class PlayerBullet : MonoBehaviour
 
     public int Damage { get; private set; } = 1;
     public BeatJudgment Judgment { get; private set; } = BeatJudgment.Good;
+    /// <summary>The judgment colour this bullet was launched with (used by <see cref="BulletVFX"/>).</summary>
+    public Color TintColor { get; private set; } = Color.white;
 
     static readonly RaycastHit[] hits = new RaycastHit[16];
 
@@ -31,6 +33,7 @@ public class PlayerBullet : MonoBehaviour
         this.velocity = velocity;
         Damage = damage;
         Judgment = judgment;
+        TintColor = color;
         if (velocity != Vector3.zero) transform.rotation = Quaternion.LookRotation(velocity);
 
         var block = new MaterialPropertyBlock();
