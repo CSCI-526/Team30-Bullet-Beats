@@ -162,6 +162,7 @@ public class GameFlow : MonoBehaviour
         if (Instance != null && Instance != this)
             Debug.LogWarning("More than one GameFlow in the scene; using the newest one.", this);
         Instance = this;
+        if (GetComponent<SongProgressBar>() == null) gameObject.AddComponent<SongProgressBar>();
 
         LevelCatalog catalog = Resources.Load<LevelCatalog>("LevelCatalog");
         if (catalog != null && catalog.levels != null && catalog.levels.Length > 0)
