@@ -35,6 +35,9 @@ public class GameMenus : MonoBehaviour
     readonly Image[] endStars = new Image[3];
     Button endNext, endLevelSelect;
     static Sprite starSprite;
+    MainMenuScreen mainMenu;
+    SongSelectScreen songSelect;
+    ResultCard resultCard;
 
     void Awake()
     {
@@ -42,6 +45,10 @@ public class GameMenus : MonoBehaviour
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         EnsureEventSystem();
         BuildCanvas();
+        mainMenu = gameObject.AddComponent<MainMenuScreen>();
+        gameObject.AddComponent<SettingsScreen>();
+        songSelect = gameObject.AddComponent<SongSelectScreen>();
+        resultCard = gameObject.AddComponent<ResultCard>();
         Show(flow.State);
     }
 
@@ -55,23 +62,28 @@ public class GameMenus : MonoBehaviour
 
     void Show(GameState state)
     {
-        canvasObject.SetActive(state != GameState.Playing);
-        titlePanel.SetActive(state == GameState.Title);
-        levelPanel.SetActive(state == GameState.LevelSelect);
+        bool newScreen = state == GameState.Title || state == GameState.LevelSelect || state == GameState.Ended;
+        canvasObject.SetActive(state != GameState.Playing && !newScreen);
+        titlePanel.SetActive(false);
+        // Song select is SongSelectScreen now; the old list stays hidden until the cleanup PR.
+        levelPanel.SetActive(false);
+        if (state == GameState.Title) mainMenu.Open(); else mainMenu.Close();
+        if (state == GameState.LevelSelect) songSelect.Open(); else songSelect.Close();
+        // The end screen is ResultCard now; the old panel stays hidden until the cleanup PR.
+        endPanel.SetActive(false);
+        if (state == GameState.Ended) resultCard.Open(); else resultCard.Close();
+        if (!newScreen) GetComponent<SettingsScreen>()?.Close();
         difficultyPanel.SetActive(false);
-        endPanel.SetActive(state == GameState.Ended);
-
-        if (state == GameState.Ended) FillEndScreen();
 
         Button first = state switch
         {
-            GameState.Title => titleFirst,
+            GameState.Title => null,
             GameState.LevelSelect => levelFirst,
             GameState.Ended => endFirst,
             _ => null
         };
         // Select a button so the menus also work with the keyboard (arrows + Enter).
-        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(first != null ? first.gameObject : null);
+        if (EventSystem.current != null && !newScreen) EventSystem.current.SetSelectedGameObject(first != null ? first.gameObject : null);
     }
 
     void FillEndScreen()
@@ -194,7 +206,8 @@ public class GameMenus : MonoBehaviour
         Stretch(backdrop.rectTransform, canvasObject.transform);
         backdrop.color = backdropColor;
 
-        BuildTitlePanel();
+        // The title screen is MainMenuScreen now; the old panel stays empty until the cleanup PR.
+        titlePanel = NewPanel("Title");
         BuildLevelPanel();
         BuildDifficultyPanel();
         BuildEndPanel();
