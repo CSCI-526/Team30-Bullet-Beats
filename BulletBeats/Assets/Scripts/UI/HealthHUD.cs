@@ -22,11 +22,11 @@ public class HealthHUD : MonoBehaviour
     public float lostFlashTime = 0.6f;
 
     // 60 = 3 canvas units per art pixel (20-cell grid incl. glow), so the pixels stay even. The negative gap overlaps
-    // the soft glows so the hearts themselves sit close together.
-    const float PipWidth = 60f;
-    const float PipHeight = 60f;
-    const float PipGap = -9f;
-    const float Margin = 32f;
+    // the soft glows so the hearts themselves sit close together. Public so the tutorial's lives frame matches.
+    public const float PipWidth = 60f;
+    public const float PipHeight = 60f;
+    public const float PipGap = -9f;
+    public const float Margin = 32f;
 
     PlayerHealth health;
     ShipDamageFlash shipColor;

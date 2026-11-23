@@ -18,8 +18,11 @@ public class LevelClock : MonoBehaviour
     [Tooltip("Seconds left when the clock starts warning.")]
     public float warningSeconds = 5f;
 
-    const float Margin = 28f;
-    const int FontSize = 56;
+    /// <summary>Layout at 1080p, public so the tutorial's clock sample matches: this far in from the right
+    /// edge, and this far down from the top, just under the SOUND ON button so the button doesn't cover it.</summary>
+    public const float Margin = 28f;
+    public const float Top = CornerMute.ButtonMargin + CornerMute.ButtonHeight + 10f;
+    public const int FontSize = 56;
     const float PulseScale = 1.2f;
     const float PulseSeconds = 0.25f;
 
@@ -106,7 +109,7 @@ public class LevelClock : MonoBehaviour
         RectTransform rect = label.rectTransform;
         rect.SetParent(canvasObject.transform, false);
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
-        rect.anchoredPosition = new Vector2(-Margin, -Margin);
+        rect.anchoredPosition = new Vector2(-Margin, -Top);
         rect.sizeDelta = new Vector2(220f, FontSize * 1.3f);
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.fontSize = FontSize;

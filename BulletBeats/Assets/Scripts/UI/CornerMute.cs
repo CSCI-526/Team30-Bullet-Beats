@@ -9,6 +9,10 @@ public class CornerMute : MonoBehaviour
 {
     public static bool Muted { get; private set; }
 
+    /// <summary>Button layout at 1080p: this far in from the top-right corner, and this size.
+    /// Public so <see cref="LevelClock"/> can sit just under it.</summary>
+    public const float ButtonMargin = 28f, ButtonWidth = 220f, ButtonHeight = 56f;
+
     Button button;
     Text label;
     RectTransform buttonRect;
@@ -81,8 +85,8 @@ public class CornerMute : MonoBehaviour
         buttonRect.SetParent(canvasObject.transform, false);
         buttonRect.anchorMin = buttonRect.anchorMax = new Vector2(1f, 1f);
         buttonRect.pivot = new Vector2(1f, 1f);
-        buttonRect.sizeDelta = new Vector2(220f, 56f);
-        buttonRect.anchoredPosition = new Vector2(-28f, -28f);
+        buttonRect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+        buttonRect.anchoredPosition = new Vector2(-ButtonMargin, -ButtonMargin);
         image.color = Color.white;
 
         var outline = image.GetComponent<Outline>();
