@@ -155,7 +155,7 @@ public class ScriptedLevel : MonoBehaviour
             {
                 // Heads for wherever the ship is when its warning starts, keeping its current position.
                 f.turned = true;
-                float done = Mathf.Clamp(1f - (f.target.hitTime - now) / Chart.flyIn, 0f, 0.95f);
+                float done = Mathf.Clamp(1f - (f.target.hitTime - now) / f.target.ApproachSeconds, 0f, 0.95f);
                 f.target.hitPoint = ship.transform.position;
                 f.target.spawnPoint = (f.target.transform.position - done * f.target.hitPoint) / (1f - done);
             }

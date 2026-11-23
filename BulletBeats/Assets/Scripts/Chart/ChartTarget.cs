@@ -81,6 +81,8 @@ public class ChartTarget : MonoBehaviour, IShootable
     public bool IsBig => isBig;
     /// <summary>Shots still needed to break it (turbo asteroids start with more than one).</summary>
     public int HitsLeft => hitsLeft;
+    /// <summary>Seconds this asteroid takes to fly from its spawn point to its hit point.</summary>
+    public float ApproachSeconds => approachSeconds;
 
     /// <summary>How an asteroid's life ended. Each asteroid ends exactly one way.</summary>
     public enum Outcome { Perfect, Good, Dodged, Shielded, Bombed, Hit }
