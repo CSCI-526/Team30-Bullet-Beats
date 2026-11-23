@@ -1,10 +1,14 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
 /// Crosshair that stays exactly on the mouse. Timing is shown by the ring on each chart target, not here.
-/// After each shot at an asteroid it shows PERFECT / GOOD / MISS next to it, with a small line under it:
-/// on the beat, slightly early/late, too early/late. A shot at empty space shows nothing.
+/// After each shot at an asteroid it shows PERFECT / GOOD / MISS just above it: small, widely spaced
+/// letters in gold / cyan / coral, with a small white timing line under it
+/// (on the beat, slightly early/late, too early/late). A shot at empty space shows nothing. The label is sleek and minimal
+/// rather than pixel (gameplay effects are smooth; the menus stay pixel): it pops in with a soft glow
+/// and fades.
 /// Also draws lock-on brackets around
 /// the rock the next shot goes to when aim assist has locked one (<see cref="PlayerShooter.LockedTarget"/>).
 /// Builds its own overlay canvas, so it needs no scene setup.
@@ -40,9 +44,21 @@ public class AimHUD : MonoBehaviour
     ChartTarget markedTarget;
     float lockInTimer;
     RectTransform judgment;
-    Text judgmentLabel, judgmentDetail;
+    TextMeshProUGUI judgmentLabel, judgmentDetail;
     Color judgmentColor;
     float judgmentTimer;
+
+    // Hit feedback colours: gold Perfect, cyan Good, muted coral Miss.
+    static readonly Color PerfectColor = new Color(1f, 0.835f, 0.302f);
+    static readonly Color GoodColor = new Color(0.043f, 0.898f, 1f);
+    static readonly Color MissColor = new Color(1f, 0.47f, 0.43f);
+    /// <summary>Font size at 1080p. Small on purpose: about the height of a rock's bracket arm.</summary>
+    const float JudgmentSize = 16f;
+    /// <summary>Extra space between letters (in hundredths of an em); the wide spacing is the look.</summary>
+    const float JudgmentSpacing = 24f;
+    /// <summary>The timing line under it (on the beat / slightly early / too late): smaller and white.</summary>
+    const float DetailSize = 11f, DetailSpacing = 8f;
+    const float PopSeconds = 0.08f;
 
     [Tooltip("Draw the white lock-on brackets here. Off: the timing brackets on the asteroid show the lock instead.")]
     public bool showLockBrackets = false;
@@ -82,10 +98,21 @@ public class AimHUD : MonoBehaviour
         if (judgmentTimer > 0f)
         {
             judgmentTimer -= Time.deltaTime;
+            float age = judgmentShowTime - judgmentTimer;
+            float alpha = Mathf.Clamp01(judgmentTimer / (judgmentShowTime * 0.5f));
+
+            // Pop in slightly larger, then settle. Where it sits is unchanged from before.
+            float pop = Mathf.Lerp(1.25f, 1f, Mathf.Clamp01(age / PopSeconds));
+            judgment.localScale = new Vector3(pop, pop, 1f);
+
             Color c = judgmentColor;
-            c.a = Mathf.Clamp01(judgmentTimer / (judgmentShowTime * 0.5f));
+            c.a = alpha;
             judgmentLabel.color = c;
-            judgmentDetail.color = new Color(1f, 1f, 1f, c.a * 0.85f);
+            judgmentDetail.color = new Color(1f, 1f, 1f, alpha * 0.85f);
+        }
+        else if (judgment.gameObject.activeSelf)
+        {
+            judgment.gameObject.SetActive(false);
         }
 
         UpdateLockMarker();
@@ -134,24 +161,23 @@ public class AimHUD : MonoBehaviour
 
         judgmentLabel.text = result.ToString().ToUpperInvariant();
         judgmentDetail.text = Detail(result, shooter.LastShotOffset);
-        judgmentColor = shooter.ColorFor(result);
+        judgmentColor = result switch
+        {
+            BeatJudgment.Perfect => PerfectColor,
+            BeatJudgment.Good => GoodColor,
+            _ => MissColor
+        };
         judgmentLabel.color = judgmentColor;
+        SetGlow(judgmentLabel, judgmentColor);
         judgmentTimer = judgmentShowTime;
+        judgment.gameObject.SetActive(true);
 
-        // Next to the asteroid, just above it.
+        // Next to the asteroid, just above it (same placement as before; only the look changed).
         float scale = canvas.scaleFactor;
         if (shooter.LastShotTarget.TryGetScreenCircle(shooter.aimCamera, out Vector2 center, out float radius))
             judgment.position = center + Vector2.up * (radius + 34f * scale);
         else
             judgment.position = shooter.AimScreenPosition + Vector2.down * (tickGap + TickLength + 30f) * scale;
-    }
-
-    static string Detail(BeatJudgment result, float offset)
-    {
-        if (result == BeatJudgment.Perfect) return "on the beat";
-        bool early = offset < 0f;
-        if (result == BeatJudgment.Good) return early ? "slightly early" : "slightly late";
-        return early ? "too early" : "too late";
     }
 
     void BuildCanvas()
@@ -185,23 +211,47 @@ public class AimHUD : MonoBehaviour
         }
 
         judgment = AddGroup("Judgment", canvasObject.transform);
-        judgmentLabel = AddText("Result", judgment, 28, FontStyle.Bold, 0f);
-        judgmentDetail = AddText("Detail", judgment, 18, FontStyle.Normal, -24f);
+        judgmentLabel = AddText("Result", judgment, UITheme.HitFont, JudgmentSize, 0f);
+        judgmentLabel.characterSpacing = JudgmentSpacing;
+        judgmentLabel.fontStyle = FontStyles.Bold; // a touch heavier so the thin letters stay readable
+        judgmentDetail = AddText("Detail", judgment, UITheme.HitFont, DetailSize, -20f);
+        judgmentDetail.characterSpacing = DetailSpacing;
+        judgment.gameObject.SetActive(false);
     }
 
-    static Text AddText(string name, Transform parent, int size, FontStyle style, float y)
+    static string Detail(BeatJudgment result, float offset)
     {
-        var text = new GameObject(name, typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
+        if (result == BeatJudgment.Perfect) return "on the beat";
+        bool early = offset < 0f;
+        if (result == BeatJudgment.Good) return early ? "slightly early" : "slightly late";
+        return early ? "too early" : "too late";
+    }
+
+    static TextMeshProUGUI AddText(string name, Transform parent, TMP_FontAsset font, float size, float y)
+    {
+        var text = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI)).GetComponent<TextMeshProUGUI>();
         text.rectTransform.SetParent(parent, false);
-        text.rectTransform.sizeDelta = new Vector2(300f, size * 1.4f);
+        text.rectTransform.sizeDelta = new Vector2(400f, size * 1.4f);
         text.rectTransform.anchoredPosition = new Vector2(0f, y);
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.font = font;
         text.fontSize = size;
-        text.fontStyle = style;
-        text.alignment = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignmentOptions.Center;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
         text.raycastTarget = false;
         text.text = "";
         return text;
+    }
+
+    /// <summary>Soft glow in the label's own colour (a blurred copy drawn behind it), not a hard outline.</summary>
+    static void SetGlow(TextMeshProUGUI text, Color color)
+    {
+        Material material = text.fontMaterial; // per-label copy, so other text keeps its look
+        material.EnableKeyword(ShaderUtilities.Keyword_Underlay);
+        material.SetColor(ShaderUtilities.ID_UnderlayColor, new Color(color.r, color.g, color.b, 0.8f));
+        material.SetFloat(ShaderUtilities.ID_UnderlaySoftness, 0.6f);
+        material.SetFloat(ShaderUtilities.ID_UnderlayDilate, 0.4f);
+        material.SetFloat(ShaderUtilities.ID_UnderlayOffsetX, 0f);
+        material.SetFloat(ShaderUtilities.ID_UnderlayOffsetY, 0f);
     }
 
     static RectTransform AddGroup(string name, Transform parent)
