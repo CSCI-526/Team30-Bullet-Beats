@@ -29,7 +29,7 @@ public class PlayerMovement : MonoBehaviour
 
     [Header("Size")]
     [Tooltip("Ship size relative to the prefab. The asteroids' hit radius around the ship shrinks with it.")]
-    [Range(0.3f, 1f)] public float shipScale = 0.7f;
+    [Range(0.3f, 1f)] public float shipScale = 0.55f;
     [Tooltip("At A and D the whole ship stays this far inside the screen edge (share of the screen width). On narrow screens A and D move in.")]
     [Range(0f, 0.2f)] public float screenMargin = 0.02f;
 
