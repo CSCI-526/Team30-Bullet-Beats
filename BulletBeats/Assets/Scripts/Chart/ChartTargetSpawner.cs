@@ -93,7 +93,18 @@ public class ChartTargetSpawner : MonoBehaviour
     [Min(2)] public int turboHits = 2;
     [Tooltip("Life gained when a turbo asteroid is destroyed.")]
     [Min(1)] public int turboHeal = 2;
-    public float turboScale = 1.5f;
+    [Tooltip("Spawn size of a turbo (two-hit) asteroid compared with a normal one. Bigger so it reads as tougher.")]
+    public float turboScale = 2.1f;
+    [Tooltip("Size after the first hit, as a fraction of its spawn size (0.5 = half). The last hit destroys it.")]
+    [Range(0.1f, 1f)] public float turboShrinkTo = 0.35f;
+    [Tooltip("Extra sideways stretch for turbo asteroids so they look oval (1 = round).")]
+    [Range(1f, 2f)] public float turboWiden = 1.3f;
+    [Tooltip("The first hit on a turbo asteroid counts on the beat nearest this many seconds after it appears, so you can hit it early. 0 = both on arrival.")]
+    [Range(0f, 3f)] public float turboFirstHitDelay = 1f;
+    [Tooltip("Perfect and Good windows for turbo asteroids, as a multiple of the normal windows.")]
+    [Range(1f, 2f)] public float turboWindowScale = 1.4f;
+    [Tooltip("Turbo asteroids take this many times longer to arrive than normal ones (scripted levels), or move this much slower (random levels).")]
+    [Range(1f, 2f)] public float turboSlow = 1.3f;
     public Color turboColor = new Color(1f, 0.45f, 0.1f);
     int spawnCount;
 
@@ -458,7 +469,10 @@ public class ChartTargetSpawner : MonoBehaviour
         if (bigEveryN > 0 && spawnCount % bigEveryN == 0)
             target.MakeBig(bigScale, bigHitRadius, bigColor);
         else if(turboEveryN > 0 && spawnCount % turboEveryN == 0)
-            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+        {
+            target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor, turboShrinkTo, turboWiden, turboFirstHitDelay, turboWindowScale);
+            target.SlowApproach(turboSlow);
+        }
 
         Spawned?.Invoke(target);
     }
@@ -503,7 +517,7 @@ public class ChartTargetSpawner : MonoBehaviour
         target.shipHitRadius = shipHitRadius;
         target.SetLifetime(cueSeconds, lead, Vector2.zero);
         if (kind == ScriptedKind.Big) target.MakeBig(bigScale, bigHitRadius, bigColor);
-        else if (kind == ScriptedKind.Turbo) target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor);
+        else if (kind == ScriptedKind.Turbo) target.MakeTurbo(turboHits, turboHeal, turboScale, turboColor, turboShrinkTo, turboWiden, turboFirstHitDelay, turboWindowScale);
         Spawned?.Invoke(target);
         return target;
     }
