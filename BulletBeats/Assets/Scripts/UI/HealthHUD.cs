@@ -49,6 +49,7 @@ public class HealthHUD : MonoBehaviour
         fullHeart = UITheme.Art("heart_full");
         emptyHeart = UITheme.Art("heart_empty");
         BuildCanvas();
+        if (GetComponent<ScoreHUD>() == null) gameObject.AddComponent<ScoreHUD>();
     }
 
     void OnEnable()
@@ -226,7 +227,7 @@ public class HealthHUD : MonoBehaviour
         corner = new GameObject("Corner", typeof(RectTransform)).GetComponent<RectTransform>();
         corner.SetParent(canvasObject.transform, false);
         corner.anchorMin = corner.anchorMax = corner.pivot = new Vector2(0f, 1f);
-        corner.anchoredPosition = new Vector2(Margin, -Margin);
+        corner.anchoredPosition = new Vector2(Margin, -(Margin + ScoreHUD.ShownHeight + 6f)); // under the score card
         corner.sizeDelta = Vector2.zero;
 
         for (int i = 0; i < health.maxHealth; i++)
