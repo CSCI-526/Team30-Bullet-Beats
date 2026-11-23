@@ -832,15 +832,16 @@ public class Tutorial : MonoBehaviour
     /// <summary>A frame around the lives in the top left (same layout as <see cref="HealthHUD"/>).</summary>
     void BuildLivesHighlight()
     {
-        // HealthHUD: hearts 42 wide with a 6 gap, 38 tall, 32 in from the top-left corner, same canvas scaling.
+        // Read from HealthHUD's layout so the frame always fits the hearts (same canvas scaling).
         const float pad = 14f, thickness = 7f;
         int hearts = health != null ? health.maxHealth : 5;
-        Vector2 size = new Vector2(hearts * 48f - 6f + pad * 2f, 38f + pad * 2f);
+        float heartsWidth = hearts * HealthHUD.PipWidth + (hearts - 1) * HealthHUD.PipGap;
+        Vector2 size = new Vector2(heartsWidth + pad * 2f, HealthHUD.PipHeight + pad * 2f);
 
         var root = new GameObject("LivesHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
         root.SetParent(canvasObject.transform, false);
         root.anchorMin = root.anchorMax = root.pivot = new Vector2(0f, 1f);
-        root.anchoredPosition = new Vector2(32f - pad, -32f + pad);
+        root.anchoredPosition = new Vector2(HealthHUD.Margin - pad, -HealthHUD.Margin + pad);
         root.sizeDelta = size;
         livesHighlight = root.gameObject;
 
@@ -867,11 +868,11 @@ public class Tutorial : MonoBehaviour
     /// <summary>The game's clock is hidden in the tutorial, so show a sample where it sits in a level, with a frame.</summary>
     void BuildClockSample()
     {
-        // LevelClock: 56 pt bold, 28 in from the top-right corner.
-        clockSample = AddText(canvasObject.transform, 56, FontStyle.Bold, Vector2.zero);
+        // Same spot and size as LevelClock: under the SOUND ON button in the top-right corner.
+        clockSample = AddText(canvasObject.transform, LevelClock.FontSize, FontStyle.Bold, Vector2.zero);
         RectTransform rect = clockSample.rectTransform;
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
-        rect.anchoredPosition = new Vector2(-28f, -28f);
+        rect.anchoredPosition = new Vector2(-LevelClock.Margin, -LevelClock.Top);
         rect.sizeDelta = new Vector2(220f, 73f);
         clockSample.alignment = TextAnchor.UpperRight;
         clockSample.text = "1:30";
@@ -882,7 +883,7 @@ public class Tutorial : MonoBehaviour
         var root = new GameObject("TimeHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
         root.SetParent(canvasObject.transform, false);
         root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 1f);
-        root.anchoredPosition = new Vector2(-28f + pad, -28f + pad);
+        root.anchoredPosition = new Vector2(-LevelClock.Margin + pad, -LevelClock.Top + pad);
         root.sizeDelta = new Vector2(170f + pad * 2f, 66f + pad * 2f);
         var parts = new List<Graphic>();
         void Bar(Vector2 min, Vector2 max, Vector2 sizeDelta)
