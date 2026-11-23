@@ -2,8 +2,8 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Health hearts in the top-left corner and the current streak under them. Full pips take the ship's
-/// health colour (<see cref="ShipDamageFlash.ColorFor"/>). A pip that was just lost flashes red before going empty.
+/// Health hearts in the top-left corner and the current streak under them. Hearts use the pixel art in
+/// Resources/UI/Art (heart_full / heart_empty). A heart that was just lost fades from full to empty.
 /// An extra pip after the health shows the <see cref="BasicShield"/>.
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
@@ -21,9 +21,11 @@ public class HealthHUD : MonoBehaviour
     [Tooltip("Seconds a lost pip flashes red before going empty.")]
     public float lostFlashTime = 0.6f;
 
-    const float PipWidth = 42f;
-    const float PipHeight = 38f;
-    const float PipGap = 6f;
+    // 60 = 3 canvas units per art pixel (20-cell grid incl. glow), so the pixels stay even. The negative gap overlaps
+    // the soft glows so the hearts themselves sit close together.
+    const float PipWidth = 60f;
+    const float PipHeight = 60f;
+    const float PipGap = -9f;
     const float Margin = 32f;
 
     PlayerHealth health;
@@ -32,6 +34,7 @@ public class HealthHUD : MonoBehaviour
     GameObject canvasObject;
     RectTransform corner;
     static Sprite heart;
+    Sprite fullHeart, emptyHeart;
     readonly System.Collections.Generic.List<Image> pips = new System.Collections.Generic.List<Image>();
     Image shieldPip;
     Text streakLabel;
@@ -43,6 +46,8 @@ public class HealthHUD : MonoBehaviour
     {
         health = GetComponent<PlayerHealth>();
         basicShield = GetComponent<BasicShield>();
+        fullHeart = UITheme.Art("heart_full");
+        emptyHeart = UITheme.Art("heart_empty");
         BuildCanvas();
     }
 
@@ -122,11 +127,32 @@ public class HealthHUD : MonoBehaviour
             AddPip();
         float lost = lostFlashTime > 0f ? Mathf.Clamp01(lostFlashTimer / lostFlashTime) : 0f;
         Color justLost = Color.Lerp(emptyColor, lostColor, lost);
+        bool art = fullHeart != null && emptyHeart != null;
         for (int i = 0; i < pips.Count; i++)
         {
-            if (i < health.Health) pips[i].color = full;
-            else if (lost > 0f && i >= lostFrom && i < lostTo) pips[i].color = justLost;
-            else pips[i].color = emptyColor;
+            Image pip = pips[i];
+            if (!art)
+            {
+                if (i < health.Health) pip.color = full;
+                else if (lost > 0f && i >= lostFrom && i < lostTo) pip.color = justLost;
+                else pip.color = emptyColor;
+                continue;
+            }
+            if (i < health.Health)
+            {
+                pip.sprite = fullHeart;
+                pip.color = Color.Lerp(Color.white, new Color(1.6f, 1.6f, 1.6f), glow); // brief brighten on heal
+            }
+            else if (lost > 0f && i >= lostFrom && i < lostTo)
+            {
+                pip.sprite = lost > 0.5f ? fullHeart : emptyHeart; // just lost: full, then empty
+                pip.color = Color.white;
+            }
+            else
+            {
+                pip.sprite = emptyHeart;
+                pip.color = Color.white;
+            }
         }
 
         bool shielded = basicShield != null && basicShield.Active;
@@ -145,7 +171,7 @@ public class HealthHUD : MonoBehaviour
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
         rect.sizeDelta = new Vector2(PipWidth, PipHeight);
         rect.anchoredPosition = new Vector2(index * (PipWidth + PipGap), 0f);
-        pip.sprite = HeartSprite();
+        pip.sprite = fullHeart != null ? fullHeart : HeartSprite();
         pip.preserveAspect = true;
         pip.raycastTarget = false;
         return pip;
@@ -182,9 +208,8 @@ public class HealthHUD : MonoBehaviour
 
     void RefreshStreak()
     {
-        streakLabel.text = health.Streak > 0 ? $"STREAK {health.Streak}"
-            : health.Health < health.maxHealth ? health.StreakHealEvery > 0 ? $"{health.StreakHealEvery} in a row to gain a life" : health.StreakHealEvery == 0 ? "" : "Hit a Perfect note to gain a life"
-            : "";
+        // The "gain a life" hint was removed; the streak will move to its own place in the HUD redesign.
+        streakLabel.text = health.Streak > 0 ? $"STREAK {health.Streak}" : "";
     }
 
     void BuildCanvas()
@@ -207,6 +232,7 @@ public class HealthHUD : MonoBehaviour
         for (int i = 0; i < health.maxHealth; i++)
             AddPip();
         shieldPip = MakePip("ShieldPip", health.maxHealth);
+        shieldPip.sprite = HeartSprite(); // shield keeps the plain tinted heart
 
         streakLabel = MakeLabel("Streak", -(PipHeight + 10f), streakColor);
     }
