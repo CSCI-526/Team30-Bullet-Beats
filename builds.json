@@ -1,5 +1,11 @@
 [
   {
+    "id": "2026-11-23-1332f28",
+    "date": "2026-11-23 18:53 UTC",
+    "sha": "1332f28",
+    "message": "Merge pull request #174 from CSCI-526/feat/vfx-ship-hit"
+  },
+  {
     "id": "2026-11-23-85244bd",
     "date": "2026-11-23 18:42 UTC",
     "sha": "85244bd",
