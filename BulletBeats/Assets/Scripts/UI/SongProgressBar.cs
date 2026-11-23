@@ -23,16 +23,19 @@ public class SongProgressBar : MonoBehaviour
 
     [Header("Vertical bar (pixels at 1080p)")]
     public float rightMargin = 14f;
-    [Tooltip("Space kept clear above the bar, for the clock.")]
-    public float topClearance = 130f;
+    [Tooltip("Space kept clear above the bar, for the SOUND ON button and the clock under it.")]
+    public float topClearance = ClockBottom + 24f; // room for half the ship icon, which rides past the bar's end
     public float bottomClearance = 60f;
 
     [Header("Horizontal bar (pixels at 1080p)")]
     [Tooltip("Matches the clock's right edge.")]
     public float horizontalRightMargin = 28f;
     [Tooltip("Distance from the top of the screen: just under the clock.")]
-    public float horizontalTop = 112f;
+    public float horizontalTop = ClockBottom + 24f;
     public float horizontalLength = 170f;
+
+    /// <summary>Bottom of the level clock, in pixels from the top at 1080p (it sits under the SOUND ON button).</summary>
+    const float ClockBottom = LevelClock.Top + LevelClock.FontSize * 1.3f;
 
     [Header("Look")]
     public Color trackColor = new Color(1f, 1f, 1f, 0.18f);
