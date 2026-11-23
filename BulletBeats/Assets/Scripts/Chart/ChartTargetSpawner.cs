@@ -111,6 +111,10 @@ public class ChartTargetSpawner : MonoBehaviour
     [Header("Big asteroid")]
     [Tooltip("Every Nth spawned target is a big, indestructible asteroid. 0 = off.")]
     [Min(0)] public int bigEveryN = 16;
+    [Tooltip("Seconds a blinking red ! shows where a big asteroid will appear before it does. 0 = no warning.")]
+    [Min(0f)] public float bigWarningSeconds = 3.5f;
+
+    BigAsteroidWarning warning;
     public float bigScale = 3f;
     [Tooltip("How close the asteroid must pass to hit the ship.")]
     public float bigHitRadius = 7f;
@@ -262,6 +266,8 @@ public class ChartTargetSpawner : MonoBehaviour
         Instance = this;
         if (choreography == null) choreography = GetComponent<AsteroidChoreography>();
         if (choreography == null) choreography = gameObject.AddComponent<AsteroidChoreography>();
+        warning = GetComponent<BigAsteroidWarning>();
+        if (warning == null) warning = gameObject.AddComponent<BigAsteroidWarning>();
     }
 
     void OnDestroy()
@@ -732,4 +738,9 @@ public class ChartTargetSpawner : MonoBehaviour
             }
         }
     }
+
+    public int ShowBigWarning(Vector2 viewport) => warning != null ? warning.Show(viewport) : -1;
+    public void MoveBigWarning(int id, Vector2 viewport) { if (warning != null) warning.Move(id, viewport); }
+    public void HideBigWarning(int id) { if (warning != null && id >= 0) warning.Hide(id); }
+    public void ClearBigWarnings() { if (warning != null) warning.Clear(); }
 }

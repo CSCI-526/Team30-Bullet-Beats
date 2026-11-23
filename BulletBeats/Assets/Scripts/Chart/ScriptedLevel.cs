@@ -48,7 +48,12 @@ public class ScriptedLevel : MonoBehaviour
     PowerUpSpawner powerUps;
 
     void Awake() => Instance = this;
-    void OnDestroy() { if (Instance == this) Instance = null; }
+    void OnDestroy()
+    { 
+        if (Instance == this) Instance = null; 
+        if (spawner != null) spawner.ClearBigWarnings();
+    }
+    readonly List<int> bigWarnings = new List<int>();   // marker id per big asteroid, -1 if not shown
 
     public bool Load(string chartName, out List<ChartNote> shots)
     {
@@ -84,7 +89,16 @@ public class ScriptedLevel : MonoBehaviour
         foreach (float big in Chart.bigAsteroids)
         {
             float time = big;
-            events.Add(new Timed { at = big - Chart.flyIn, run = () => SpawnBig(time) });
+            int slot = bigWarnings.Count;
+            bigWarnings.Add(-1);
+            float appearAt = big - Chart.flyIn;
+            float warnAt = Mathf.Max(0f, appearAt - (spawner != null ? spawner.bigWarningSeconds : 3.5f));
+
+            // Show the "!" a few seconds before the asteroid appears (never before the song starts)...
+            if (spawner != null && spawner.bigWarningSeconds > 0f && warnAt < appearAt)
+                events.Add(new Timed { at = warnAt, run = () => ShowBigWarning(slot) });
+            // ...and the asteroid hides it when it appears.
+            events.Add(new Timed { at = appearAt, run = () => SpawnBig(time, slot) });
         }
         for (int i = 0; i < Chart.stars.Length; i++)
         {
@@ -118,6 +132,7 @@ public class ScriptedLevel : MonoBehaviour
         while (next < events.Count && events[next].at <= now)
             events[next++].run();
         UpdateFlights(now);
+        FollowShip();
     }
 
     bool ending;
@@ -195,8 +210,13 @@ public class ScriptedLevel : MonoBehaviour
         if (Verbose) Debug.Log($"UI L1 spawn shot t={n.t:F3} expected={n.t - FlightOf(n):F3} actual={now:F3} late={now - (n.t - FlightOf(n)):F3}");
     }
 
-    void SpawnBig(float time)
+    void SpawnBig(float time, int slot)
     {
+        if (slot >= 0 && slot < bigWarnings.Count && bigWarnings[slot] >= 0)
+        {
+            spawner.HideBigWarning(bigWarnings[slot]);
+            bigWarnings[slot] = -1;
+        }
         Camera cam = DisplayCamera.Find();
         PlayerHealth ship = PlayerHealth.Instance;
         float now = BeatClock.Instance.SongTime;
@@ -209,6 +229,29 @@ public class ScriptedLevel : MonoBehaviour
         ChartTarget target = spawner.SpawnScripted(note, cam.ViewportToWorldPoint(v), hit, Chart.flyIn, Chart.cue, ChartTargetSpawner.ScriptedKind.Big);
         flights.Add(new Flight { target = target });
         if (Verbose) Debug.Log($"UI L1 spawn big t={time:F3} expected={time - Chart.flyIn:F3} actual={now:F3}");
+    }
+
+    void ShowBigWarning(int slot)
+    {
+        Camera cam = DisplayCamera.Find();
+        PlayerHealth ship = PlayerHealth.Instance;
+        if (cam == null || ship == null || spawner == null) return;
+
+        // Same spot SpawnBig uses: where the ship is on screen right now.
+        Vector3 v = cam.WorldToViewportPoint(ship.transform.position);
+        bigWarnings[slot] = spawner.ShowBigWarning(new Vector2(v.x, v.y));
+    }
+    /// <summary>Keeps every showing "!" on the ship's spot, since that's where the big asteroid will appear.</summary>
+    void FollowShip()
+    {
+        Camera cam = DisplayCamera.Find();
+        PlayerHealth ship = PlayerHealth.Instance;
+        if (cam == null || ship == null || spawner == null) return;
+
+        Vector3 v = cam.WorldToViewportPoint(ship.transform.position);
+        var viewport = new Vector2(v.x, v.y);
+        foreach (int id in bigWarnings)
+            if (id >= 0) spawner.MoveBigWarning(id, viewport);
     }
 
     void SpawnStar(int index)
