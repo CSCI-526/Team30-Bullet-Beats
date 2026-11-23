@@ -21,11 +21,11 @@ public class HealthHUD : MonoBehaviour
     [Tooltip("Seconds a lost pip flashes red before going empty.")]
     public float lostFlashTime = 0.6f;
 
-    // 80 = half the 160 px art (heart + glow), so the pixels stay even. The negative gap overlaps
+    // 60 = 3 canvas units per art pixel (20-cell grid incl. glow), so the pixels stay even. The negative gap overlaps
     // the soft glows so the hearts themselves sit close together.
-    const float PipWidth = 80f;
-    const float PipHeight = 80f;
-    const float PipGap = -12f;
+    const float PipWidth = 60f;
+    const float PipHeight = 60f;
+    const float PipGap = -9f;
     const float Margin = 32f;
 
     PlayerHealth health;
