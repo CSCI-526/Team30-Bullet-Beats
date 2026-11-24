@@ -21,6 +21,9 @@ public class ScriptedLevel : MonoBehaviour
         public float endTime, endFade = 1.5f;
         [Tooltip("Shifts the chart to line up with its audio. Missing = the shared default.")]
         public float offset = float.NaN;
+        [Tooltip("Seconds the red edge warning starts before a big asteroid appears. Missing = the spawner's default. " +
+                 "0 = no early glow at all: the edge only glows once the asteroid is locked on (the last cue seconds).")]
+        public float bigWarn = float.NaN;
         public int healStreak, startLives;
         public bool canDie;
         public float perfectWindow, goodWindow;
@@ -86,16 +89,17 @@ public class ScriptedLevel : MonoBehaviour
             shots.Add(new ChartNote(n.t, 0, NoteLane.Left));
             events.Add(new Timed { at = n.t - FlightOf(n), run = () => SpawnAsteroid(note) });
         }
+        float warnLead = !float.IsNaN(Chart.bigWarn) ? Chart.bigWarn : spawner != null ? spawner.bigWarningSeconds : 3.5f;
         foreach (float big in Chart.bigAsteroids)
         {
             float time = big;
             int slot = bigWarnings.Count;
             bigWarnings.Add(-1);
             float appearAt = big - Chart.flyIn;
-            float warnAt = Mathf.Max(0f, appearAt - (spawner != null ? spawner.bigWarningSeconds : 3.5f));
+            float warnAt = Mathf.Max(0f, appearAt - warnLead);
 
-            // Show the "!" a few seconds before the asteroid appears (never before the song starts)...
-            if (spawner != null && spawner.bigWarningSeconds > 0f && warnAt < appearAt)
+            // Start the red edge warning a few seconds before the asteroid appears (never before the song starts)...
+            if (spawner != null && warnLead > 0f && warnAt < appearAt)
                 events.Add(new Timed { at = warnAt, run = () => ShowBigWarning(slot) });
             // ...and the asteroid hides it when it appears.
             events.Add(new Timed { at = appearAt, run = () => SpawnBig(time, slot) });
@@ -110,6 +114,9 @@ public class ScriptedLevel : MonoBehaviour
     }
 
     /// <summary>Seconds this asteroid flies. The first few of a chart can be slower.</summary>
+    /// <summary>False when the chart wants the red edge glow only during the lock-on, not while a big asteroid approaches.</summary>
+    public bool EarlyBigGlow => Chart == null || float.IsNaN(Chart.bigWarn) || Chart.bigWarn > 0f;
+
     float FlightOf(Note n) => (n.fly > 0f ? n.fly : Chart.flyIn) * (n.turbo && spawner != null ? spawner.turboSlow : 1f);
 
     static void ApplyOffset(Data chart, float offset)

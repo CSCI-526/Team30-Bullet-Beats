@@ -37,6 +37,8 @@ public class PlayerMovement : MonoBehaviour
     [Min(0.01f)] public float dashDuration = 0.12f;
     [Tooltip("Stays invulnerable for this long after a dash ends.")]
     public float extraInvulnerableTime = 0.05f;
+    [Tooltip("Dash i-frames can only be granted once per this many seconds, so spamming keys can't chain them.")]
+    public float invulnerableCooldown = 0.6f;
 
     /// <summary>The spot the ship is at, or dashing to.</summary>
     public Spot Current { get; private set; } = Spot.Bottom;
@@ -53,6 +55,7 @@ public class PlayerMovement : MonoBehaviour
     Vector2 offset, appliedOffset, dashFrom, dashTo;
     float dashTime = float.MaxValue;
     float invulnerableUntil = float.NegativeInfinity;
+    float lastIFramesAt = float.NegativeInfinity;
 
     void Awake()
     {
@@ -116,7 +119,11 @@ public class PlayerMovement : MonoBehaviour
         dashFrom = offset;
         dashTo = OffsetOf(spot);
         dashTime = 0f;
-        invulnerableUntil = Time.time + dashDuration + extraInvulnerableTime;
+        if (Time.time - lastIFramesAt >= invulnerableCooldown)
+        {
+            invulnerableUntil = Time.time + dashDuration + extraInvulnerableTime;
+            lastIFramesAt = Time.time;
+        }
         Dashed?.Invoke(spot);
     }
 

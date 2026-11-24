@@ -3,8 +3,8 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Clears every asteroid on screen. <see cref="Grant"/> arms it; it goes off on the next beat, so it
-/// hits with the music. A ring spreads out from the ship to the screen edges, and each asteroid pops
+/// Clears every asteroid on screen. <see cref="Grant"/> sets it off right away (or on the next beat with
+/// <see cref="waitForBeat"/>). A ring spreads out from the ship to the screen edges, and each asteroid pops
 /// as the ring reaches it on screen. The ring is a thick heat shockwave: yellow-orange body with drifting
 /// heat streaks and a slight shimmer, a thin magenta/violet rim, fading as it expands. Each asteroid pops with a small "+N" floating up where it was. Each one scores
 /// <see cref="ScoreKeeper.bombPoints"/>, without touching the streak or giving a turbo's lives.
@@ -14,7 +14,7 @@ public class Bomb : MonoBehaviour
 {
     public Color color = new Color(1f, 0.42f, 0.15f);
     [Tooltip("Seconds the ring takes to reach the farthest screen corner.")]
-    public float sweepSeconds = 0.4f;
+    public float sweepSeconds = 0.2f;
     [Tooltip("Scales the shockwave's thickness (1 = about 60 px of glowing band at the start).")]
     public float ringPixels = 1.35f;
     [Tooltip("Seconds a +N label floats before it's gone.")]
@@ -22,8 +22,8 @@ public class Bomb : MonoBehaviour
     [Tooltip("How far a +N label floats up, in reference pixels (1080p).")]
     public float labelRise = 70f;
 
-    [Tooltip("Goes off the moment it is collected instead of on the next beat. The tutorial turns this on.")]
-    public bool goOffImmediately;
+    [Tooltip("Waits for the next beat before going off, instead of going off the moment it is collected. The tutorial always turns this off.")]
+    public bool waitForBeat;
 
     /// <summary>True from pickup until the ring has finished.</summary>
     public bool Active => armed || sweeping;
@@ -76,13 +76,13 @@ public class Bomb : MonoBehaviour
         if (canvasObject != null) Destroy(canvasObject);
     }
 
-    /// <summary>Arms the bomb to go off on the next beat. Does nothing if one is already going.</summary>
+    /// <summary>Sets the bomb off now (next beat with <see cref="waitForBeat"/>). Does nothing if one is already going.</summary>
     public void Grant()
     {
         if (Active) return;
         armed = true;
         goOffTime = SongTime;
-        if (Clock != null && !goOffImmediately)
+        if (Clock != null && waitForBeat)
         {
             float beat = Clock.SecondsPerBeat;
             goOffTime = Clock.firstBeatOffset + Mathf.Ceil((SongTime - Clock.firstBeatOffset) / beat) * beat;
