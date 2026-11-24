@@ -27,11 +27,11 @@ public class BigAsteroidWarning : MonoBehaviour
     [Header("Look")]
     public Color color = new Color(1f, 0.15f, 0.15f);
     [Tooltip("Edge pulse opacity before the lock and once locked on. Kept low so it never washes out the screen.")]
-    [Range(0f, 1f)] public float earlyAlpha = 0.16f;
-    [Range(0f, 1f)] public float lockAlpha = 0.34f;
+    [Range(0f, 1f)] public float earlyAlpha = 0.08f;
+    [Range(0f, 1f)] public float lockAlpha = 0.18f;
     [Tooltip("Pulses per second. Keep at 3 or below.")]
-    [Range(0.2f, 3f)] public float earlyHz = 0.8f;
-    [Range(0.2f, 3f)] public float lockHz = 2f;
+    [Range(0.2f, 3f)] public float earlyHz = 0.6f;
+    [Range(0.2f, 3f)] public float lockHz = 1.4f;
     [Tooltip("Size of the danger-spot glow, in pixels at 1080p.")]
     public float spotSize = 170f;
 
@@ -61,7 +61,7 @@ public class BigAsteroidWarning : MonoBehaviour
         vignetteSprite = BuildSprite(128, (x, y) =>
         {
             float m = Mathf.Max(Mathf.Abs(x), Mathf.Abs(y));
-            float t = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 1f, m));
+            float t = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.72f, 1f, m)); // red stays near the border
             return t * t;
         });
         ringSprite = BuildSprite(128, (x, y) =>
@@ -203,7 +203,7 @@ public class BigAsteroidWarning : MonoBehaviour
         float pulse = 0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * hz * Mathf.PI * 2f);
 
         Color c = color;
-        c.a = alphaMax * Mathf.Lerp(0.35f, 1f, pulse);
+        c.a = alphaMax * Mathf.Lerp(0.6f, 1f, pulse); // breathes instead of flashing
         edge.color = c;
         edge.enabled = c.a > 0.003f;
     }
