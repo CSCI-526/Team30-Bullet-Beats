@@ -3,8 +3,8 @@ using UnityEngine.UI;
 
 /// <summary>
 /// Global mute (set from the Settings screen) and the pause button in the top-right corner during play.
-/// The button has the HUD look (cyan pixel frame, pixel pause symbol), is the size of one heart, and
-/// pauses the level like Esc. Each play session starts with sound on; the choice is kept across scene
+/// The button is the pause_button art (Resources/UI/Art), as tall as one heart, and pauses the level like
+/// Esc. It shows in levels only, not in the tutorial. Each play session starts with sound on; the choice is kept across scene
 /// loads in that session.
 /// </summary>
 public class CornerMute : MonoBehaviour
@@ -13,7 +13,7 @@ public class CornerMute : MonoBehaviour
 
     /// <summary>Button layout at 1080p: this far in from the top-right corner, and this size (one heart).
     /// Public so <see cref="LevelClock"/> can sit just under it.</summary>
-    public const float ButtonMargin = 32f, ButtonWidth = 60f, ButtonHeight = 60f;
+    public const float ButtonMargin = 32f, ButtonWidth = 75f, ButtonHeight = 60f;
 
     Button button;
     RectTransform buttonRect;
@@ -64,7 +64,7 @@ public class CornerMute : MonoBehaviour
     {
         if (button == null) return;
         if (flow == null) flow = FindFirstObjectByType<GameFlow>();
-        bool show = flow != null && flow.State == GameState.Playing && !flow.IsPaused && !UIScreen.AnyOpen;
+        bool show = flow != null && flow.State == GameState.Playing && !flow.IsTutorial && !flow.IsPaused && !UIScreen.AnyOpen;
         if (button.gameObject.activeSelf != show) button.gameObject.SetActive(show);
     }
 
@@ -86,9 +86,8 @@ public class CornerMute : MonoBehaviour
         buttonRect.anchorMin = buttonRect.anchorMax = buttonRect.pivot = new Vector2(1f, 1f);
         buttonRect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
         buttonRect.anchoredPosition = new Vector2(-ButtonMargin, -ButtonMargin);
-        image.sprite = PixelArt.HudFrame;
-        image.type = Image.Type.Sliced;
-        image.pixelsPerUnitMultiplier = 0.5f; // one art pixel = 2 canvas units on this small button
+        image.sprite = UITheme.Art("pause_button");
+        image.preserveAspect = true;
 
         button = image.GetComponent<Button>();
         ColorBlock colors = button.colors;
@@ -100,7 +99,6 @@ public class CornerMute : MonoBehaviour
         button.colors = colors;
         button.onClick.AddListener(Pause);
 
-        PixelArt.IconImage(image.transform, PixelArt.Icon.Pause, 26f, UITheme.ElectricCyan);
         button.gameObject.SetActive(false);
     }
 }
