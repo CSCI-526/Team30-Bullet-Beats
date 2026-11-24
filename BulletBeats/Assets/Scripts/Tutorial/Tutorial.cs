@@ -460,6 +460,7 @@ public class Tutorial : MonoBehaviour
             if (star == null) return;
             stars[kind] = star;
             cues.TagWorld(star.transform, label, color);
+            cues.Aura(star.transform, color);
         }
 
         cues.ShowKeys(true);
@@ -498,8 +499,7 @@ public class Tutorial : MonoBehaviour
                 bool star = false;
                 foreach (PowerUpPickup p in stars.Values)
                     star |= p != null && SpotOf(p) == s;
-                cues.LightKey(s, star);
-                cues.Glow(s, star);
+                cues.LightKey(s, star); // no big yellow ring here: each star has its own small aura
                 if (star && GoalSpot == null) GoalSpot = s;
             }
             yield return null;

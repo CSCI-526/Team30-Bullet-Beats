@@ -14,7 +14,9 @@ public class TutorialCues
     public static readonly PlayerMovement.Spot[] Spots =
         { PlayerMovement.Spot.Center, PlayerMovement.Spot.Left, PlayerMovement.Spot.Bottom, PlayerMovement.Spot.Right };
 
-    const float KeySize = 64f;
+    const float KeySize = 46f;
+    /// <summary>How far below the object the key cap and the label sit, at 1080p.</summary>
+    const float KeyDrop = 112f, LabelDrop = 62f;
     const float GlowSize = 190f;
 
     readonly Canvas canvas;
@@ -50,6 +52,7 @@ public class TutorialCues
     Text nowLabel, tagLabel;
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
+    readonly List<(Image aura, Transform follow)> auras = new List<(Image, Transform)>();
 
     static Sprite ring, disc, triangle;
 
@@ -174,8 +177,21 @@ public class TutorialCues
         worldTags.Add((label, follow));
     }
 
+    /// <summary>A small soft glow in <paramref name="color"/> around a collectible, gently pulsing and bobbing.
+    /// Replaces the big yellow ring so the power-up itself is the main visual. Cleared with the tags.</summary>
+    public void Aura(Transform follow, Color color)
+    {
+        Image aura = AddImage(canvas.transform, HaloSprite(), Vector2.one * 150f);
+        aura.color = new Color(color.r, color.g, color.b, 0.35f);
+        aura.transform.SetAsFirstSibling(); // behind the other cues
+        auras.Add((aura, follow));
+    }
+
     public void ClearWorldTags()
     {
+        foreach ((Image aura, Transform _) in auras)
+            if (aura != null) Object.Destroy(aura.gameObject);
+        auras.Clear();
         foreach ((Text text, Transform _) in worldTags)
             if (text != null) Object.Destroy(text.gameObject);
         worldTags.Clear();
@@ -218,11 +234,13 @@ public class TutorialCues
             Vector2 at = SpotOnScreen(cam, spot);
             Image key = keys[spot];
             key.gameObject.SetActive(keysOn);
-            key.rectTransform.position = at + Vector2.down * 115f * scale;
+            key.rectTransform.position = at + Vector2.down * KeyDrop * scale;
             bool on = lit.Contains(spot);
-            key.color = on ? Color.Lerp(accent, Color.white, pulse * 0.35f) : new Color(0.08f, 0.08f, 0.16f, 0.85f);
-            key.transform.localScale = Vector3.one * (on ? Mathf.Lerp(1f, 1.12f, pulse) : 1f);
-            key.GetComponentInChildren<Text>().color = on ? new Color(0.02f, 0.02f, 0.08f) : new Color(1f, 1f, 1f, 0.6f);
+            // Small floating key cap: dark see-through fill, thin cyan pixel frame, no solid cyan block.
+            key.color = new Color(0.04f, 0.06f, 0.12f, 0.75f);
+            key.transform.GetChild(0).GetComponent<Image>().color = on ? Color.Lerp(accent, Color.white, pulse * 0.3f) : new Color(1f, 1f, 1f, 0.35f);
+            key.transform.localScale = Vector3.one * (on ? Mathf.Lerp(1f, 1.06f, pulse) : 1f);
+            key.GetComponentInChildren<Text>().color = on ? accent : new Color(1f, 1f, 1f, 0.55f);
 
             Image glow = glows[spot];
             glow.gameObject.SetActive(glowing.Contains(spot));
@@ -284,6 +302,21 @@ public class TutorialCues
             tagLabel.rectTransform.position = center + Vector2.up * (radius + 90f * scale);
         }
 
+        for (int i = auras.Count - 1; i >= 0; i--)
+        {
+            (Image aura, Transform follow) = auras[i];
+            if (aura == null) { auras.RemoveAt(i); continue; }
+            aura.gameObject.SetActive(follow != null);
+            if (follow == null) continue;
+            // Slow breathing glow that floats up and down a little.
+            float t = Time.unscaledTime * 2.2f + i;
+            aura.rectTransform.position = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * Mathf.Sin(t) * 6f * scale;
+            aura.transform.localScale = Vector3.one * (0.95f + 0.07f * Mathf.Sin(t * 1.3f));
+            Color c = aura.color;
+            c.a = 0.28f + 0.12f * (0.5f + 0.5f * Mathf.Sin(t * 1.3f));
+            aura.color = c;
+        }
+
         for (int i = worldTags.Count - 1; i >= 0; i--)
         {
             (Text text, Transform follow) = worldTags[i];
@@ -292,7 +325,7 @@ public class TutorialCues
             text.gameObject.SetActive(alive);
             // Stacked, so two stars flying in from the same point don't print over each other.
             if (!alive) continue;
-            Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * (110f + 48f * i) * scale;
+            Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.down * (LabelDrop + 34f * i) * scale;
             // Keep the whole label on screen, e.g. above a ship parked at the right edge.
             float half = text.preferredWidth * 0.5f * scale + 14f * scale;
             at.x = Mathf.Clamp(at.x, half, Mathf.Max(half, Screen.width - half));
@@ -377,8 +410,13 @@ public class TutorialCues
             glows[spot] = glow;
 
             Image key = AddImage(canvas.transform, null, Vector2.one * KeySize);
-            key.gameObject.AddComponent<Outline>().effectColor = accent;
-            Text letter = AddText(key.transform, 36, FontStyle.Bold, Color.white);
+            Image frame = AddImage(key.transform, PixelArt.HudFrame, Vector2.zero);
+            frame.type = Image.Type.Sliced;
+            frame.pixelsPerUnitMultiplier = 0.5f; // same pixel size as the HUD buttons: notched pixel corners
+            frame.rectTransform.anchorMin = Vector2.zero;
+            frame.rectTransform.anchorMax = Vector2.one;
+            frame.rectTransform.offsetMin = frame.rectTransform.offsetMax = Vector2.zero;
+            Text letter = AddText(key.transform, 26, FontStyle.Bold, Color.white);
             letter.rectTransform.sizeDelta = Vector2.one * KeySize;
             letter.text = KeyFor(spot);
             key.gameObject.SetActive(false);
@@ -477,6 +515,25 @@ public class TutorialCues
     }
 
     // ---------------------------------------------------------------- sprites drawn in code
+
+    static Sprite halo;
+    /// <summary>A soft glow ring: clear in the middle (so the object shows through), fading out at the edge.</summary>
+    static Sprite HaloSprite()
+    {
+        if (halo != null) return halo;
+        const int size = 128;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f) / size * 2f - 1f, dy = (y + 0.5f) / size * 2f - 1f;
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                float a = Mathf.Clamp01(1f - Mathf.Abs(d - 0.55f) / 0.45f);
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+            }
+        tex.Apply();
+        return halo = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+    }
 
     static Sprite RingSprite() => ring != null ? ring : ring = Shape(128, (x, y) => { float d = Mathf.Sqrt(x * x + y * y); return d <= 1f && d >= 0.8f; });
 
