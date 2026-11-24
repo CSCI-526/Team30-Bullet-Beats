@@ -49,8 +49,7 @@ static class GameBootstrap
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<AnalyticsHooks>();
         if (Object.FindFirstObjectByType<ScoreKeeper>() == null)
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<ScoreKeeper>();
-        if (Object.FindFirstObjectByType<LevelClock>() == null)
-            Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<LevelClock>();
+        // No number clock in levels any more: the song progress bar shows the time.
         if (Object.FindFirstObjectByType<LevelIntroCard>() == null)
             Object.FindFirstObjectByType<GameFlow>().gameObject.AddComponent<LevelIntroCard>();
         if (Object.FindFirstObjectByType<PauseMenu>() == null)

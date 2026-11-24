@@ -19,7 +19,7 @@ public class LevelClock : MonoBehaviour
     public float warningSeconds = 5f;
 
     /// <summary>Layout at 1080p, public so the tutorial's clock sample matches: this far in from the right
-    /// edge, and this far down from the top, just under the SOUND ON button so the button doesn't cover it.</summary>
+    /// edge, and this far down from the top, just under the pause button so the button doesn't cover it.</summary>
     public const float Margin = 28f;
     public const float Top = CornerMute.ButtonMargin + CornerMute.ButtonHeight + 10f;
     public const int FontSize = 56;

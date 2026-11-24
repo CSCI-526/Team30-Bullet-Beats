@@ -2,26 +2,29 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Global mute control, always visible in the top-right corner.
-/// Each play session starts with sound on; the choice is kept across scene loads in that session.
+/// Global mute (set from the Settings screen) and the pause button in the top-right corner during play.
+/// The button has the HUD look (cyan pixel frame, pixel pause symbol), is the size of one heart, and
+/// pauses the level like Esc. Each play session starts with sound on; the choice is kept across scene
+/// loads in that session.
 /// </summary>
 public class CornerMute : MonoBehaviour
 {
     public static bool Muted { get; private set; }
 
-    /// <summary>Button layout at 1080p: this far in from the top-right corner, and this size.
+    /// <summary>Button layout at 1080p: this far in from the top-right corner, and this size (one heart).
     /// Public so <see cref="LevelClock"/> can sit just under it.</summary>
-    public const float ButtonMargin = 28f, ButtonWidth = 220f, ButtonHeight = 56f;
+    public const float ButtonMargin = 32f, ButtonWidth = 60f, ButtonHeight = 60f;
 
     Button button;
-    Text label;
     RectTransform buttonRect;
+    GameFlow flow;
 
     public static void Apply()
     {
         AudioListener.volume = Muted ? 0f : 1f;
     }
 
+    /// <summary>True when <paramref name="screenPoint"/> is on the pause button, so a click there doesn't fire.</summary>
     public static bool Contains(Vector2 screenPoint)
     {
         CornerMute mute = FindFirstObjectByType<CornerMute>();
@@ -40,36 +43,34 @@ public class CornerMute : MonoBehaviour
         DontDestroyOnLoad(gameObject);
         Build();
         Apply();
-        Refresh();
     }
-
-    void Toggle() => SetMuted(!Muted);
 
     /// <summary>Sets mute from anywhere (the Settings screen uses this).</summary>
     public static void SetMuted(bool muted)
     {
         Muted = muted;
         Apply();
-        FindFirstObjectByType<CornerMute>()?.Refresh();
     }
 
-    // The redesigned menus have Sound in Settings, so the corner button hides while one is open.
+    void Pause()
+    {
+        // Drop focus so Space/Enter in play can't press the button again.
+        UnityEngine.EventSystems.EventSystem.current?.SetSelectedGameObject(null);
+        if (flow != null) flow.SetPaused(true);
+    }
+
+    // Only while a level is running and not paused or behind a menu.
     void Update()
     {
         if (button == null) return;
-        bool show = !UIScreen.AnyOpen;
+        if (flow == null) flow = FindFirstObjectByType<GameFlow>();
+        bool show = flow != null && flow.State == GameState.Playing && !flow.IsPaused && !UIScreen.AnyOpen;
         if (button.gameObject.activeSelf != show) button.gameObject.SetActive(show);
-    }
-
-    void Refresh()
-    {
-        if (label == null) return;
-        label.text = Muted ? "MUTED" : "SOUND ON";
     }
 
     void Build()
     {
-        var canvasObject = new GameObject("CornerMuteCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+        var canvasObject = new GameObject("PauseButtonCanvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvasObject.transform.SetParent(transform, false);
         var canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -79,41 +80,27 @@ public class CornerMute : MonoBehaviour
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 1f;
 
-        Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        var image = new GameObject("Mute", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
+        var image = new GameObject("Pause", typeof(RectTransform), typeof(Image), typeof(Button)).GetComponent<Image>();
         buttonRect = image.rectTransform;
         buttonRect.SetParent(canvasObject.transform, false);
-        buttonRect.anchorMin = buttonRect.anchorMax = new Vector2(1f, 1f);
-        buttonRect.pivot = new Vector2(1f, 1f);
+        buttonRect.anchorMin = buttonRect.anchorMax = buttonRect.pivot = new Vector2(1f, 1f);
         buttonRect.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
         buttonRect.anchoredPosition = new Vector2(-ButtonMargin, -ButtonMargin);
-        image.color = Color.white;
-
-        var outline = image.GetComponent<Outline>();
-        outline.effectColor = new Color(0.95f, 0.78f, 0.35f);
-        outline.effectDistance = new Vector2(2f, -2f);
+        image.sprite = PixelArt.HudFrame;
+        image.type = Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 0.5f; // one art pixel = 2 canvas units on this small button
 
         button = image.GetComponent<Button>();
         ColorBlock colors = button.colors;
-        colors.normalColor = new Color(0.04f, 0.05f, 0.08f, 0.92f);
-        colors.highlightedColor = new Color(0.16f, 0.13f, 0.05f, 1f);
-        colors.selectedColor = colors.highlightedColor;
-        colors.pressedColor = new Color(0.95f, 0.78f, 0.35f, 1f);
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f);
+        colors.selectedColor = Color.white;
+        colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+        colors.colorMultiplier = 1.25f;
         button.colors = colors;
-        button.onClick.AddListener(Toggle);
+        button.onClick.AddListener(Pause);
 
-        label = new GameObject("Label", typeof(RectTransform), typeof(Text)).GetComponent<Text>();
-        RectTransform labelRect = label.rectTransform;
-        labelRect.SetParent(image.transform, false);
-        labelRect.anchorMin = Vector2.zero;
-        labelRect.anchorMax = Vector2.one;
-        labelRect.offsetMin = Vector2.zero;
-        labelRect.offsetMax = Vector2.zero;
-        label.font = font;
-        label.fontSize = 24;
-        label.fontStyle = FontStyle.Bold;
-        label.alignment = TextAnchor.MiddleCenter;
-        label.color = Color.white;
-        label.raycastTarget = false;
+        PixelArt.IconImage(image.transform, PixelArt.Icon.Pause, 26f, UITheme.ElectricCyan);
+        button.gameObject.SetActive(false);
     }
 }
