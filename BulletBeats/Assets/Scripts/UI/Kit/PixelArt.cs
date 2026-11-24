@@ -9,10 +9,42 @@ using UnityEngine.UI;
 /// </summary>
 public static class PixelArt
 {
-    public enum Icon { Gear, SoundOn, SoundOff, Clock, ArrowUp, ArrowDown, ArrowLeft, Enter, Star, Equalizer, Play }
+    public enum Icon { Gear, SoundOn, SoundOff, Clock, ArrowUp, ArrowDown, ArrowLeft, Enter, Star, Equalizer, Play, Pause }
 
     static readonly Dictionary<Icon, Sprite> icons = new Dictionary<Icon, Sprite>();
     static Sprite panelFrame;
+    static Sprite hudFrame;
+
+    /// <summary>
+    /// Gameplay HUD frame (score card, pause button): dark see-through fill and a cyan border with
+    /// stepped corners. 12x12 art pixels; use it Sliced with pixelsPerUnitMultiplier 0.25 so one art
+    /// pixel is 4 canvas units.
+    /// </summary>
+    public static Sprite HudFrame
+    {
+        get
+        {
+            if (hudFrame != null) return hudFrame;
+            const int n = 12;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+                { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            Color32 edge = UITheme.ElectricCyan;
+            var fill = new Color32(8, 14, 30, 200);
+            var px = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                int ex = Mathf.Min(x, n - 1 - x), ey = Mathf.Min(y, n - 1 - y);
+                px[y * n + x] = ex + ey < 2 ? new Color32(0, 0, 0, 0)       // cut corner
+                    : ex + ey == 2 || ex == 0 || ey == 0 ? edge : fill;   // border incl. the step
+            }
+            tex.SetPixels32(px);
+            tex.Apply();
+            hudFrame = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), 100f, 0,
+                SpriteMeshType.FullRect, new Vector4(4, 4, 4, 4));
+            return hudFrame;
+        }
+    }
 
     /// <summary>An icon as an Image under <paramref name="parent"/>, <paramref name="size"/> canvas units square.</summary>
     public static Image IconImage(Transform parent, Icon icon, float size, Color color)
@@ -252,6 +284,17 @@ public static class PixelArt
             "..#.#.#.#.#...",
             "#.#.#.#.#.#.#.",
             "#.#.#.#.#.#.#.",
+        },
+        Icon.Pause => new[]
+        {
+            "###..###",
+            "###..###",
+            "###..###",
+            "###..###",
+            "###..###",
+            "###..###",
+            "###..###",
+            "###..###",
         },
         _ => new[]
         {

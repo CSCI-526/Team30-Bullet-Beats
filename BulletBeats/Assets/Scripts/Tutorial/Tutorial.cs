@@ -868,7 +868,7 @@ public class Tutorial : MonoBehaviour
     /// <summary>The game's clock is hidden in the tutorial, so show a sample where it sits in a level, with a frame.</summary>
     void BuildClockSample()
     {
-        // Same spot and size as LevelClock: under the SOUND ON button in the top-right corner.
+        // Same spot and size as LevelClock: under the pause button in the top-right corner.
         clockSample = AddText(canvasObject.transform, LevelClock.FontSize, FontStyle.Bold, Vector2.zero);
         RectTransform rect = clockSample.rectTransform;
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
