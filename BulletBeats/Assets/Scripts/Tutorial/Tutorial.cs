@@ -382,8 +382,6 @@ public class Tutorial : MonoBehaviour
         {
             cues.ShowArrow(from, safe);
             cues.Glow(safe, true);
-            cues.ShowKeys(true);
-            cues.LightKey(safe, true);
             GoalSpot = safe;
             if (showGhost)
             {
@@ -460,10 +458,8 @@ public class Tutorial : MonoBehaviour
             if (star == null) return;
             stars[kind] = star;
             cues.TagWorld(star.transform, label, color);
-            cues.Aura(star.transform, color);
         }
 
-        cues.ShowKeys(true);
         while (true)
         {
             if (!gotBomb && sent < 3 && Time.unscaledTime >= nextAsteroid && ChartTarget.Active.Count == 0)
@@ -499,7 +495,6 @@ public class Tutorial : MonoBehaviour
                 bool star = false;
                 foreach (PowerUpPickup p in stars.Values)
                     star |= p != null && SpotOf(p) == s;
-                cues.LightKey(s, star); // no big yellow ring here: each star has its own small aura
                 if (star && GoalSpot == null) GoalSpot = s;
             }
             yield return null;
