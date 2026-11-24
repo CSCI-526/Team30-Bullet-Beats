@@ -2,9 +2,11 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Small colored tabs at the top centre naming the power-ups in effect: SHIELD stays until it takes
-/// its hit, FREEZE drains with its timer, BOMB shows briefly. Two at once sit side by side. It only
+/// Pixel banners at the top centre naming the power-ups in effect (art in Resources/UI/Art:
+/// banner_shield / banner_freeze / banner_bomb): SHIELD stays until it takes its hit, FREEZE has a thin
+/// bar under it that drains with its timer, BOMB shows briefly. Two at once sit side by side. It only
 /// reads the power-ups' state, so they need no knowledge of it. Builds its own canvas.
+/// Also adds <see cref="FreezeFrost"/> (snowflakes in the screen corners while Freeze is on).
 /// </summary>
 public class PowerUpBanners : MonoBehaviour
 {
@@ -14,7 +16,7 @@ public class PowerUpBanners : MonoBehaviour
     [Tooltip("Seconds the BOMB tab shows after the bomb is collected.")]
     public float bombSeconds = 1.5f;
 
-    const float TabWidth = 190f, TabHeight = 44f, Gap = 12f, Top = 14f;
+    const float TabWidth = 330f, TabHeight = 71f, Gap = 14f, Top = 14f; // banner art is about 440 x 95
     /// <summary>In the tutorial the tabs sit under its title and description (<see cref="Tutorial.NotificationTop"/>); this is the fallback.</summary>
     const float TutorialTop = 146f;
     const float PopSeconds = 0.3f, LeaveSeconds = 0.22f;
@@ -41,9 +43,10 @@ public class PowerUpBanners : MonoBehaviour
     {
         flow = GetComponent<GameFlow>();
         BuildCanvas();
-        shield = AddTab("SHIELD", shieldColor, false);
-        freeze = AddTab("FREEZE", freezeColor, true);
-        bomb = AddTab("BOMB", bombColor, false);
+        shield = AddTab("SHIELD", "banner_shield", shieldColor, false);
+        freeze = AddTab("FREEZE", "banner_freeze", freezeColor, true);
+        bomb = AddTab("BOMB", "banner_bomb", bombColor, false);
+        if (GetComponent<FreezeFrost>() == null) gameObject.AddComponent<FreezeFrost>();
         tabs = new[] { shield, freeze, bomb };
     }
 
@@ -149,7 +152,59 @@ public class PowerUpBanners : MonoBehaviour
         scaler.matchWidthOrHeight = 1f;
     }
 
-    Tab AddTab(string title, Color color, bool drains)
+    Tab AddTab(string title, string art, Color color, bool drains)
+    {
+        Sprite sprite = UITheme.Art(art);
+        if (sprite == null) return AddPlainTab(title, color, drains);
+
+        var go = new GameObject(title, typeof(RectTransform), typeof(CanvasGroup), typeof(Image));
+        var rect = go.GetComponent<RectTransform>();
+        rect.SetParent(canvasObject.transform, false);
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.sizeDelta = new Vector2(TabWidth, TabHeight);
+        var image = go.GetComponent<Image>();
+        image.sprite = sprite;
+        image.preserveAspect = true;
+        image.raycastTarget = false;
+
+        RectTransform drain = null;
+        if (drains)
+        {
+            // The banner's inside is see-through, so a coloured fill sits behind it, inside the frame,
+            // and shrinks from the right as the timer runs out (like the old tab).
+            var area = new GameObject("DrainArea", typeof(RectTransform)).GetComponent<RectTransform>();
+            area.SetParent(rect, false);
+            area.SetAsFirstSibling();
+            area.anchorMin = new Vector2(0.05f, 0.14f);  // inside of the frame in banner_freeze
+            area.anchorMax = new Vector2(0.95f, 0.86f);
+            area.offsetMin = area.offsetMax = Vector2.zero;
+            var fill = new GameObject("Drain", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+            drain = fill.rectTransform;
+            drain.SetParent(area, false);
+            drain.anchorMin = Vector2.zero;
+            drain.anchorMax = Vector2.one;
+            drain.offsetMin = drain.offsetMax = Vector2.zero;
+            fill.color = new Color(color.r, color.g, color.b, 0.7f);
+            fill.raycastTarget = false;
+            // The banner art draws over the fill.
+            var artImage = new GameObject("Art", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+            artImage.rectTransform.SetParent(rect, false);
+            artImage.rectTransform.anchorMin = Vector2.zero;
+            artImage.rectTransform.anchorMax = Vector2.one;
+            artImage.rectTransform.offsetMin = artImage.rectTransform.offsetMax = Vector2.zero;
+            artImage.sprite = sprite;
+            artImage.preserveAspect = true;
+            artImage.raycastTarget = false;
+            image.enabled = false;
+        }
+
+        go.SetActive(false);
+        return new Tab { rect = rect, group = go.GetComponent<CanvasGroup>(), drain = drain };
+    }
+
+    /// <summary>The old plain coloured tab, used only if the banner art is missing.</summary>
+    Tab AddPlainTab(string title, Color color, bool drains)
     {
         var go = new GameObject(title, typeof(RectTransform), typeof(CanvasGroup), typeof(Image), typeof(Outline));
         var rect = go.GetComponent<RectTransform>();
