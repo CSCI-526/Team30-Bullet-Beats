@@ -164,7 +164,6 @@ public class Tutorial : MonoBehaviour
 
     void OnDestroy()
     {
-        CornerMute.HiddenForSkip = false; // give the corner back to the pause button
         if (health != null) health.Damaged -= OnDamaged;
         if (flow != null) flow.PausedChanged -= OnPausedChanged;
         if (spawner != null) spawner.Spawned -= OnSpawned;
@@ -178,7 +177,6 @@ public class Tutorial : MonoBehaviour
     void Update()
     {
         if (skipButton != null && skipButton.activeSelf != SkipAvailable) skipButton.SetActive(SkipAvailable); // gone after the first 30 s
-        CornerMute.HiddenForSkip = skipButton != null && skipButton.activeSelf;
         if (SkipAvailable && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
@@ -930,7 +928,7 @@ public class Tutorial : MonoBehaviour
     }
 
     /// <summary>SKIP in the top-right corner, where the pause button sits in a level, using Lakshi's
-    /// pixel SKIP art (Resources/UI/Art/skip). The pause button is hidden while this shows.</summary>
+    /// pixel SKIP art (Resources/UI/Art/skip). The pause button itself is levels only.</summary>
     void BuildSkipButton()
     {
         float margin = CornerMute.ButtonMargin, height = CornerMute.ButtonHeight + 12f;
