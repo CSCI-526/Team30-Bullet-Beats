@@ -763,7 +763,7 @@ public class Tutorial : MonoBehaviour
     {
         ["shoot"] = ("SHOOT", "Click the moment the brackets turn gold for a PERFECT."),
         ["move"] = ("MOVE", "Press W A S D to move your ship."),
-        ["dodge"] = ("DODGE", "Big red asteroids can't be shot. Move out of the way!"),
+        ["dodge"] = ("AVOID BIG ASTEROIDS", "Big red asteroids can't be shot. Move out of the way!"),
         ["powerups"] = ("POWER-UPS", "Move to collect power-ups: SHIELD, FREEZE and BOMB."),
     };
 
