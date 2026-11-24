@@ -49,7 +49,7 @@ public class PowerUpPickup : MonoBehaviour
         transform.Rotate(Vector3.up, spinSpeed * Time.deltaTime, Space.Self);
 
         PlayerHealth ship = PlayerHealth.Instance;
-        if (ship != null
+        if (ship != null && !ship.IsDead
             && ChartTarget.DistanceToSegment(ship.transform.position + shipOffset, last, transform.position) <= pickupRadius)
         {
             Collect();

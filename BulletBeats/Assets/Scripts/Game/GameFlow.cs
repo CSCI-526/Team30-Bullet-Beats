@@ -74,6 +74,10 @@ public class GameFlow : MonoBehaviour
     [Tooltip("If off, running out of health does not end the level (for testing).")]
     //public bool endOnDeath = false;
     public bool endOnDeath = true;
+    [Tooltip("Seconds the ship explosion plays after the last life is lost, before the end screen.")]
+    public float deathEffectSeconds = 1.5f;
+    [Tooltip("Optional explosion sound when the ship is destroyed. Empty = silent.")]
+    public AudioClip deathSound;
     [Tooltip("Turned off outside of play. Empty = the player's shooter, dash, aim HUD and health.")]
     public Behaviour[] playerControls;
 
@@ -131,6 +135,9 @@ public class GameFlow : MonoBehaviour
     public bool IsTutorial { get; private set; }
     /// <summary>True while a level is paused (<see cref="PauseMenu"/>): time, the song and the controls are stopped.</summary>
     public bool IsPaused { get; private set; }
+    /// <summary>True while the ship explodes after its last life, before the lose screen. The song, asteroids,
+    /// spawns and controls are stopped.</summary>
+    public bool IsDying { get; private set; }
     /// <summary>Raised when <see cref="IsPaused"/> changes.</summary>
     public event Action<bool> PausedChanged;
 
@@ -218,7 +225,7 @@ public class GameFlow : MonoBehaviour
 
     void Update()
     {
-        if (State != GameState.Playing || IsPaused) return;
+        if (State != GameState.Playing || IsPaused || IsDying) return;
 
         TimePlayed += Time.deltaTime;
         if (IsTutorial) return; // the tutorial decides when it's over
@@ -308,6 +315,7 @@ public class GameFlow : MonoBehaviour
     public void EndLevel(bool won)
     {
         if (State != GameState.Playing) return;
+        if (IsDying && won) return; // the ship is already exploding: this run is lost
         Won = won;
         SetState(GameState.Ended);
     }
@@ -365,7 +373,7 @@ public class GameFlow : MonoBehaviour
         if (paused == IsPaused) return;
         Tutorial tutorial = IsTutorial ? GetComponent<Tutorial>() : null;
         bool allowed = IsTutorial ? tutorial != null && tutorial.CanPause : musicStarted;
-        if (paused && (State != GameState.Playing || !allowed)) return;
+        if (paused && (State != GameState.Playing || !allowed || IsDying)) return;
 
         IsPaused = paused;
         if (paused)
@@ -386,7 +394,21 @@ public class GameFlow : MonoBehaviour
 
     void OnPlayerDied()
     {
-        if (endOnDeath) EndLevel(false);
+        if (!endOnDeath || State != GameState.Playing || IsDying) return;
+        StartCoroutine(ExplodeThenEnd());
+    }
+
+    /// <summary>Freezes the run, blows the ship apart, then shows the lose screen.</summary>
+    IEnumerator ExplodeThenEnd()
+    {
+        IsDying = true;
+        holdControls = true;
+        SetControlsEnabled(false);
+        // Pausing the audio stops the song clock, so asteroids, stars and chart spawns all freeze in place.
+        AudioListener.pause = true;
+        if (health != null) ShipExplosion.Play(health.transform, deathSound);
+        yield return new WaitForSecondsRealtime(deathEffectSeconds);
+        EndLevel(false);
     }
 
     void OnShotFired(BeatJudgment judgment)
@@ -412,6 +434,7 @@ public class GameFlow : MonoBehaviour
     {
         State = state;
         IsPaused = false;
+        IsDying = false;
         bool playing = state == GameState.Playing;
         Time.timeScale = playing ? 1f : 0f;
         AudioListener.pause = !playing;

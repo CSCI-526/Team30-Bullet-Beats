@@ -421,7 +421,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         //        // Damage only when the planet actually reaches the ship.
         // A BasicShield on the ship absorbs this hit inside TakeDamage.
         PlayerHealth ship = PlayerHealth.Instance;
-        if (ship != null && TouchesShip(ship.HitBounds, shipHitRadius * PlayerMovement.SizeScale))
+        if (ship != null && !ship.IsDead && TouchesShip(ship.HitBounds, shipHitRadius * PlayerMovement.SizeScale))
         {
             EndOnShip(ship.TakeDamage(1));
             Destroy(gameObject);

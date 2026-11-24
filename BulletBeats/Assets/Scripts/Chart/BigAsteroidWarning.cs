@@ -11,7 +11,7 @@ using UnityEngine.InputSystem;
 /// is within lockSeconds of hitting, the pulse speeds up and the spot it will hit glows red.
 /// Reads the live big asteroids, so it works on scripted and non-scripted levels. Builds its own overlay
 /// canvas (below the HUD) and draws its sprites in code, so it needs no scene setup or art.
-/// Hidden when paused, outside play and in the tutorial.
+/// Hidden when paused, outside play, in the tutorial and while the ship explodes.
 /// </summary>
 public class BigAsteroidWarning : MonoBehaviour
 {
@@ -147,7 +147,7 @@ public class BigAsteroidWarning : MonoBehaviour
         }
 #endif
         GameFlow flow = GameFlow.Instance;
-        bool on = flow == null || (flow.State == GameState.Playing && !flow.IsPaused && !flow.IsTutorial);
+        bool on = flow == null || (flow.State == GameState.Playing && !flow.IsPaused && !flow.IsTutorial && !flow.IsDying);
         canvasObject.SetActive(on);
         if (!on)
         {
