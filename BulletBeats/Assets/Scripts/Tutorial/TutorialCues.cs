@@ -14,7 +14,7 @@ public class TutorialCues
     public static readonly PlayerMovement.Spot[] Spots =
         { PlayerMovement.Spot.Center, PlayerMovement.Spot.Left, PlayerMovement.Spot.Bottom, PlayerMovement.Spot.Right };
 
-    const float KeySize = 46f;
+    const float KeySize = 66f;
     /// <summary>How far below the object the key cap and the label sit, at 1080p.</summary>
     const float KeyDrop = 112f, LabelDrop = 62f;
     const float GlowSize = 190f;
@@ -52,7 +52,7 @@ public class TutorialCues
     Text nowLabel, tagLabel;
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
-    readonly List<(Image spark, Transform follow, float phase)> sparkles = new List<(Image, Transform, float)>();
+    readonly List<(SpriteRenderer glow, Transform follow)> backGlows = new List<(SpriteRenderer, Transform)>();
 
     static Sprite ring, disc, triangle;
 
@@ -177,23 +177,21 @@ public class TutorialCues
         worldTags.Add((label, follow));
     }
 
-    /// <summary>Three small pixel "+" sparkles that twinkle around a collectible (two in
-    /// <paramref name="color"/>, one white), each popping up at a new spot every blink. Cleared with the tags.</summary>
-    public void Sparkle(Transform follow, Color color)
+    /// <summary>A plain soft glow in <paramref name="color"/> drawn in the world just behind a collectible,
+    /// so the power-up itself stays in front. Cleared with the tags.</summary>
+    public void BackGlow(Transform follow, Color color)
     {
-        for (int k = 0; k < 3; k++)
-        {
-            Image spark = AddImage(canvas.transform, PlusSprite(), Vector2.one * (k == 0 ? 21f : 15f));
-            spark.color = k == 0 ? Color.white : color;
-            sparkles.Add((spark, follow, k / 3f));
-        }
+        var glow = new GameObject("PowerUpGlow", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
+        glow.sprite = SoftDiscSprite();
+        glow.color = new Color(color.r, color.g, color.b, 0.55f);
+        backGlows.Add((glow, follow));
     }
 
     public void ClearWorldTags()
     {
-        foreach ((Image spark, Transform _, float _) in sparkles)
-            if (spark != null) Object.Destroy(spark.gameObject);
-        sparkles.Clear();
+        foreach ((SpriteRenderer glow, Transform _) in backGlows)
+            if (glow != null) Object.Destroy(glow.gameObject);
+        backGlows.Clear();
         foreach ((Text text, Transform _) in worldTags)
             if (text != null) Object.Destroy(text.gameObject);
         worldTags.Clear();
@@ -238,11 +236,9 @@ public class TutorialCues
             key.gameObject.SetActive(keysOn);
             key.rectTransform.position = at + Vector2.down * KeyDrop * scale;
             bool on = lit.Contains(spot);
-            // Small floating key cap: dark see-through fill, thin cyan pixel frame, no solid cyan block.
-            key.color = new Color(0.04f, 0.06f, 0.12f, 0.75f);
-            key.transform.GetChild(0).GetComponent<Image>().color = on ? Color.Lerp(accent, Color.white, pulse * 0.3f) : new Color(1f, 1f, 1f, 0.35f);
-            key.transform.localScale = Vector3.one * (on ? Mathf.Lerp(1f, 1.06f, pulse) : 1f);
-            key.GetComponentInChildren<Text>().color = on ? accent : new Color(1f, 1f, 1f, 0.55f);
+            // Pixel key cap art: full brightness and a gentle pulse on the key to press, dimmed otherwise.
+            key.color = on ? Color.white : new Color(1f, 1f, 1f, 0.4f);
+            key.transform.localScale = Vector3.one * (on ? Mathf.Lerp(1f, 1.08f, pulse) : 1f);
 
             Image glow = glows[spot];
             glow.gameObject.SetActive(glowing.Contains(spot));
@@ -304,23 +300,18 @@ public class TutorialCues
             tagLabel.rectTransform.position = center + Vector2.up * (radius + 90f * scale);
         }
 
-        const float Blink = 0.9f; // seconds per twinkle
-        for (int i = sparkles.Count - 1; i >= 0; i--)
+        for (int i = backGlows.Count - 1; i >= 0; i--)
         {
-            (Image spark, Transform follow, float phase) = sparkles[i];
-            if (spark == null) { sparkles.RemoveAt(i); continue; }
-            spark.gameObject.SetActive(follow != null);
+            (SpriteRenderer glow, Transform follow) = backGlows[i];
+            if (glow == null) { backGlows.RemoveAt(i); continue; }
+            glow.gameObject.SetActive(follow != null);
             if (follow == null) continue;
-            float t = Time.unscaledTime / Blink + phase;
-            int cycle = Mathf.FloorToInt(t);
-            float f = t - cycle;
-            // On for the first half of each blink (quick grow, then shrink), off for the rest.
-            float size = f < 0.5f ? Mathf.Sin(f / 0.5f * Mathf.PI) : 0f;
-            spark.transform.localScale = Vector3.one * size;
-            // A new spot around the object every blink, on a ring just outside it.
-            float angle = Mathf.Repeat(Mathf.Sin((cycle + i * 7.31f) * 12.9898f) * 43758.5453f, 1f) * Mathf.PI * 2f;
-            Vector2 offset = new Vector2(Mathf.Cos(angle) * 62f, Mathf.Sin(angle) * 48f) * scale;
-            spark.rectTransform.position = (Vector2)cam.WorldToScreenPoint(follow.position) + offset;
+            // Just behind the object as seen from the camera, facing the camera, a bit bigger than it.
+            Renderer body = follow.GetComponentInChildren<Renderer>();
+            float size = body != null ? body.bounds.extents.magnitude * 2.6f : 1.5f;
+            glow.transform.position = follow.position + cam.transform.forward * size * 0.6f;
+            glow.transform.rotation = cam.transform.rotation;
+            glow.transform.localScale = Vector3.one * size;
         }
 
         for (int i = worldTags.Count - 1; i >= 0; i--)
@@ -415,16 +406,9 @@ public class TutorialCues
             glow.gameObject.SetActive(false);
             glows[spot] = glow;
 
-            Image key = AddImage(canvas.transform, null, Vector2.one * KeySize);
-            Image frame = AddImage(key.transform, PixelArt.HudFrame, Vector2.zero);
-            frame.type = Image.Type.Sliced;
-            frame.pixelsPerUnitMultiplier = 0.5f; // same pixel size as the HUD buttons: notched pixel corners
-            frame.rectTransform.anchorMin = Vector2.zero;
-            frame.rectTransform.anchorMax = Vector2.one;
-            frame.rectTransform.offsetMin = frame.rectTransform.offsetMax = Vector2.zero;
-            Text letter = AddText(key.transform, 26, FontStyle.Bold, Color.white);
-            letter.rectTransform.sizeDelta = Vector2.one * KeySize;
-            letter.text = KeyFor(spot);
+            // Lakshi's pixel key cap art (Resources/UI/Art/key_w/a/s/d).
+            Image key = AddImage(canvas.transform, UITheme.Art("key_" + KeyFor(spot).ToLowerInvariant()), Vector2.one * KeySize);
+            key.preserveAspect = true;
             key.gameObject.SetActive(false);
             keys[spot] = key;
         }
@@ -522,17 +506,22 @@ public class TutorialCues
 
     // ---------------------------------------------------------------- sprites drawn in code
 
-    static Sprite plus;
-    /// <summary>A pixel "+" (5 x 5 art pixels, hard edges) for the power-up sparkles.</summary>
-    static Sprite PlusSprite()
+    static Sprite softDisc;
+    /// <summary>A soft round glow, brightest in the middle and fading to nothing at the edge. 1 world unit across.</summary>
+    static Sprite SoftDiscSprite()
     {
-        if (plus != null) return plus;
-        var tex = new Texture2D(5, 5, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
-        for (int y = 0; y < 5; y++)
-            for (int x = 0; x < 5; x++)
-                tex.SetPixel(x, y, x == 2 || y == 2 ? Color.white : Color.clear);
+        if (softDisc != null) return softDisc;
+        const int size = 128;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f) / size * 2f - 1f, dy = (y + 0.5f) / size * 2f - 1f;
+                float a = Mathf.Clamp01(1f - Mathf.Sqrt(dx * dx + dy * dy));
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+            }
         tex.Apply();
-        return plus = Sprite.Create(tex, new Rect(0, 0, 5, 5), new Vector2(0.5f, 0.5f), 5f);
+        return softDisc = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
     }
 
     static Sprite RingSprite() => ring != null ? ring : ring = Shape(128, (x, y) => { float d = Mathf.Sqrt(x * x + y * y); return d <= 1f && d >= 0.8f; });

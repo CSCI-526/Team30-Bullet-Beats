@@ -458,7 +458,7 @@ public class Tutorial : MonoBehaviour
             if (star == null) return;
             stars[kind] = star;
             cues.TagWorld(star.transform, label, color);
-            cues.Sparkle(star.transform, color);
+            cues.BackGlow(star.transform, color);
         }
 
         while (true)
