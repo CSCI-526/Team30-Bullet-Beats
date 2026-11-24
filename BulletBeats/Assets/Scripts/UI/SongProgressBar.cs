@@ -28,7 +28,8 @@ public class SongProgressBar : MonoBehaviour
     public float rightMargin = PauseCentre - 14f * 0.5f;
     [Tooltip("Space kept clear above the bar, for the pause button and the percent label.")]
     public float topClearance = PauseBottom + LabelGap + LabelHeight + 22f; // room for half the ship icon, which rides past the bar's end
-    public float bottomClearance = 60f;
+    [Tooltip("Thumb space kept clear under the bar.")]
+    public float bottomClearance = 220f;
 
     [Header("Horizontal bar (pixels at 1080p)")]
     [Tooltip("Matches the clock's right edge.")]
@@ -40,7 +41,7 @@ public class SongProgressBar : MonoBehaviour
     /// <summary>Pause button's bottom edge and centre, in pixels from the top-right corner at 1080p.</summary>
     const float PauseBottom = CornerMute.ButtonMargin + CornerMute.ButtonHeight;
     const float PauseCentre = CornerMute.ButtonMargin + CornerMute.ButtonWidth * 0.5f;
-    const float LabelGap = 8f, LabelHeight = 26f;
+    const float LabelGap = 40f, LabelHeight = 26f; // gap = thumb space between the pause button and the bar
     [Tooltip("The percent label counts up in steps of this many percent.")]
     [Range(1, 25)] public int percentStep = 5;
     public Color labelColor = new Color(0.3f, 0.9f, 1f);
@@ -103,12 +104,14 @@ public class SongProgressBar : MonoBehaviour
         bar.SetParent(canvasObject.transform, false);
         track.color = trackColor;
         track.raycastTarget = false;
+        Pixelate(track);
 
         var fillImage = new GameObject("Fill", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
         fill = fillImage.rectTransform;
         fill.SetParent(bar, false);
         fillImage.color = fillColor;
         fillImage.raycastTarget = false;
+        Pixelate(fillImage);
 
         // Made last so the ship is drawn on top of the fill.
         shipSprite = MakeShipSprite(true);
@@ -225,6 +228,34 @@ public class SongProgressBar : MonoBehaviour
             fill.anchorMax = new Vector2(amount, 1f);
         }
         fill.offsetMin = fill.offsetMax = Vector2.zero;
+    }
+
+    static Sprite pixelBar;
+
+    /// <summary>Gives a bar image stepped, pixel-art corners: a 6x6 white sprite with the corner pixels
+    /// cut, used Sliced so one art pixel is 3.5 canvas units (a 14-wide bar is 4 art pixels).</summary>
+    static void Pixelate(Image image)
+    {
+        if (pixelBar == null)
+        {
+            const int n = 6;
+            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false)
+                { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp, name = "SongProgressBarPixel" };
+            var px = new Color32[n * n];
+            for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                bool corner = (x == 0 || x == n - 1) && (y == 0 || y == n - 1);
+                px[y * n + x] = corner ? new Color32(0, 0, 0, 0) : new Color32(255, 255, 255, 255);
+            }
+            tex.SetPixels32(px);
+            tex.Apply();
+            pixelBar = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f), 100f, 0,
+                SpriteMeshType.FullRect, new Vector4(2, 2, 2, 2));
+        }
+        image.sprite = pixelBar;
+        image.type = Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 1f / 3.5f;
     }
 
     /// <summary>Percent of the song done, in steps of <see cref="percentStep"/> (0%, 5%, 10% ...).</summary>
