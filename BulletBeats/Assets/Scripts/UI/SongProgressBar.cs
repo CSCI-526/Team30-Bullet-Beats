@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -7,7 +8,8 @@ using UnityEngine.InputSystem;
 /// <summary>
 /// A thin bar that fills as the song plays, with a small 8-bit spaceship riding the fill edge, so the
 /// player can see how far through the level they are. Two layouts to compare: a vertical bar on the
-/// right edge, or a short horizontal bar under the clock in the top-right corner.
+/// right, centred under the pause button with the percent done on top, or a short horizontal bar in the
+/// top-right corner.
 /// Builds its own overlay canvas and draws the ship in code, so it needs no scene setup or art.
 /// Hidden outside play and in the tutorial (no song there), unless a preview is set.
 /// </summary>
@@ -19,26 +21,32 @@ public class SongProgressBar : MonoBehaviour
     public Layout layout = Layout.VerticalRight;
     [Tooltip("Vertical bar: fill from the bottom up. Off: from the top down.")]
     public bool fillFromBottom = true;
-    [Min(2f)] public float thickness = 8f;
+    [Min(2f)] public float thickness = 14f;
 
     [Header("Vertical bar (pixels at 1080p)")]
-    public float rightMargin = 14f;
-    [Tooltip("Space kept clear above the bar, for the pause button and the clock under it.")]
-    public float topClearance = ClockBottom + 24f; // room for half the ship icon, which rides past the bar's end
+    [Tooltip("Centred under the pause button.")]
+    public float rightMargin = PauseCentre - 14f * 0.5f;
+    [Tooltip("Space kept clear above the bar, for the pause button and the percent label.")]
+    public float topClearance = PauseBottom + LabelGap + LabelHeight + 22f; // room for half the ship icon, which rides past the bar's end
     public float bottomClearance = 60f;
 
     [Header("Horizontal bar (pixels at 1080p)")]
     [Tooltip("Matches the clock's right edge.")]
     public float horizontalRightMargin = 28f;
     [Tooltip("Distance from the top of the screen: just under the clock.")]
-    public float horizontalTop = ClockBottom + 24f;
+    public float horizontalTop = PauseBottom + 24f;
     public float horizontalLength = 170f;
 
-    /// <summary>Bottom of the level clock, in pixels from the top at 1080p (it sits under the pause button).</summary>
-    const float ClockBottom = LevelClock.Top + LevelClock.FontSize * 1.3f;
+    /// <summary>Pause button's bottom edge and centre, in pixels from the top-right corner at 1080p.</summary>
+    const float PauseBottom = CornerMute.ButtonMargin + CornerMute.ButtonHeight;
+    const float PauseCentre = CornerMute.ButtonMargin + CornerMute.ButtonWidth * 0.5f;
+    const float LabelGap = 8f, LabelHeight = 26f;
+    [Tooltip("The percent label counts up in steps of this many percent.")]
+    [Range(1, 25)] public int percentStep = 5;
+    public Color labelColor = new Color(0.3f, 0.9f, 1f);
 
     [Header("Look")]
-    public Color trackColor = new Color(1f, 1f, 1f, 0.18f);
+    public Color trackColor = new Color(1f, 1f, 1f, 0.22f);
     public Color fillColor = new Color(0.3f, 0.9f, 1f, 0.85f);
 
     [Header("Ship icon")]
@@ -72,6 +80,8 @@ public class SongProgressBar : MonoBehaviour
 
     GameObject canvasObject;
     RectTransform bar, fill, ship;
+    TextMeshProUGUI percentLabel;
+    int shownPercent = -1;
     Image shipImage;
     Sprite shipSprite, shipSpriteFlicker;
     Layout appliedLayout;
@@ -113,6 +123,10 @@ public class SongProgressBar : MonoBehaviour
         ship.sizeDelta = new Vector2(size, size);
         shipImage.GetComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.55f);
         shipImage.GetComponent<Outline>().effectDistance = new Vector2(shipPixelScale * 0.6f, -shipPixelScale * 0.6f);
+
+        // Percent done, just above the top of the bar.
+        percentLabel = UITheme.Text(canvasObject.transform, "0%", 22, labelColor);
+        percentLabel.rectTransform.sizeDelta = new Vector2(90f, LabelHeight);
 
         ApplyLayout();
         canvasObject.SetActive(false);
@@ -156,6 +170,7 @@ public class SongProgressBar : MonoBehaviour
         }
         SetFill(amount);
         UpdateShip(amount);
+        UpdatePercent(amount);
     }
 
     /// <summary>Song length in seconds, matching when the level actually ends.</summary>
@@ -181,12 +196,19 @@ public class SongProgressBar : MonoBehaviour
             bar.pivot = new Vector2(1f, 0.5f);
             bar.sizeDelta = new Vector2(thickness, -(topClearance + bottomClearance));
             bar.anchoredPosition = new Vector2(-rightMargin, (bottomClearance - topClearance) * 0.5f);
+
+            RectTransform label = percentLabel.rectTransform;
+            label.gameObject.SetActive(true);
+            label.anchorMin = label.anchorMax = new Vector2(1f, 1f);
+            label.pivot = new Vector2(0.5f, 1f);
+            label.anchoredPosition = new Vector2(-(rightMargin + thickness * 0.5f), -(PauseBottom + LabelGap));
         }
         else
         {
             bar.anchorMin = bar.anchorMax = bar.pivot = new Vector2(1f, 1f);
             bar.sizeDelta = new Vector2(horizontalLength, thickness);
             bar.anchoredPosition = new Vector2(-horizontalRightMargin, -horizontalTop);
+            percentLabel.gameObject.SetActive(false);
         }
     }
 
@@ -203,6 +225,16 @@ public class SongProgressBar : MonoBehaviour
             fill.anchorMax = new Vector2(amount, 1f);
         }
         fill.offsetMin = fill.offsetMax = Vector2.zero;
+    }
+
+    /// <summary>Percent of the song done, in steps of <see cref="percentStep"/> (0%, 5%, 10% ...).</summary>
+    void UpdatePercent(float amount)
+    {
+        int step = Mathf.Max(1, percentStep);
+        int percent = Mathf.Clamp(Mathf.FloorToInt(Mathf.Clamp01(amount) * 100f / step) * step, 0, 100);
+        if (percent == shownPercent) return;
+        shownPercent = percent;
+        percentLabel.text = percent + "%";
     }
 
     /// <summary>Puts the ship on the leading edge of the fill, nose pointing the way the bar is filling.</summary>
