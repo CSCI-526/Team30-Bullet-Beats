@@ -247,7 +247,7 @@ public class Tutorial : MonoBehaviour
         GoalSpot = null;
         Analytics.Instance?.LogTutorialStep(step, tries, Time.unscaledTime - start);
         yield return SpeedUp();
-        ShowBanner("NICE!"); // same colour as every other all-caps word
+        ShowBanner("NICE!", "", goodColor); // yellow, like SHOOT NOW!
         yield return new WaitForSecondsRealtime(niceSeconds);
         HideBanner();
     }
