@@ -1,9 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Shows the ship's health on the ship itself: blue when healthy, orange at <see cref="warningAt"/>
-/// health or less, red at <see cref="dangerAt"/> (<see cref="ColorFor"/>, which the HUD pips use too),
-/// and on a hit it flashes bright white for a moment, then eases back to that colour.
+/// Hit and low-health effects on the ship (looks only). The ship keeps its own colours; on a hit it
+/// flashes bright white for a moment, then eases back.
 /// Low health glitches the ship (looks only): for <see cref="twoLivesGlitchTime"/> after a hit drops it to 2 or 1,
 /// and on the last life it then turns slightly see-through (<see cref="lastLifeAlpha"/>). Tints every renderer on the ship
 /// through a property block, so the shared material is untouched.
@@ -11,14 +10,6 @@ using UnityEngine;
 [RequireComponent(typeof(PlayerHealth))]
 public class ShipDamageFlash : MonoBehaviour
 {
-    [Tooltip("Ship tint above Warning At health.")]
-    public Color healthyColor = new Color(0.35f, 0.6f, 1f);
-    public Color warningColor = new Color(1f, 0.55f, 0.2f);
-    [Tooltip("Orange at this much health or less.")]
-    [Min(1)] public int warningAt = 2;
-    public Color dangerColor = new Color(1f, 0.25f, 0.25f);
-    [Tooltip("Red at this much health or less.")]
-    [Min(1)] public int dangerAt = 1;
     [Tooltip("Hit flash colour. Values above 1 over-brighten the ship's material so it reads as a white-hot flash; the slight blue bias gives a cool cyan edge.")]
     [ColorUsage(false, true)] public Color hitFlashColor = new Color(3.2f, 3.8f, 4.2f);
     [Tooltip("Seconds for the hit flash to ease back to the health colour.")]
@@ -88,7 +79,7 @@ public class ShipDamageFlash : MonoBehaviour
     {
         SetFaded(OnLastLife && Time.time >= glitchUntil); // glitch first, then fade
 
-        Color rest = ColorFor(health.Health);
+        Color rest = Color.white; // no tint: the ship's own colours
         float t = hitFlashTime > 0f ? (Time.time - flashStart) / hitFlashTime : 1f;
         if (t < 1f)
         {
@@ -141,15 +132,7 @@ public class ShipDamageFlash : MonoBehaviour
         return rest;
     }
 
-    /// <summary>The colour for this much health: blue, orange or red.</summary>
-    public Color ColorFor(int value)
-    {
-        if (value <= dangerAt) return dangerColor;
-        if (value <= warningAt) return warningColor;
-        return healthyColor;
-    }
-
-    void ApplyHealthTint() => SetTint(ColorFor(health.Health));
+    void ApplyHealthTint() => SetTint(Color.white);
 
     void SetTint(Color color)
     {
