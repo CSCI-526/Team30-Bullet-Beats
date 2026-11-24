@@ -795,7 +795,9 @@ public class Tutorial : MonoBehaviour
 
     void BuildCanvas()
     {
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // Pixelify Sans: lightly pixel but easy to read (the menus' small-text font).
+        font = Resources.Load<Font>("UI/Fonts/PixelifySans");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         canvasObject = new GameObject("TutorialUI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
