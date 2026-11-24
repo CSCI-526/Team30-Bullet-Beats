@@ -53,6 +53,7 @@ public class TutorialCues
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
     readonly List<(SpriteRenderer glow, Transform follow)> backGlows = new List<(SpriteRenderer, Transform)>();
+    readonly Dictionary<Transform, Vector3> lastStarPos = new Dictionary<Transform, Vector3>();
 
     static Sprite ring, disc, triangle;
 
@@ -203,6 +204,7 @@ public class TutorialCues
         foreach ((SpriteRenderer glow, Transform _) in backGlows)
             if (glow != null) Object.Destroy(glow.gameObject);
         backGlows.Clear();
+        lastStarPos.Clear();
         foreach ((Text text, Transform _) in worldTags)
             if (text != null) Object.Destroy(text.gameObject);
         worldTags.Clear();
@@ -325,7 +327,14 @@ public class TutorialCues
             glow.transform.localScale = Vector3.one * size;
             TrailRenderer tail = glow.GetComponent<TrailRenderer>();
             tail.widthMultiplier = size * 0.45f;
-            tail.emitting = true;
+            // Tail only while the star is really travelling: its idle bob/spin stays under this speed,
+            // so a parked star shows no tail at all.
+            float speed = 0f;
+            if (lastStarPos.TryGetValue(follow, out Vector3 last) && Time.deltaTime > 0f)
+                speed = (follow.position - last).magnitude / Time.deltaTime;
+            lastStarPos[follow] = follow.position;
+            bool moving = speed > size * 3f;
+            tail.emitting = moving;
         }
 
         for (int i = worldTags.Count - 1; i >= 0; i--)
