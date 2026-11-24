@@ -247,7 +247,7 @@ public class Tutorial : MonoBehaviour
         GoalSpot = null;
         Analytics.Instance?.LogTutorialStep(step, tries, Time.unscaledTime - start);
         yield return SpeedUp();
-        ShowBanner("NICE!", "", goodColor);
+        ShowBanner("NICE!"); // same colour as every other all-caps word
         yield return new WaitForSecondsRealtime(niceSeconds);
         HideBanner();
     }
@@ -820,6 +820,9 @@ public class Tutorial : MonoBehaviour
         bannerRect = panel.rectTransform;
         bannerTitle = AddText(banner.transform, 56, FontStyle.Bold, new Vector2(0f, 24f));
         bannerDesc = AddText(banner.transform, 29, FontStyle.Normal, new Vector2(0f, -30f));
+        // Sentences in Chakra Petch (clean, techy, easy to read); all-caps words stay in pixel Pixelify Sans.
+        Font sentenceFont = Resources.Load<Font>("UI/Fonts/ChakraPetch-SemiBold");
+        if (sentenceFont != null) bannerDesc.font = sentenceFont;
         // Long lines shrink to fit when the window is narrow.
         bannerDesc.resizeTextForBestFit = true;
         bannerDesc.resizeTextMinSize = 18;

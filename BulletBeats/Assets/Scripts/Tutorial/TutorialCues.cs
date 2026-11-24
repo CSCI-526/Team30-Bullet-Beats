@@ -165,19 +165,23 @@ public class TutorialCues
     public void ClearTag() => tagTarget = null;
 
     /// <summary>A short line above something in the world, e.g. a power-up star. Stays until <see cref="ClearWorldTags"/>.</summary>
+    /// Drawn as a small framed pixel card, like the score strip on the results card.
     public void TagWorld(Transform follow, string text, Color color)
     {
-        Text label = AddText(canvas.transform, 30, FontStyle.Bold, color);
+        RectTransform card = PixelPanel.Create(canvas.transform, Vector2.zero, default, "Tag");
+        Text label = AddText(card, 26, FontStyle.Bold, color);
         label.text = text;
-        label.rectTransform.sizeDelta = new Vector2(700f, 50f);
-        label.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.85f);
+        label.rectTransform.anchorMin = Vector2.zero;
+        label.rectTransform.anchorMax = Vector2.one;
+        label.rectTransform.offsetMin = label.rectTransform.offsetMax = Vector2.zero;
+        card.sizeDelta = new Vector2(label.preferredWidth + 44f, 52f);
         worldTags.Add((label, follow));
     }
 
     public void ClearWorldTags()
     {
         foreach ((Text text, Transform _) in worldTags)
-            if (text != null) Object.Destroy(text.gameObject);
+            if (text != null) Object.Destroy(text.transform.parent.gameObject);
         worldTags.Clear();
     }
 
@@ -289,14 +293,15 @@ public class TutorialCues
             (Text text, Transform follow) = worldTags[i];
             if (text == null) { worldTags.RemoveAt(i); continue; }
             bool alive = follow != null;
-            text.gameObject.SetActive(alive);
+            var card = (RectTransform)text.transform.parent;
+            card.gameObject.SetActive(alive);
             // Stacked, so two stars flying in from the same point don't print over each other.
             if (!alive) continue;
             Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * (110f + 48f * i) * scale;
             // Keep the whole label on screen, e.g. above a ship parked at the right edge.
-            float half = text.preferredWidth * 0.5f * scale + 14f * scale;
+            float half = card.sizeDelta.x * 0.5f * scale + 14f * scale;
             at.x = Mathf.Clamp(at.x, half, Mathf.Max(half, Screen.width - half));
-            text.rectTransform.position = at;
+            card.position = at;
         }
     }
 
@@ -421,7 +426,7 @@ public class TutorialCues
         progress.anchoredPosition = new Vector2(0f, -152f);
         progress.gameObject.SetActive(false);
 
-        nowLabel = AddText(canvas.transform, 56, FontStyle.Bold, good);
+        nowLabel = AddText(canvas.transform, 56, FontStyle.Bold, accent); // all-caps words share one colour
         nowLabel.text = "SHOOT NOW!";
         nowLabel.rectTransform.sizeDelta = new Vector2(700f, 90f);
         nowLabel.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
@@ -435,12 +440,12 @@ public class TutorialCues
         callout = new GameObject("Callout", typeof(RectTransform)).GetComponent<RectTransform>();
         callout.SetParent(canvas.transform, false);
         callout.sizeDelta = new Vector2(440f, 70f);
-        calloutText = AddText(callout, 44, FontStyle.Bold, good);
+        calloutText = AddText(callout, 44, FontStyle.Bold, accent);
         calloutText.rectTransform.anchorMin = Vector2.zero;
         calloutText.rectTransform.anchorMax = Vector2.one;
         calloutText.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
         calloutArrow = AddImage(callout, TriangleSprite(), Vector2.one * 44f).rectTransform;
-        calloutArrow.GetComponent<Image>().color = good;
+        calloutArrow.GetComponent<Image>().color = accent;
         callout.gameObject.SetActive(false);
     }
 
