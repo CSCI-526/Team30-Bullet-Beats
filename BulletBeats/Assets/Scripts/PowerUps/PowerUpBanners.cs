@@ -15,8 +15,8 @@ public class PowerUpBanners : MonoBehaviour
     public float bombSeconds = 1.5f;
 
     const float TabWidth = 190f, TabHeight = 44f, Gap = 12f, Top = 14f;
-    /// <summary>In the tutorial the tabs sit under its title and description.</summary>
-    const float TutorialTop = 134f;
+    /// <summary>In the tutorial the tabs sit under its title and description (<see cref="Tutorial.NotificationTop"/>); this is the fallback.</summary>
+    const float TutorialTop = 146f;
     const float PopSeconds = 0.3f, LeaveSeconds = 0.22f;
 
     class Tab
@@ -33,6 +33,7 @@ public class PowerUpBanners : MonoBehaviour
     Tab[] tabs;
     GameObject canvasObject;
     GameFlow flow;
+    Tutorial tutorial;
     bool bombWas;
     float bombUntil = float.NegativeInfinity;
 
@@ -107,7 +108,14 @@ public class PowerUpBanners : MonoBehaviour
     {
         if (!t.rect.gameObject.activeSelf) return;
         float age = now - t.changedAt;
-        float top = flow != null && flow.IsTutorial ? TutorialTop : Top;
+        bool inTutorial = flow != null && flow.IsTutorial;
+        float top = Top;
+        if (inTutorial)
+        {
+            // A lane of its own just under the tutorial's banner, so the tab is never behind its text.
+            if (tutorial == null) tutorial = flow.GetComponent<Tutorial>();
+            top = tutorial != null ? tutorial.NotificationTop : TutorialTop;
+        }
         float y = -top, scale = 1f, alpha = 1f;
         if (t.shown)
         {
@@ -119,7 +127,8 @@ public class PowerUpBanners : MonoBehaviour
         else
         {
             float p = Mathf.Clamp01(age / LeaveSeconds);
-            y += p * (TabHeight + top);
+            // In a level it slides up off the top. In the tutorial that would slide it behind the banner, so it fades in place.
+            if (!inTutorial) y += p * (TabHeight + top);
             alpha = 1f - p;
             if (p >= 1f) t.rect.gameObject.SetActive(false);
         }
