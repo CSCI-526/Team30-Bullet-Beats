@@ -163,6 +163,8 @@ public class BigAsteroidWarning : MonoBehaviour
         BeatClock clock = BeatClock.Instance;
         float songTime = clock != null ? clock.SongTime : Time.time;
         float lockAt = LockWindow();
+        ScriptedLevel scripted = ScriptedLevel.Instance;
+        bool earlyGlow = scripted == null || scripted.EarlyBigGlow;
 
         bool early = shown.Contains(true);
         bool locked = false;
@@ -177,7 +179,7 @@ public class BigAsteroidWarning : MonoBehaviour
                 locked = true;
                 if (movement != null) danger.Add(SpotAimedAt(t, cam));
             }
-            else early = true;   // spawned but not locked on yet: keep the slow pulse going
+            else if (earlyGlow) early = true;   // spawned but not locked on yet: keep the slow pulse going
         }
 
         UpdateEdge(early, locked);

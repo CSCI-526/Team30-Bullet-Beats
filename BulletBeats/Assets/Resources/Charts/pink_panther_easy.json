@@ -10,6 +10,7 @@
  "goodWindow": 0.3,
  "flyIn": 1.9,
  "cue": 1.0,
+ "bigWarn": 0,
  "notes": [
   {
    "t": 4.597,

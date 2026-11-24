@@ -178,7 +178,11 @@ public class Tutorial : MonoBehaviour
             spawner.Spawned += OnSpawned;
         }
         if (powerUps != null) powerUps.enabled = false; // the tutorial spawns its own stars
-        if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = true; // no waiting for a beat here
+        if (health != null && health.TryGetComponent(out Bomb bombPower))
+        {
+            bombWaitedForBeat = bombPower.waitForBeat;
+            bombPower.waitForBeat = false; // no waiting for a beat here
+        }
 
         BuildCanvas();
         cues = new TutorialCues(canvas, font, movement, accentColor, goodColor, warnColor);
@@ -186,6 +190,8 @@ public class Tutorial : MonoBehaviour
         Analytics.Instance?.LogTutorial("started", CurrentStep);
         StartCoroutine(Run());
     }
+
+    bool bombWaitedForBeat;
 
     void OnDestroy()
     {
@@ -199,7 +205,7 @@ public class Tutorial : MonoBehaviour
         Time.fixedDeltaTime = baseFixedDeltaTime;
         RestoreAsteroidSpeed();
         StopProgressPreview();
-        if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = false;
+        if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.waitForBeat = bombWaitedForBeat;
         ghost?.Destroy();
         if (canvasObject != null) Destroy(canvasObject);
     }
