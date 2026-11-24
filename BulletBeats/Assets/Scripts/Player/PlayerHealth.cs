@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
 using UnityEngine.InputSystem;
@@ -31,6 +32,10 @@ public class PlayerHealth : MonoBehaviour
     [Min(1)] public int healStreak = 8;
     [Min(1)] public int healAmount = 1;
 
+    [Header("Hitbox")]
+    [Tooltip("Hitbox size relative to the ship's visible meshes. Below 1 is a little forgiving.")]
+    [Range(0.5f, 1.2f)] public float hitboxScale = 0.85f;
+
     [Header("Testing")]
     [Tooltip("Editor and development builds only: press K to take a hit, until enemies deal damage.")]
     public bool debugDamageKey = true;
@@ -60,6 +65,32 @@ public class PlayerHealth : MonoBehaviour
     PlayerShooter shooter;
     PlayerMovement movement;
     float invulnerableUntil = float.NegativeInfinity;
+    Renderer[] hullRenderers;
+
+    /// <summary>World box around the ship's meshes. Asteroids test against this, not the pivot (which sits off the mesh).</summary>
+    public Bounds HitBounds
+    {
+        get
+        {
+            if (hullRenderers == null)
+            {
+                var list = new List<Renderer>();
+                foreach (Renderer r in GetComponentsInChildren<Renderer>())
+                    if (r is MeshRenderer || r is SkinnedMeshRenderer) list.Add(r); // skips trails, particles, shield ring
+                hullRenderers = list.ToArray();
+            }
+            bool found = false;
+            Bounds b = new Bounds(transform.position, Vector3.zero);
+            foreach (Renderer r in hullRenderers)
+            {
+                if (r == null) continue;
+                if (found) b.Encapsulate(r.bounds); else b = r.bounds;
+                found = true;
+            }
+            b.extents *= hitboxScale;
+            return b;
+        }
+    }
 
     void Awake()
     {

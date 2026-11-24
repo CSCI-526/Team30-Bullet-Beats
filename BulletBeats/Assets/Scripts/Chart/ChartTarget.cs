@@ -244,7 +244,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         if (cam == null) cam = Camera.main;
         if (!straight && cam != null && PlayerHealth.Instance != null)
         {
-            Vector3 ship = PlayerHealth.Instance.transform.position;
+            Vector3 ship = PlayerHealth.Instance.HitBounds.center;
             Vector3 fwd = cam.transform.forward;
             float spawnDepth = Vector3.Dot(spawn - ship, fwd);
             float hitDepth = Vector3.Dot(hit - ship, fwd);
@@ -421,7 +421,7 @@ public class ChartTarget : MonoBehaviour, IShootable
         //        // Damage only when the planet actually reaches the ship.
         // A BasicShield on the ship absorbs this hit inside TakeDamage.
         PlayerHealth ship = PlayerHealth.Instance;
-        if (ship != null && DistanceToSegment(ship.transform.position, lastPosition, transform.position) <= shipHitRadius * PlayerMovement.SizeScale)
+        if (ship != null && TouchesShip(ship.HitBounds, shipHitRadius * PlayerMovement.SizeScale))
         {
             EndOnShip(ship.TakeDamage(1));
             Destroy(gameObject);
@@ -455,6 +455,15 @@ public class ChartTarget : MonoBehaviour, IShootable
         foreach (Renderer r in bigRenderers)
              if (r != null) r.material.color = c;
     }
+    /// <summary>True if this frame's path (lastPosition → now) comes within reach of the ship's box.</summary>
+    bool TouchesShip(Bounds ship, float reach)
+    {
+        if (reach < 0f) return false; // tutorial "harmless" rocks use -1
+        Vector3 a = lastPosition, ab = transform.position - lastPosition;
+        float t = ab.sqrMagnitude < 0.0001f ? 0f : Mathf.Clamp01(Vector3.Dot(ship.center - a, ab) / ab.sqrMagnitude);
+        return ship.SqrDistance(a + ab * t) <= reach * reach;
+    }
+
     public static float DistanceToSegment(Vector3 point, Vector3 a, Vector3 b)
     {
         Vector3 ab = b - a;
