@@ -14,7 +14,9 @@ public class TutorialCues
     public static readonly PlayerMovement.Spot[] Spots =
         { PlayerMovement.Spot.Center, PlayerMovement.Spot.Left, PlayerMovement.Spot.Bottom, PlayerMovement.Spot.Right };
 
-    const float KeySize = 64f;
+    const float KeySize = 66f;
+    /// <summary>How far below the object the key cap and the label sit, at 1080p.</summary>
+    const float KeyDrop = 112f, LabelDrop = 62f;
     const float GlowSize = 190f;
 
     readonly Canvas canvas;
@@ -50,6 +52,8 @@ public class TutorialCues
     Text nowLabel, tagLabel;
     ChartTarget nowTarget, tagTarget;
     readonly List<(Text text, Transform follow)> worldTags = new List<(Text, Transform)>();
+    readonly List<(SpriteRenderer glow, Transform follow)> backGlows = new List<(SpriteRenderer, Transform)>();
+    readonly Dictionary<Transform, Vector3> lastStarPos = new Dictionary<Transform, Vector3>();
 
     static Sprite ring, disc, triangle;
 
@@ -174,8 +178,33 @@ public class TutorialCues
         worldTags.Add((label, follow));
     }
 
+    /// <summary>A plain soft glow in <paramref name="color"/> drawn in the world just behind a collectible,
+    /// so the power-up itself stays in front. Cleared with the tags.</summary>
+    public void BackGlow(Transform follow, Color color)
+    {
+        var glow = new GameObject("PowerUpGlow", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
+        // No round glow behind the star (it read as a circle); the object only carries the moving tail.
+        glow.sprite = SoftDiscSprite();
+        glow.color = new Color(color.r, color.g, color.b, 0f);
+        // A short tail only while the star moves (a trail draws nothing when it stands still).
+        var tail = glow.gameObject.AddComponent<TrailRenderer>();
+        tail.sharedMaterial = glow.sharedMaterial;
+        tail.time = 0.22f;
+        tail.minVertexDistance = 0.05f;
+        tail.startColor = new Color(color.r, color.g, color.b, 0.45f);
+        tail.endColor = new Color(color.r, color.g, color.b, 0f);
+        tail.numCapVertices = 4;
+        tail.widthCurve = AnimationCurve.Linear(0f, 1f, 1f, 0f); // tapers to a point
+        tail.emitting = false; // on after the glow is first placed, so no streak from the origin
+        backGlows.Add((glow, follow));
+    }
+
     public void ClearWorldTags()
     {
+        foreach ((SpriteRenderer glow, Transform _) in backGlows)
+            if (glow != null) Object.Destroy(glow.gameObject);
+        backGlows.Clear();
+        lastStarPos.Clear();
         foreach ((Text text, Transform _) in worldTags)
             if (text != null) Object.Destroy(text.gameObject);
         worldTags.Clear();
@@ -196,7 +225,7 @@ public class TutorialCues
     public void ShowProgress(int done, int total)
     {
         progress.gameObject.SetActive(total > 0);
-        while (progressDots.Count < total) progressDots.Add(AddImage(progress, DiscSprite(), Vector2.one * 28f));
+        while (progressDots.Count < total) progressDots.Add(AddImage(progress, PixelDiscSprite(), Vector2.one * 28f));
         for (int i = 0; i < progressDots.Count; i++)
         {
             progressDots[i].gameObject.SetActive(i < total);
@@ -218,11 +247,11 @@ public class TutorialCues
             Vector2 at = SpotOnScreen(cam, spot);
             Image key = keys[spot];
             key.gameObject.SetActive(keysOn);
-            key.rectTransform.position = at + Vector2.down * 115f * scale;
+            key.rectTransform.position = at + Vector2.down * KeyDrop * scale;
             bool on = lit.Contains(spot);
-            key.color = on ? Color.Lerp(accent, Color.white, pulse * 0.35f) : new Color(0.08f, 0.08f, 0.16f, 0.85f);
-            key.transform.localScale = Vector3.one * (on ? Mathf.Lerp(1f, 1.12f, pulse) : 1f);
-            key.GetComponentInChildren<Text>().color = on ? new Color(0.02f, 0.02f, 0.08f) : new Color(1f, 1f, 1f, 0.6f);
+            // Pixel key cap art: full brightness and a gentle pulse on the key to press, dimmed otherwise.
+            key.color = on ? Color.white : new Color(1f, 1f, 1f, 0.4f);
+            key.transform.localScale = Vector3.one * (on ? Mathf.Lerp(1f, 1.08f, pulse) : 1f);
 
             Image glow = glows[spot];
             glow.gameObject.SetActive(glowing.Contains(spot));
@@ -284,6 +313,30 @@ public class TutorialCues
             tagLabel.rectTransform.position = center + Vector2.up * (radius + 90f * scale);
         }
 
+        for (int i = backGlows.Count - 1; i >= 0; i--)
+        {
+            (SpriteRenderer glow, Transform follow) = backGlows[i];
+            if (glow == null) { backGlows.RemoveAt(i); continue; }
+            glow.gameObject.SetActive(follow != null);
+            if (follow == null) continue;
+            // Just behind the object as seen from the camera, facing the camera, a bit bigger than it.
+            Renderer body = follow.GetComponentInChildren<Renderer>();
+            float size = body != null ? body.bounds.extents.magnitude * 1.8f : 1.1f;
+            glow.transform.position = follow.position + cam.transform.forward * size * 0.6f;
+            glow.transform.rotation = cam.transform.rotation;
+            glow.transform.localScale = Vector3.one * size;
+            TrailRenderer tail = glow.GetComponent<TrailRenderer>();
+            tail.widthMultiplier = size * 0.45f;
+            // Tail only while the star is really travelling: its idle bob/spin stays under this speed,
+            // so a parked star shows no tail at all.
+            float speed = 0f;
+            if (lastStarPos.TryGetValue(follow, out Vector3 last) && Time.deltaTime > 0f)
+                speed = (follow.position - last).magnitude / Time.deltaTime;
+            lastStarPos[follow] = follow.position;
+            bool moving = speed > size * 3f;
+            tail.emitting = moving;
+        }
+
         for (int i = worldTags.Count - 1; i >= 0; i--)
         {
             (Text text, Transform follow) = worldTags[i];
@@ -292,7 +345,7 @@ public class TutorialCues
             text.gameObject.SetActive(alive);
             // Stacked, so two stars flying in from the same point don't print over each other.
             if (!alive) continue;
-            Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.up * (110f + 48f * i) * scale;
+            Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.down * (LabelDrop + 34f * i) * scale;
             // Keep the whole label on screen, e.g. above a ship parked at the right edge.
             float half = text.preferredWidth * 0.5f * scale + 14f * scale;
             at.x = Mathf.Clamp(at.x, half, Mathf.Max(half, Screen.width - half));
@@ -376,11 +429,9 @@ public class TutorialCues
             glow.gameObject.SetActive(false);
             glows[spot] = glow;
 
-            Image key = AddImage(canvas.transform, null, Vector2.one * KeySize);
-            key.gameObject.AddComponent<Outline>().effectColor = accent;
-            Text letter = AddText(key.transform, 36, FontStyle.Bold, Color.white);
-            letter.rectTransform.sizeDelta = Vector2.one * KeySize;
-            letter.text = KeyFor(spot);
+            // Lakshi's pixel key cap art (Resources/UI/Art/key_w/a/s/d).
+            Image key = AddImage(canvas.transform, UITheme.Art("key_" + KeyFor(spot).ToLowerInvariant()), Vector2.one * KeySize);
+            key.preserveAspect = true;
             key.gameObject.SetActive(false);
             keys[spot] = key;
         }
@@ -421,7 +472,7 @@ public class TutorialCues
         progress.anchoredPosition = new Vector2(0f, -152f);
         progress.gameObject.SetActive(false);
 
-        nowLabel = AddText(canvas.transform, 56, FontStyle.Bold, good);
+        nowLabel = AddText(canvas.transform, 56, FontStyle.Bold, good); // yellow, like NICE!
         nowLabel.text = "SHOOT NOW!";
         nowLabel.rectTransform.sizeDelta = new Vector2(700f, 90f);
         nowLabel.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
@@ -435,12 +486,12 @@ public class TutorialCues
         callout = new GameObject("Callout", typeof(RectTransform)).GetComponent<RectTransform>();
         callout.SetParent(canvas.transform, false);
         callout.sizeDelta = new Vector2(440f, 70f);
-        calloutText = AddText(callout, 44, FontStyle.Bold, good);
+        calloutText = AddText(callout, 44, FontStyle.Bold, accent);
         calloutText.rectTransform.anchorMin = Vector2.zero;
         calloutText.rectTransform.anchorMax = Vector2.one;
         calloutText.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.9f);
         calloutArrow = AddImage(callout, TriangleSprite(), Vector2.one * 44f).rectTransform;
-        calloutArrow.GetComponent<Image>().color = good;
+        calloutArrow.GetComponent<Image>().color = accent;
         callout.gameObject.SetActive(false);
     }
 
@@ -478,6 +529,24 @@ public class TutorialCues
 
     // ---------------------------------------------------------------- sprites drawn in code
 
+    static Sprite softDisc;
+    /// <summary>A soft round glow, brightest in the middle and fading to nothing at the edge. 1 world unit across.</summary>
+    static Sprite SoftDiscSprite()
+    {
+        if (softDisc != null) return softDisc;
+        const int size = 128;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f) / size * 2f - 1f, dy = (y + 0.5f) / size * 2f - 1f;
+                float a = Mathf.Clamp01(1f - Mathf.Sqrt(dx * dx + dy * dy));
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+            }
+        tex.Apply();
+        return softDisc = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), size);
+    }
+
     static Sprite RingSprite() => ring != null ? ring : ring = Shape(128, (x, y) => { float d = Mathf.Sqrt(x * x + y * y); return d <= 1f && d >= 0.8f; });
 
     /// <summary>A triangle pointing right.</summary>
@@ -494,6 +563,20 @@ public class TutorialCues
                     inside = !inside;
             return inside;
         });
+    }
+
+    static Sprite pixelDisc;
+    /// <summary>A chunky pixel circle (7 x 7 art pixels, hard edges) for the progress dots.</summary>
+    static Sprite PixelDiscSprite()
+    {
+        if (pixelDisc != null) return pixelDisc;
+        string[] rows = { "..###..", ".#####.", "#######", "#######", "#######", ".#####.", "..###.." };
+        var tex = new Texture2D(7, 7, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+        for (int y = 0; y < 7; y++)
+            for (int x = 0; x < 7; x++)
+                tex.SetPixel(x, y, rows[y][x] == '#' ? Color.white : Color.clear);
+        tex.Apply();
+        return pixelDisc = Sprite.Create(tex, new Rect(0, 0, 7, 7), new Vector2(0.5f, 0.5f), 7f);
     }
 
     static Sprite DiscSprite() => disc != null ? disc : disc = Shape(64, (x, y) => x * x + y * y <= 1f);

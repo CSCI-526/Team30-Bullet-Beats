@@ -247,7 +247,7 @@ public class Tutorial : MonoBehaviour
         GoalSpot = null;
         Analytics.Instance?.LogTutorialStep(step, tries, Time.unscaledTime - start);
         yield return SpeedUp();
-        ShowBanner("NICE!", "", goodColor);
+        ShowBanner("NICE!", "", goodColor); // yellow, like SHOOT NOW!
         yield return new WaitForSecondsRealtime(niceSeconds);
         HideBanner();
     }
@@ -380,8 +380,6 @@ public class Tutorial : MonoBehaviour
         {
             cues.ShowArrow(from, safe);
             cues.Glow(safe, true);
-            cues.ShowKeys(true);
-            cues.LightKey(safe, true);
             GoalSpot = safe;
             if (showGhost)
             {
@@ -458,9 +456,9 @@ public class Tutorial : MonoBehaviour
             if (star == null) return;
             stars[kind] = star;
             cues.TagWorld(star.transform, label, color);
+            cues.BackGlow(star.transform, color);
         }
 
-        cues.ShowKeys(true);
         while (true)
         {
             if (!gotBomb && sent < 3 && Time.unscaledTime >= nextAsteroid && ChartTarget.Active.Count == 0)
@@ -496,8 +494,6 @@ public class Tutorial : MonoBehaviour
                 bool star = false;
                 foreach (PowerUpPickup p in stars.Values)
                     star |= p != null && SpotOf(p) == s;
-                cues.LightKey(s, star);
-                cues.Glow(s, star);
                 if (star && GoalSpot == null) GoalSpot = s;
             }
             yield return null;
@@ -761,7 +757,7 @@ public class Tutorial : MonoBehaviour
     {
         ["shoot"] = ("SHOOT", "Click the moment the brackets turn gold for a PERFECT."),
         ["move"] = ("MOVE", "Press W A S D to move your ship."),
-        ["dodge"] = ("DODGE", "Big red asteroids can't be shot. Move out of the way!"),
+        ["dodge"] = ("AVOID BIG ASTEROIDS", "Big red asteroids can't be shot. Move out of the way!"),
         ["powerups"] = ("POWER-UPS", "Move to collect power-ups: SHIELD, FREEZE and BOMB."),
     };
 
@@ -795,7 +791,9 @@ public class Tutorial : MonoBehaviour
 
     void BuildCanvas()
     {
-        font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        // Pixelify Sans: lightly pixel but easy to read (the menus' small-text font).
+        font = Resources.Load<Font>("UI/Fonts/PixelifySans");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         canvasObject = new GameObject("TutorialUI", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         canvas = canvasObject.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -818,6 +816,9 @@ public class Tutorial : MonoBehaviour
         bannerRect = panel.rectTransform;
         bannerTitle = AddText(banner.transform, 56, FontStyle.Bold, new Vector2(0f, 24f));
         bannerDesc = AddText(banner.transform, 29, FontStyle.Normal, new Vector2(0f, -30f));
+        // Sentences in Chakra Petch (clean, techy, easy to read); all-caps words stay in pixel Pixelify Sans.
+        Font sentenceFont = Resources.Load<Font>("UI/Fonts/ChakraPetch-SemiBold");
+        if (sentenceFont != null) bannerDesc.font = sentenceFont;
         // Long lines shrink to fit when the window is narrow.
         bannerDesc.resizeTextForBestFit = true;
         bannerDesc.resizeTextMinSize = 18;
@@ -926,23 +927,29 @@ public class Tutorial : MonoBehaviour
         foreach (Graphic g in parts) g.color = c;
     }
 
+    /// <summary>SKIP in the top-right corner, where the pause button sits in a level, using Lakshi's
+    /// pixel SKIP art (Resources/UI/Art/skip). The pause button itself is levels only.</summary>
     void BuildSkipButton()
     {
-        var image = new GameObject("SKIP TUTORIAL", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
+        float margin = CornerMute.ButtonMargin, height = CornerMute.ButtonHeight + 12f;
+        var image = new GameObject("SKIP", typeof(RectTransform), typeof(Image), typeof(Button)).GetComponent<Image>();
         RectTransform rect = image.rectTransform;
         rect.SetParent(canvasObject.transform, false);
-        // Right edge, above the ship's bottom-right spot, so it never covers the ship or the D glow.
-        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 0f);
-        rect.anchoredPosition = new Vector2(-30f, 330f);
-        rect.sizeDelta = new Vector2(340f, 56f);
-        image.color = new Color(0.08f, 0.08f, 0.16f, 0.9f);
-        image.GetComponent<Outline>().effectColor = accentColor;
-        image.GetComponent<Button>().onClick.AddListener(Skip);
-        skipButton = image.gameObject;
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-margin, -margin + 6f);
+        image.sprite = UITheme.Art("skip");
+        image.preserveAspect = true;
+        float aspect = image.sprite != null ? image.sprite.rect.width / image.sprite.rect.height : 1.2f;
+        rect.sizeDelta = new Vector2(height * aspect, height);
 
-        Text label = AddText(rect, 26, FontStyle.Bold, Vector2.zero);
-        label.rectTransform.sizeDelta = rect.sizeDelta;
-        label.text = "SKIP TUTORIAL  (ESC)";
+        Button button = image.GetComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f);
+        colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+        colors.colorMultiplier = 1.25f;
+        button.colors = colors;
+        button.onClick.AddListener(Skip);
+        skipButton = image.gameObject;
     }
 
     Text AddText(Transform parent, int size, FontStyle style, Vector2 position)
