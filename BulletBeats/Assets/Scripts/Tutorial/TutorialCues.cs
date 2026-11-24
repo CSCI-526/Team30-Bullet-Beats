@@ -182,8 +182,9 @@ public class TutorialCues
     public void BackGlow(Transform follow, Color color)
     {
         var glow = new GameObject("PowerUpGlow", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
+        // No round glow behind the star (it read as a circle); the object only carries the moving tail.
         glow.sprite = SoftDiscSprite();
-        glow.color = new Color(color.r, color.g, color.b, 0.55f);
+        glow.color = new Color(color.r, color.g, color.b, 0f);
         // A short tail only while the star moves (a trail draws nothing when it stands still).
         var tail = glow.gameObject.AddComponent<TrailRenderer>();
         tail.sharedMaterial = glow.sharedMaterial;
