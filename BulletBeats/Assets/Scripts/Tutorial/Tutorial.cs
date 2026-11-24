@@ -929,44 +929,29 @@ public class Tutorial : MonoBehaviour
         foreach (Graphic g in parts) g.color = c;
     }
 
-    /// <summary>SKIP in the top-right corner, where the pause button sits in a level: same cyan pixel HUD
-    /// frame and height, a bit more opaque, with the word SKIP instead of the pause symbol.
-    /// The pause button is hidden while this shows.</summary>
+    /// <summary>SKIP in the top-right corner, where the pause button sits in a level, using Lakshi's
+    /// pixel SKIP art (Resources/UI/Art/skip). The pause button is hidden while this shows.</summary>
     void BuildSkipButton()
     {
-        float margin = CornerMute.ButtonMargin, height = CornerMute.ButtonHeight;
-        var back = new GameObject("SKIP", typeof(RectTransform), typeof(Image), typeof(Button)).GetComponent<Image>();
-        RectTransform rect = back.rectTransform;
+        float margin = CornerMute.ButtonMargin, height = CornerMute.ButtonHeight + 12f;
+        var image = new GameObject("SKIP", typeof(RectTransform), typeof(Image), typeof(Button)).GetComponent<Image>();
+        RectTransform rect = image.rectTransform;
         rect.SetParent(canvasObject.transform, false);
         rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
-        rect.anchoredPosition = new Vector2(-margin, -margin);
-        rect.sizeDelta = new Vector2(130f, height);
-        back.color = new Color(0.04f, 0.06f, 0.12f, 0.92f); // more opaque than the HUD frame alone
+        rect.anchoredPosition = new Vector2(-margin, -margin + 6f);
+        image.sprite = UITheme.Art("skip");
+        image.preserveAspect = true;
+        float aspect = image.sprite != null ? image.sprite.rect.width / image.sprite.rect.height : 1.2f;
+        rect.sizeDelta = new Vector2(height * aspect, height);
 
-        var frame = new GameObject("Frame", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
-        frame.rectTransform.SetParent(rect, false);
-        frame.rectTransform.anchorMin = Vector2.zero;
-        frame.rectTransform.anchorMax = Vector2.one;
-        frame.rectTransform.offsetMin = frame.rectTransform.offsetMax = Vector2.zero;
-        frame.sprite = PixelArt.HudFrame;
-        frame.type = Image.Type.Sliced;
-        frame.pixelsPerUnitMultiplier = 0.5f; // same scale as the pause button
-        frame.raycastTarget = false;
-
-        Button button = back.GetComponent<Button>();
+        Button button = image.GetComponent<Button>();
         ColorBlock colors = button.colors;
         colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f);
         colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
         colors.colorMultiplier = 1.25f;
         button.colors = colors;
-        button.targetGraphic = frame;
         button.onClick.AddListener(Skip);
-        skipButton = back.gameObject;
-
-        Text label = AddText(rect, 26, FontStyle.Bold, Vector2.zero);
-        label.rectTransform.sizeDelta = rect.sizeDelta;
-        label.color = UITheme.ElectricCyan;
-        label.text = "SKIP";
+        skipButton = image.gameObject;
     }
 
     Text AddText(Transform parent, int size, FontStyle style, Vector2 position)

@@ -184,6 +184,16 @@ public class TutorialCues
         var glow = new GameObject("PowerUpGlow", typeof(SpriteRenderer)).GetComponent<SpriteRenderer>();
         glow.sprite = SoftDiscSprite();
         glow.color = new Color(color.r, color.g, color.b, 0.55f);
+        // A short tail only while the star moves (a trail draws nothing when it stands still).
+        var tail = glow.gameObject.AddComponent<TrailRenderer>();
+        tail.sharedMaterial = glow.sharedMaterial;
+        tail.time = 0.22f;
+        tail.minVertexDistance = 0.05f;
+        tail.startColor = new Color(color.r, color.g, color.b, 0.45f);
+        tail.endColor = new Color(color.r, color.g, color.b, 0f);
+        tail.numCapVertices = 4;
+        tail.widthCurve = AnimationCurve.Linear(0f, 1f, 1f, 0f); // tapers to a point
+        tail.emitting = false; // on after the glow is first placed, so no streak from the origin
         backGlows.Add((glow, follow));
     }
 
@@ -308,10 +318,13 @@ public class TutorialCues
             if (follow == null) continue;
             // Just behind the object as seen from the camera, facing the camera, a bit bigger than it.
             Renderer body = follow.GetComponentInChildren<Renderer>();
-            float size = body != null ? body.bounds.extents.magnitude * 2.6f : 1.5f;
+            float size = body != null ? body.bounds.extents.magnitude * 1.8f : 1.1f;
             glow.transform.position = follow.position + cam.transform.forward * size * 0.6f;
             glow.transform.rotation = cam.transform.rotation;
             glow.transform.localScale = Vector3.one * size;
+            TrailRenderer tail = glow.GetComponent<TrailRenderer>();
+            tail.widthMultiplier = size * 0.45f;
+            tail.emitting = true;
         }
 
         for (int i = worldTags.Count - 1; i >= 0; i--)
