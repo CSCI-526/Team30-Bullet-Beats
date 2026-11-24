@@ -2,20 +2,18 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// Health hearts in the top-left corner and the current streak under them. Hearts use the pixel art in
-/// Resources/UI/Art (heart_full / heart_empty). A heart that was just lost fades from full to empty.
-/// An extra pip after the health shows the <see cref="BasicShield"/>.
+/// Health hearts in the top-left corner, under the score card. Hearts use the pixel art in
+/// Resources/UI/Art (heart_full / heart_empty). A heart that was just lost shows full, then empty.
+/// The shield doesn't change the hearts; it shows on the ship.
 /// Builds its own overlay canvas, so it needs no scene setup.
 /// </summary>
 [RequireComponent(typeof(PlayerHealth))]
 public class HealthHUD : MonoBehaviour
 {
-    [Tooltip("Full pip colour when the ship has no ShipDamageFlash.")]
-    public Color fullColor = new Color(0.3f, 0.9f, 1f);
+    [Tooltip("Full pip colour if the heart art is missing.")]
+    public Color fullColor = new Color(0.87f, 0.1f, 0.24f);
     public Color emptyColor = new Color(1f, 1f, 1f, 0.15f);
-    public Color streakColor = Color.white;
     public Color lostColor = new Color(1f, 0.2f, 0.2f);
-    public Color shieldColor = new Color(0.75f, 0.6f, 1f);
     [Tooltip("Seconds a pip glows after the ship heals.")]
     public float healGlowTime = 0.5f;
     [Tooltip("Seconds a lost pip flashes red before going empty.")]
@@ -29,15 +27,11 @@ public class HealthHUD : MonoBehaviour
     public const float Margin = 32f;
 
     PlayerHealth health;
-    ShipDamageFlash shipColor;
-    BasicShield basicShield;
     GameObject canvasObject;
     RectTransform corner;
     static Sprite heart;
     Sprite fullHeart, emptyHeart;
     readonly System.Collections.Generic.List<Image> pips = new System.Collections.Generic.List<Image>();
-    Image shieldPip;
-    Text streakLabel;
     float healGlowTimer;
     float lostFlashTimer;
     int lostFrom, lostTo;
@@ -45,7 +39,6 @@ public class HealthHUD : MonoBehaviour
     void Awake()
     {
         health = GetComponent<PlayerHealth>();
-        basicShield = GetComponent<BasicShield>();
         fullHeart = UITheme.Art("heart_full");
         emptyHeart = UITheme.Art("heart_empty");
         BuildCanvas();
@@ -55,26 +48,19 @@ public class HealthHUD : MonoBehaviour
     void OnEnable()
     {
         health.HealthChanged += OnHealthChanged;
-        health.StreakChanged += OnStreakChanged;
         health.Healed += OnHealed;
         health.Damaged += OnDamaged;
-        if (basicShield != null) basicShield.Changed += OnBasicShieldChanged;
         canvasObject.SetActive(true);
-        Refresh();
+        RefreshPips();
     }
 
     void OnDisable()
     {
         health.HealthChanged -= OnHealthChanged;
-        health.StreakChanged -= OnStreakChanged;
         health.Healed -= OnHealed;
         health.Damaged -= OnDamaged;
-        if (basicShield != null) basicShield.Changed -= OnBasicShieldChanged;
         if (canvasObject != null) canvasObject.SetActive(false);
     }
-
-    // The ship colour component may be added after this one, so colour the pips again once both exist.
-    void Start() => RefreshPips();
 
     void OnDestroy()
     {
@@ -90,13 +76,7 @@ public class HealthHUD : MonoBehaviour
         RefreshPips();
     }
 
-    void OnHealthChanged(int _)
-    {
-        RefreshPips();
-        RefreshStreak();
-    }
-    void OnStreakChanged(int _) => RefreshStreak();
-    void OnBasicShieldChanged(bool _) => RefreshPips();
+    void OnHealthChanged(int _) => RefreshPips();
 
     void OnHealed(int _)
     {
@@ -112,18 +92,10 @@ public class HealthHUD : MonoBehaviour
         RefreshPips();
     }
 
-    void Refresh()
-    {
-        RefreshPips();
-        RefreshStreak();
-    }
-
     void RefreshPips()
     {
         float glow = healGlowTime > 0f ? Mathf.Clamp01(healGlowTimer / healGlowTime) : 0f;
-        if (shipColor == null) shipColor = GetComponent<ShipDamageFlash>();
-        Color baseColor = shipColor != null ? shipColor.ColorFor(health.Health) : fullColor;
-        Color full = Color.Lerp(baseColor, Color.white, glow);
+        Color full = Color.Lerp(fullColor, Color.white, glow);
         while (pips.Count < Mathf.Max(health.maxHealth, health.Health))
             AddPip();
         float lost = lostFlashTime > 0f ? Mathf.Clamp01(lostFlashTimer / lostFlashTime) : 0f;
@@ -155,11 +127,6 @@ public class HealthHUD : MonoBehaviour
                 pip.color = Color.white;
             }
         }
-
-        bool shielded = basicShield != null && basicShield.Active;
-        shieldPip.gameObject.SetActive(shielded);
-        shieldPip.rectTransform.anchoredPosition = new Vector2(pips.Count * (PipWidth + PipGap), 0f);
-        shieldPip.color = shieldColor;
     }
 
     void AddPip() => pips.Add(MakePip("Pip", pips.Count));
@@ -207,12 +174,6 @@ public class HealthHUD : MonoBehaviour
         return heart;
     }
 
-    void RefreshStreak()
-    {
-        // The "gain a life" hint was removed; the streak will move to its own place in the HUD redesign.
-        streakLabel.text = health.Streak > 0 ? $"STREAK {health.Streak}" : "";
-    }
-
     void BuildCanvas()
     {
         canvasObject = new GameObject("HealthHUD", typeof(Canvas), typeof(CanvasScaler));
@@ -232,26 +193,6 @@ public class HealthHUD : MonoBehaviour
 
         for (int i = 0; i < health.maxHealth; i++)
             AddPip();
-        shieldPip = MakePip("ShieldPip", health.maxHealth);
-        shieldPip.sprite = HeartSprite(); // shield keeps the plain tinted heart
-
-        streakLabel = MakeLabel("Streak", -(PipHeight + 10f), streakColor);
     }
 
-    Text MakeLabel(string name, float y, Color color)
-    {
-        var label = new GameObject(name, typeof(RectTransform), typeof(Text), typeof(Outline)).GetComponent<Text>();
-        RectTransform labelRect = label.rectTransform;
-        labelRect.SetParent(corner, false);
-        labelRect.anchorMin = labelRect.anchorMax = labelRect.pivot = new Vector2(0f, 1f);
-        labelRect.sizeDelta = new Vector2(600f, 32f);
-        labelRect.anchoredPosition = new Vector2(0f, y);
-        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.fontSize = 22;
-        label.fontStyle = FontStyle.Bold;
-        label.color = color;
-        label.alignment = TextAnchor.UpperLeft;
-        label.raycastTarget = false;
-        return label;
-    }
 }
