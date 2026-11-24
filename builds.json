@@ -1,5 +1,11 @@
 [
   {
+    "id": "2026-11-24-376fc7d",
+    "date": "2026-11-24 21:09 UTC",
+    "sha": "376fc7d",
+    "message": "Merge pull request #192 from CSCI-526/fix/hitbox"
+  },
+  {
     "id": "2026-11-24-44465a9",
     "date": "2026-11-24 10:10 UTC",
     "sha": "44465a9",
