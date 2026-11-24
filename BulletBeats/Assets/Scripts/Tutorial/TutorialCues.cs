@@ -196,7 +196,7 @@ public class TutorialCues
     public void ShowProgress(int done, int total)
     {
         progress.gameObject.SetActive(total > 0);
-        while (progressDots.Count < total) progressDots.Add(AddImage(progress, DiscSprite(), Vector2.one * 28f));
+        while (progressDots.Count < total) progressDots.Add(AddImage(progress, PixelDiscSprite(), Vector2.one * 28f));
         for (int i = 0; i < progressDots.Count; i++)
         {
             progressDots[i].gameObject.SetActive(i < total);
@@ -494,6 +494,20 @@ public class TutorialCues
                     inside = !inside;
             return inside;
         });
+    }
+
+    static Sprite pixelDisc;
+    /// <summary>A chunky pixel circle (7 x 7 art pixels, hard edges) for the progress dots.</summary>
+    static Sprite PixelDiscSprite()
+    {
+        if (pixelDisc != null) return pixelDisc;
+        string[] rows = { "..###..", ".#####.", "#######", "#######", "#######", ".#####.", "..###.." };
+        var tex = new Texture2D(7, 7, TextureFormat.RGBA32, false) { filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+        for (int y = 0; y < 7; y++)
+            for (int x = 0; x < 7; x++)
+                tex.SetPixel(x, y, rows[y][x] == '#' ? Color.white : Color.clear);
+        tex.Apply();
+        return pixelDisc = Sprite.Create(tex, new Rect(0, 0, 7, 7), new Vector2(0.5f, 0.5f), 7f);
     }
 
     static Sprite DiscSprite() => disc != null ? disc : disc = Shape(64, (x, y) => x * x + y * y <= 1f);

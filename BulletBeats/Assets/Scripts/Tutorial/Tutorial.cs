@@ -164,6 +164,7 @@ public class Tutorial : MonoBehaviour
 
     void OnDestroy()
     {
+        CornerMute.HiddenForSkip = false; // give the corner back to the pause button
         if (health != null) health.Damaged -= OnDamaged;
         if (flow != null) flow.PausedChanged -= OnPausedChanged;
         if (spawner != null) spawner.Spawned -= OnSpawned;
@@ -177,6 +178,7 @@ public class Tutorial : MonoBehaviour
     void Update()
     {
         if (skipButton != null && skipButton.activeSelf != SkipAvailable) skipButton.SetActive(SkipAvailable); // gone after the first 30 s
+        CornerMute.HiddenForSkip = skipButton != null && skipButton.activeSelf;
         if (SkipAvailable && Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame) Skip();
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
@@ -931,23 +933,44 @@ public class Tutorial : MonoBehaviour
         foreach (Graphic g in parts) g.color = c;
     }
 
+    /// <summary>SKIP in the top-right corner, where the pause button sits in a level: same cyan pixel HUD
+    /// frame and height, a bit more opaque, with the word SKIP instead of the pause symbol.
+    /// The pause button is hidden while this shows.</summary>
     void BuildSkipButton()
     {
-        var image = new GameObject("SKIP TUTORIAL", typeof(RectTransform), typeof(Image), typeof(Button), typeof(Outline)).GetComponent<Image>();
-        RectTransform rect = image.rectTransform;
+        float margin = CornerMute.ButtonMargin, height = CornerMute.ButtonHeight;
+        var back = new GameObject("SKIP", typeof(RectTransform), typeof(Image), typeof(Button)).GetComponent<Image>();
+        RectTransform rect = back.rectTransform;
         rect.SetParent(canvasObject.transform, false);
-        // Right edge, above the ship's bottom-right spot, so it never covers the ship or the D glow.
-        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 0f);
-        rect.anchoredPosition = new Vector2(-30f, 330f);
-        rect.sizeDelta = new Vector2(340f, 56f);
-        image.color = new Color(0.08f, 0.08f, 0.16f, 0.9f);
-        image.GetComponent<Outline>().effectColor = accentColor;
-        image.GetComponent<Button>().onClick.AddListener(Skip);
-        skipButton = image.gameObject;
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
+        rect.anchoredPosition = new Vector2(-margin, -margin);
+        rect.sizeDelta = new Vector2(130f, height);
+        back.color = new Color(0.04f, 0.06f, 0.12f, 0.92f); // more opaque than the HUD frame alone
+
+        var frame = new GameObject("Frame", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        frame.rectTransform.SetParent(rect, false);
+        frame.rectTransform.anchorMin = Vector2.zero;
+        frame.rectTransform.anchorMax = Vector2.one;
+        frame.rectTransform.offsetMin = frame.rectTransform.offsetMax = Vector2.zero;
+        frame.sprite = PixelArt.HudFrame;
+        frame.type = Image.Type.Sliced;
+        frame.pixelsPerUnitMultiplier = 0.5f; // same scale as the pause button
+        frame.raycastTarget = false;
+
+        Button button = back.GetComponent<Button>();
+        ColorBlock colors = button.colors;
+        colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f);
+        colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+        colors.colorMultiplier = 1.25f;
+        button.colors = colors;
+        button.targetGraphic = frame;
+        button.onClick.AddListener(Skip);
+        skipButton = back.gameObject;
 
         Text label = AddText(rect, 26, FontStyle.Bold, Vector2.zero);
         label.rectTransform.sizeDelta = rect.sizeDelta;
-        label.text = "SKIP TUTORIAL  (ESC)";
+        label.color = UITheme.ElectricCyan;
+        label.text = "SKIP";
     }
 
     Text AddText(Transform parent, int size, FontStyle style, Vector2 position)
