@@ -6,7 +6,7 @@
  "difficulty": "easy",
  "healStreak": 5,
  "startLives": 5,
- "canDie": false,
+ "canDie": true,
  "perfectWindow": 0.15,
  "goodWindow": 0.3,
  "flyIn": 1.9,
