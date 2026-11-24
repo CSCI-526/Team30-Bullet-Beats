@@ -6,16 +6,19 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// Level 0: a short guided run (about 30-45 seconds) that plays like the real game. Each step shows its
-/// cue and the player can act right away; the step moves on by itself once the player has done it, and
-/// stays (trying again) until then. There are no Continue buttons: a quick NICE! shows between steps.
-/// Steps, each with a big title and one line under it: shoot (<see cref="shotsNeeded"/> good shots; SHOOT
-/// NOW shows when the brackets turn gold, which is PERFECT), move (W A S D, acted out by a see-through
-/// ghost ship while the player can already move), dodge one big red asteroid (the ghost shows the way the
-/// first time), then collect the Shield, Freeze and Bomb stars. Then straight into the first level on
-/// Easy, which shows its own intro card and count-in. The ship can't die here.
-/// The lives and time tour (<see cref="hudStep"/>) is off until the score HUD and the song progress bar
-/// are in (#157).
+/// Level 0: a short guided run (about 45 seconds) that plays like the real game. Each step shows its
+/// cue and the player can act right away; the step moves on by itself once the player has really done
+/// it, and stays (trying again) until then. There are no Continue buttons: a quick NICE! (or a line about
+/// what just happened) shows between steps.
+/// Steps, each with a big title and one line under it:
+/// shoot (<see cref="shotsNeeded"/> good shots; SHOOT NOW shows when the brackets turn gold, which is PERFECT),
+/// an orange asteroid (two shots, one on each gold bracket),
+/// move (W A S D, acted out by a see-through ghost ship while the player can already move; passes only on a move),
+/// avoid a big red asteroid (a red ! warns first, the ghost shows the way the first time),
+/// the power-ups one at a time, each collected and then shown working: the Shield takes a hit, Freeze slows a
+/// stream of asteroids, the Bomb clears a cluster,
+/// then a short look at the HUD (lives, score, song progress) with the controls left on.
+/// Then straight into the first level on Easy, which shows its own intro card and count-in. The ship can't die here.
 /// Only players who finished the tutorial before can skip it (Skip button or ESC), and only in the first
 /// <see cref="skipSeconds"/> seconds; after that, and for everyone else, ESC opens the pause menu.
 /// Added by <see cref="GameFlow"/> for a tutorial run. It runs on the scene clock (no song), so
@@ -31,28 +34,36 @@ public class Tutorial : MonoBehaviour
     [Tooltip("Real seconds to slow down or speed back up.")]
     public float rampSeconds = 0.35f;
     [Tooltip("Time scale while an asteroid's brackets close in, before the timing window.")]
-    [Range(0.05f, 1f)] public float approachScale = 0.6f;
+    [Range(0.05f, 1f)] public float approachScale = 0.5f;
     [Tooltip("Time scale during the timing window, so there is time to react to SHOOT NOW.")]
-    [Range(0.05f, 1f)] public float windowScale = 0.3f;
-    [Tooltip("Shots after the first good one: time scale while the brackets close in, and during the window.")]
-    [Range(0.05f, 1f)] public float quickApproachScale = 1f;
-    [Range(0.05f, 1f)] public float quickWindowScale = 0.6f;
+    [Range(0.05f, 1f)] public float windowScale = 0.25f;
+    [Tooltip("Shots after the first good one: time scale while the brackets close in, and during the window. Still a little slow.")]
+    [Range(0.05f, 1f)] public float quickApproachScale = 0.8f;
+    [Range(0.05f, 1f)] public float quickWindowScale = 0.5f;
     [Tooltip("Beats before a timed asteroid reaches its beat.")]
     [Min(1f)] public float shotLeadBeats = 1.15f;
     [Tooltip("Good shots (GOOD or PERFECT) that pass the shoot step. A miss doesn't reset the count.")]
     [Min(1)] public int shotsNeeded = 3;
     [Tooltip("The move step passes once the player has moved and this many real seconds have gone by, so the ghost is seen.")]
     public float moveMinSeconds = 1.5f;
-    [Tooltip("The move step passes after this many real seconds even without a move (the dodge step needs one anyway).")]
-    public float moveMaxSeconds = 5f;
+    [Tooltip("Real seconds without a move before the ghost shows the move again and the other spots glow.")]
+    public float moveHintSeconds = 3f;
+    [Tooltip("Real seconds the red ! shows where the ship is before the big asteroid comes in.")]
+    public float bigWarningSeconds = 1.5f;
     [Tooltip("Real seconds the NICE! between steps stays up. The game keeps running under it.")]
     public float niceSeconds = 0.6f;
+    [Tooltip("Real seconds a power-up's result line (BLOCKED!, FROZEN!, BOOM!) stays up.")]
+    public float resultSeconds = 1.2f;
+    [Tooltip("Real seconds Freeze runs before the tutorial moves on, so the slow-down is easy to see.")]
+    public float freezeShowSeconds = 1.8f;
+    [Tooltip("Real seconds each HUD stop (lives, score, song progress) stays up.")]
+    public float hudStopSeconds = 2.2f;
     [Tooltip("Returning players see Skip (and ESC skips) only for this many real seconds at the start.")]
     public float skipSeconds = 30f;
 
     [Header("Steps")]
-    [Tooltip("The lives and time tour at the end. Off until the score HUD and the song progress bar are in (#157).")]
-    public bool hudStep;
+    [Tooltip("The short look at the lives, score and song progress at the end. The controls stay on.")]
+    public bool hudStep = true;
 
     [Header("Look")]
     public Color accentColor = new Color(0.3f, 0.9f, 1f);
@@ -76,6 +87,19 @@ public class Tutorial : MonoBehaviour
     /// <summary>The spot the player is being sent to right now (the glowing one), if any.</summary>
     public PlayerMovement.Spot? GoalSpot { get; private set; }
 
+    /// <summary>
+    /// Where <see cref="PowerUpBanners"/> puts its tabs in the tutorial, in canvas units from the top of the
+    /// screen: a lane just under the banner (and its progress dots), so the tabs are never under the banner's text.
+    /// </summary>
+    public float NotificationTop
+    {
+        get
+        {
+            float bannerBottom = bannerRect != null ? -bannerRect.anchoredPosition.y + bannerRect.sizeDelta.y : 120f;
+            return bannerBottom + (cues != null && cues.ProgressShowing ? 52f : 0f) + 26f;
+        }
+    }
+
     GameFlow flow;
     BeatClock clock;
     ChartTargetSpawner spawner;
@@ -86,22 +110,23 @@ public class Tutorial : MonoBehaviour
 
     readonly List<ChartTarget> spawned = new List<ChartTarget>();
     readonly List<float> bigTimes = new List<float>();
+    readonly List<float> turboTimes = new List<float>();
     readonly Dictionary<PowerUpPickup, PlayerMovement.Spot> starSpots = new Dictionary<PowerUpPickup, PlayerMovement.Spot>();
     /// <summary>Counters a step keeps between its tries (cleared when a step starts).</summary>
     readonly Dictionary<string, int> stepState = new Dictionary<string, int>();
     int damageTaken;
     bool movementLocked;
     float baseFixedDeltaTime, startedAt;
-    /// <summary>While true no asteroid can hurt the ship: the power-ups step is for learning, not surviving.</summary>
+    /// <summary>While true no asteroid can hurt the ship: the Freeze and Bomb demos are for watching.</summary>
     bool harmless;
     float savedPlanetLead = -1f;
     float wantedTimeScale = 1f;
     NoteLane nextLane = NoteLane.Right;
+    bool moveDemoRunning;
 
     Canvas canvas;
-    GameObject canvasObject, banner, livesHighlight, timeHighlight, skipButton;
-    Graphic[] livesHighlightParts, timeHighlightParts;
-    Text clockSample;
+    GameObject canvasObject, banner, highlight, skipButton;
+    Graphic[] highlightParts;
     Text bannerTitle, bannerDesc;
     RectTransform bannerRect;
     Font font;
@@ -146,7 +171,7 @@ public class Tutorial : MonoBehaviour
         if (spawner != null)
         {
             spawner.noteStride = 1;
-            spawner.turboEveryN = 0; // big asteroids only where a step asks for one, and no turbo ones
+            spawner.turboEveryN = 0; // big and orange asteroids only where a step asks for one
             spawner.bigEveryN = 0;
             spawner.spotAimChance = 0f; // lessons aim at the ship so dodge and shoot stay predictable
             spawner.maxViewportY = 0.68f; // keep asteroids under the prompt
@@ -166,9 +191,14 @@ public class Tutorial : MonoBehaviour
     {
         if (health != null) health.Damaged -= OnDamaged;
         if (flow != null) flow.PausedChanged -= OnPausedChanged;
-        if (spawner != null) spawner.Spawned -= OnSpawned;
+        if (spawner != null)
+        {
+            spawner.Spawned -= OnSpawned;
+            spawner.ClearBigWarnings();
+        }
         Time.fixedDeltaTime = baseFixedDeltaTime;
         RestoreAsteroidSpeed();
+        StopProgressPreview();
         if (health != null && health.TryGetComponent(out Bomb bombPower)) bombPower.goOffImmediately = false;
         ghost?.Destroy();
         if (canvasObject != null) Destroy(canvasObject);
@@ -181,7 +211,7 @@ public class Tutorial : MonoBehaviour
         // Resuming from the pause menu turns the controls back on, so keep a locked one off.
         if (movement != null && movementLocked && movement.enabled) movement.enabled = false;
         FitBanner();
-        PulseLivesHighlight();
+        PulseFrame(highlight, highlightParts);
         ghost.Update();
         cues.Update(DisplayCamera.Find());
     }
@@ -192,9 +222,9 @@ public class Tutorial : MonoBehaviour
         if (!SkipAvailable) return;
         StopAllCoroutines();
         RestoreAsteroidSpeed();
-        ShowLivesHighlight(false);
-        if (timeHighlight != null) timeHighlight.SetActive(false);
-        if (clockSample != null) clockSample.gameObject.SetActive(false);
+        StopProgressPreview();
+        if (highlight != null) highlight.SetActive(false);
+        spawner?.ClearBigWarnings();
         cues.ClearGuides();
         cues.ShowProgress(0, 0);
         ghost.Hide();
@@ -210,13 +240,19 @@ public class Tutorial : MonoBehaviour
     IEnumerator Run()
     {
         yield return RunStep("shoot", ShootTry); // the player shoots straight away
+        yield return RunStep("turbo", TurboTry);
         yield return RunStep("move", MoveTry);
         yield return RunStep("dodge", DodgeTry);
-        yield return RunStep("powerups", PowerUpsTry);
+        // Power-ups, one at a time: collect it, see it work, then the next one.
+        yield return RunStep("shield", ShieldTry, "BLOCKED!", "The shield took the hit. No life lost.");
+        yield return RunStep("freeze", FreezeTry, "FROZEN!", "Freeze slows everything down for a while.");
+        yield return RunStep("bomb", BombTry, "BOOM!", "The bomb cleared every asteroid on screen.");
         if (hudStep)
         {
             CurrentStep = "hud";
+            float start = Time.unscaledTime;
             yield return HudTour();
+            Analytics.Instance?.LogTutorialStep("hud", 1, Time.unscaledTime - start);
         }
 
         CurrentStep = "done";
@@ -225,10 +261,11 @@ public class Tutorial : MonoBehaviour
     }
 
     /// <summary>
-    /// Plays a step until the player passes it, trying again after each miss, then shows NICE! for a
-    /// moment and moves on by itself. Logs the step's tries and seconds.
+    /// Plays a step until the player passes it, trying again after each miss, then shows NICE! (or
+    /// <paramref name="doneTitle"/> with <paramref name="doneLine"/>) for a moment and moves on by itself.
+    /// Logs the step's tries and seconds.
     /// </summary>
-    IEnumerator RunStep(string step, Func<Try, IEnumerator> attempt)
+    IEnumerator RunStep(string step, Func<Try, IEnumerator> attempt, string doneTitle = "NICE!", string doneLine = "")
     {
         CurrentStep = step;
         stepState.Clear();
@@ -247,8 +284,8 @@ public class Tutorial : MonoBehaviour
         GoalSpot = null;
         Analytics.Instance?.LogTutorialStep(step, tries, Time.unscaledTime - start);
         yield return SpeedUp();
-        ShowBanner("NICE!", "", goodColor); // yellow, like SHOOT NOW!
-        yield return new WaitForSecondsRealtime(niceSeconds);
+        ShowBanner(doneTitle, doneLine, goodColor); // yellow, like SHOOT NOW!
+        yield return new WaitForSecondsRealtime(string.IsNullOrEmpty(doneLine) ? niceSeconds : resultSeconds);
         HideBanner();
     }
 
@@ -256,7 +293,7 @@ public class Tutorial : MonoBehaviour
     void SetState(string key, int value) => stepState[key] = value;
 
     // Step 1: shoot when the brackets turn gold (PERFECT). Good shots add up; a miss just sends another
-    // asteroid. No demo: the player starts right away.
+    // asteroid. No demo: the player starts right away. Time runs a little slow the whole step.
 
     IEnumerator ShootTry(Try result)
     {
@@ -321,31 +358,102 @@ public class Tutorial : MonoBehaviour
         hit(broke && shotAt && worst <= needed);
     }
 
-    // Step 2: W A S D. The keys show and the ghost slides through the spots at once, and the ship can
-    // move the whole time. One move (once the ghost has had a moment) passes; the step never waits long.
+    // Step 2: an orange asteroid takes two shots. Its brackets turn gold twice, once for each hit (the first
+    // while it's still far out), and SHOOT NOW shows both times. Hit pips on it count down. Passes once it
+    // breaks; a miss sends another one.
+
+    IEnumerator TurboTry(Try result)
+    {
+        if (spawner == null || shooter == null)
+        {
+            result.passed = true;
+            yield break;
+        }
+        ShowStep("turbo");
+        SlowAsteroids(3f); // longer flight, so the first beat comes a moment after it appears
+
+        ChartTarget target = null;
+        yield return SpawnOne(NextLane(), t => target = t, false, 3.6f, turbo: true);
+        if (target == null)
+        {
+            RestoreAsteroidSpeed();
+            yield break;
+        }
+        target.shipHitRadius = -1f; // a miss here shouldn't cost a life
+        cues.Mark(target, TutorialCues.MarkKind.Pips);
+        cues.Tag(target, "2 SHOTS", warnColor);
+
+        int needed = Mathf.Max(1, target.HitsLeft), landed = 0;
+        Action<BeatJudgment> track = j =>
+        {
+            if (shooter.LastShotTarget == target && j != BeatJudgment.Miss) landed++;
+        };
+        shooter.ShotFired += track;
+        float perfect = PerfectWindow * spawner.turboWindowScale, good = GoodWindow * spawner.turboWindowScale;
+
+        for (int shot = 0; shot < needed && target != null; shot++)
+        {
+            float judge = target.JudgeTime;
+            int before = landed;
+            yield return new WaitUntil(() => target == null || SongTime >= judge - good - 0.6f * Beat);
+            yield return SlowTo(approachScale);
+            yield return new WaitUntil(() => target == null || SongTime >= judge - good);
+            if (target != null) yield return SlowTo(windowScale);
+            yield return new WaitUntil(() => target == null || landed > before || SongTime >= judge - perfect);
+            if (target != null && landed == before) cues.ShowNow(target);
+            yield return new WaitUntil(() => target == null || landed > before || SongTime >= judge + good);
+            cues.HideNow();
+            yield return SpeedUp();
+            if (landed == before) break; // missed this beat: a fresh asteroid comes next
+            if (target != null) cues.Tag(target, "1 MORE!", warnColor);
+        }
+
+        shooter.ShotFired -= track;
+        yield return new WaitForSecondsRealtime(0.3f);
+        if (target != null) Destroy(target.gameObject);
+        cues.Mark(null, TutorialCues.MarkKind.None);
+        cues.ClearTag();
+        cues.HideNow();
+        RestoreAsteroidSpeed();
+        result.passed = landed >= needed;
+    }
+
+    // Step 3: W A S D. The keys show and the ghost slides through the spots at once, and the ship can
+    // move the whole time. Passes only once the player has moved; while they wait, the ghost shows it again
+    // and the other spots glow.
 
     IEnumerator MoveTry(Try result)
     {
         ShowStep("move");
         cues.ShowKeys(true);
         PlayerMovement.Spot from = movement.Current;
-        float start = Time.unscaledTime;
-        bool moved = false;
+        float start = Time.unscaledTime, lastHint = start;
         Coroutine demo = StartCoroutine(MoveDemo());
-        while (true)
+        while (movement.Current == from || Time.unscaledTime - start < moveMinSeconds)
         {
-            moved |= movement.Current != from;
-            float seconds = Time.unscaledTime - start;
-            if ((moved && seconds >= moveMinSeconds) || seconds >= moveMaxSeconds) break;
+            bool idle = movement.Current == from;
+            if (idle && !moveDemoRunning && Time.unscaledTime - lastHint >= moveHintSeconds)
+            {
+                // Still here: show it again, and light up every spot that's one key away.
+                lastHint = Time.unscaledTime;
+                foreach (PlayerMovement.Spot spot in TutorialCues.Spots)
+                    cues.Glow(spot, spot != from);
+                demo = StartCoroutine(MoveDemo());
+            }
+            if (!idle)
+                foreach (PlayerMovement.Spot spot in TutorialCues.Spots)
+                    cues.Glow(spot, false);
             yield return null;
         }
-        StopCoroutine(demo);
+        if (demo != null) StopCoroutine(demo);
+        moveDemoRunning = false;
         result.passed = true;
     }
 
     /// <summary>The ghost visits W, A, S and D once, each key lighting up as it gets there (about 1.5 s).</summary>
     IEnumerator MoveDemo()
     {
+        moveDemoRunning = true;
         ghost.Show(movement.Current);
         foreach (PlayerMovement.Spot spot in TutorialCues.Spots)
         {
@@ -355,10 +463,12 @@ public class Tutorial : MonoBehaviour
             cues.LightKey(spot, false);
         }
         ghost.Hide();
+        moveDemoRunning = false;
     }
 
-    // Step 3: big red asteroids can't be shot, so move out of the way. One dodge passes; a hit sends
-    // another. The first time, the ghost slides to the safe spot as the asteroid closes in.
+    // Step 4: big red asteroids can't be shot, so move out of the way. A blinking red ! shows where the ship
+    // is first, like in a level. One dodge passes; a hit sends another. The first time, the ghost slides to
+    // the safe spot as the asteroid closes in.
 
     IEnumerator DodgeTry(Try result)
     {
@@ -366,13 +476,22 @@ public class Tutorial : MonoBehaviour
         LockShooter(true);
         if (health.Health <= health.minHealth) health.Heal(1); // so a hit can show
         int hitsBefore = damageTaken;
-        PlayerMovement.Spot from = movement.Current;
-        PlayerMovement.Spot safe = SafeSpot(from, 0);
         bool showGhost = State("shown") == 0;
         SetState("shown", 1);
 
+        // The warning: a blinking red ! on the ship, for a moment, before the asteroid comes in.
+        int warning = spawner != null ? spawner.ShowBigWarning(ShipViewport()) : -1;
+        for (float until = Time.unscaledTime + bigWarningSeconds; Time.unscaledTime < until;)
+        {
+            spawner?.MoveBigWarning(warning, ShipViewport());
+            yield return null;
+        }
+
+        PlayerMovement.Spot from = movement.Current;
+        PlayerMovement.Spot safe = SafeSpot(from, 0);
         ChartTarget target = null;
         yield return SpawnOne(LaneToward(from), t => target = t, true);
+        spawner?.HideBigWarning(warning);
         // Past its cue an asteroid rushes the ship, so slow down while it's still out there.
         yield return new WaitUntil(() => target == null || movement.Current != from || SongTime >= target.hitTime - 0.6f * Beat);
 
@@ -401,6 +520,15 @@ public class Tutorial : MonoBehaviour
         result.passed = damageTaken == hitsBefore && movement.Current != from;
     }
 
+    /// <summary>The ship's spot on screen (viewport 0-1), for the big asteroid warning.</summary>
+    Vector2 ShipViewport()
+    {
+        Camera cam = DisplayCamera.Find();
+        if (cam == null || health == null) return new Vector2(0.5f, 0.2f);
+        Vector3 v = cam.WorldToViewportPoint(health.transform.position);
+        return new Vector2(v.x, v.y);
+    }
+
     /// <summary>
     /// A spot to send the ship to from <paramref name="from"/>, not in <paramref name="used"/> (spot bits).
     /// One key press away comes first (A and D only reach each other through S), and W last, since it
@@ -418,94 +546,153 @@ public class Tutorial : MonoBehaviour
 
     static int SpotBit(PlayerMovement.Spot spot) => 1 << (int)spot;
 
-    // Step 4: the Shield, Freeze and Bomb stars wait on the other three spots; move onto each one. The
-    // power-up tabs at the top (PowerUpBanners) name each one as it's collected, like in a level. A few slow
-    // asteroids that can't hurt drift in, so Freeze has something to slow and the Bomb something to clear.
+    // Steps 5-7: the power-ups, one at a time. Each star waits on a spot next to the ship (never W, so
+    // the top of the screen stays clear for the power-up tab); once it's collected, a short setup shows
+    // what it does, then a line names the result. The power-up tabs (PowerUpBanners) show like in a level.
 
-    IEnumerator PowerUpsTry(Try result)
+    // Shield: then hold still and let one asteroid hit it. Hearts don't change.
+    IEnumerator ShieldTry(Try result)
     {
         BasicShield shield = health.GetComponent<BasicShield>();
-        SlowMo slowMo = health.GetComponent<SlowMo>();
-        Bomb bomb = health.GetComponent<Bomb>();
-        if (powerUps == null || shield == null || slowMo == null || bomb == null)
+        if (powerUps == null || shield == null)
         {
             result.passed = true;
             yield break;
         }
 
-        ShowStep("powerups");
-        var stars = new Dictionary<PowerUpPickup.Kind, PowerUpPickup>();
-        bool gotShield = false, gotFreeze = false, gotBomb = false, slowed = false;
-        var targets = new List<ChartTarget>();
+        ShowStep("shield");
+        if (!shield.Active) yield return Collect(PowerUpPickup.Kind.Shield, "SHIELD", shieldTagColor, () => shield.Active);
 
+        // One asteroid on a straight path to the ship, clearly marked; the ship holds still so it lands.
+        ShowBanner("SHIELD", "Hold still: the shield takes the next hit.");
+        LockShooter(true);
+        LockMovement(true);
+        int healthBefore = health.Health, hitsBefore = damageTaken;
+        ChartTarget target = null;
+        yield return SpawnOne(LaneToward(movement.Current), t => target = t);
+        if (target != null) cues.Tag(target, "INCOMING", warnColor);
+        yield return new WaitUntil(() => target == null || RingShowing(target));
+        yield return SlowTo(approachScale);
+        yield return new WaitUntil(() => target == null || SongTime > target.hitTime + Beat);
+        if (target != null) Destroy(target.gameObject);
+        cues.ClearTag();
+        yield return SpeedUp();
+        LockMovement(false);
+        LockShooter(false);
+
+        result.passed = !shield.Active && health.Health >= healthBefore && damageTaken == hitsBefore;
+    }
+
+    // Freeze: a stream of asteroids flies past at full speed; collecting Freeze slows them right down.
+    IEnumerator FreezeTry(Try result)
+    {
+        SlowMo slowMo = health.GetComponent<SlowMo>();
+        if (powerUps == null || slowMo == null)
+        {
+            result.passed = true;
+            yield break;
+        }
+
+        ShowStep("freeze");
+        LockShooter(true);
         harmless = true;
-        if (spawner != null)
+        var rocks = new List<ChartTarget>();
+        float streamEnds = -1f;
+        void KeepStreamGoing()
         {
-            savedPlanetLead = spawner.planetLeadSeconds;
-            spawner.planetLeadSeconds = 3.5f; // about 3.5 s from appearing to arriving, instead of 1
-        }
-        int sent = 0;
-        float nextAsteroid = Time.unscaledTime + 0.5f;
-        float allAt = -1f;
-
-        // Parks the star for a power-up not taken yet; one that's gone without being taken comes back.
-        void Park(PowerUpPickup.Kind kind, bool taken, string label, Color color)
-        {
-            if (taken || (stars.TryGetValue(kind, out PowerUpPickup parked) && parked != null)) return;
-            PowerUpPickup star = SpawnStar(kind, stars.Values);
-            if (star == null) return;
-            stars[kind] = star;
-            cues.TagWorld(star.transform, label, color);
-            cues.BackGlow(star.transform, color);
+            if (SongTime < streamEnds - Beat) return;
+            // Six asteroids, one every 0.8 beats, at normal speed.
+            var wave = new (float, NoteLane)[6];
+            for (int i = 0; i < wave.Length; i++) wave[i] = (1.4f + i * 0.8f, NextLane());
+            streamEnds = SongTime + (1.4f + (wave.Length - 1) * 0.8f) * Beat;
+            StartCoroutine(SpawnWave(wave, rocks));
         }
 
-        while (true)
-        {
-            if (!gotBomb && sent < 3 && Time.unscaledTime >= nextAsteroid && ChartTarget.Active.Count == 0)
-            {
-                sent++;
-                nextAsteroid = Time.unscaledTime + 3f;
-                StartCoroutine(SpawnWave(new[] { (3.7f, sent % 2 == 0 ? NoteLane.Right : NoteLane.Left) }, targets));
-            }
+        KeepStreamGoing();
+        yield return new WaitForSecondsRealtime(1f); // see them at full speed first
+        yield return Collect(PowerUpPickup.Kind.SlowMo, "FREEZE", freezeTagColor, () => slowMo.Active, KeepStreamGoing);
 
-            gotShield |= shield.Active;
-            gotFreeze |= slowMo.Active;
-            gotBomb |= bomb.Active;
-            Park(PowerUpPickup.Kind.Shield, gotShield, "SHIELD", shieldTagColor);
-            Park(PowerUpPickup.Kind.SlowMo, gotFreeze, "FREEZE", freezeTagColor);
-            Park(PowerUpPickup.Kind.Bomb, gotBomb, "BOMB", warnColor);
-
-            // No song here for Freeze to slow, so slow the scene clock while it lasts.
-            if (slowMo.Active && !slowed)
-            {
-                slowed = true;
-                StartCoroutine(SlowTo(slowMo.speed));
-            }
-            if (gotShield && gotFreeze && gotBomb)
-            {
-                // All three taken: a moment to see them work, then on. No waiting for Freeze to run out.
-                if (allAt < 0f) allAt = Time.unscaledTime;
-                if (Time.unscaledTime - allAt > 1.2f) break;
-            }
-
-            GoalSpot = null;
-            foreach (PlayerMovement.Spot s in TutorialCues.Spots)
-            {
-                bool star = false;
-                foreach (PowerUpPickup p in stars.Values)
-                    star |= p != null && SpotOf(p) == s;
-                if (star && GoalSpot == null) GoalSpot = s;
-            }
-            yield return null;
-        }
-
-        GoalSpot = null;
-        cues.ClearGuides();
+        // No song here for Freeze to slow, so slow the scene clock while it lasts.
+        ShowBanner("FREEZE", "Everything slows down: the asteroids, and the beat with them.");
+        yield return SlowTo(slowMo.speed);
+        yield return new WaitForSecondsRealtime(freezeShowSeconds);
         slowMo.Cancel();
-        yield return new WaitUntil(() => !bomb.Active);
+        yield return SpeedUp();
         ClearAsteroids();
         RestoreAsteroidSpeed();
+        LockShooter(false);
         result.passed = true;
+    }
+
+    // Bomb: a cluster of slow asteroids drifts in; collecting the Bomb blows them all up.
+    IEnumerator BombTry(Try result)
+    {
+        Bomb bomb = health.GetComponent<Bomb>();
+        if (powerUps == null || bomb == null)
+        {
+            result.passed = true;
+            yield break;
+        }
+
+        ShowStep("bomb");
+        LockShooter(true);
+        harmless = true;
+        SlowAsteroids(3.5f); // about 3.5 s from appearing to arriving, so the cluster stays in view
+        var cluster = new List<ChartTarget>();
+        float clusterEnds = -1f;
+        void KeepClusterInView()
+        {
+            if (SongTime < clusterEnds - 0.5f * Beat) return;
+            cluster.Clear();
+            var wave = new[] { (4.2f, NoteLane.Left), (4.4f, NoteLane.Right), (4.6f, NoteLane.Left), (4.8f, NoteLane.Right) };
+            clusterEnds = SongTime + 4.8f * Beat;
+            StartCoroutine(SpawnWave(wave, cluster));
+        }
+
+        KeepClusterInView();
+        yield return new WaitForSecondsRealtime(1f); // let the cluster come into view first
+        yield return Collect(PowerUpPickup.Kind.Bomb, "BOMB", warnColor, () => bomb.Active, KeepClusterInView);
+        yield return new WaitUntil(() => !bomb.Active);
+        yield return new WaitForSecondsRealtime(0.4f);
+        ClearAsteroids();
+        RestoreAsteroidSpeed();
+        LockShooter(false);
+        result.passed = true;
+    }
+
+    /// <summary>
+    /// Parks the star for <paramref name="kind"/> on a spot next to the ship and waits until
+    /// <paramref name="collected"/> is true. A star that's gone without being collected comes back.
+    /// <paramref name="whileWaiting"/> runs every frame (e.g. to keep asteroids coming).
+    /// </summary>
+    IEnumerator Collect(PowerUpPickup.Kind kind, string label, Color color, Func<bool> collected, Action whileWaiting = null)
+    {
+        PowerUpPickup star = null;
+        while (!collected())
+        {
+            if (star == null)
+            {
+                star = SpawnStar(kind);
+                if (star != null)
+                {
+                    cues.TagWorld(star.transform, label, color);
+                    cues.BackGlow(star.transform, color);
+                }
+            }
+            GoalSpot = star != null ? SpotOf(star) : (PlayerMovement.Spot?)null;
+            whileWaiting?.Invoke();
+            yield return null;
+        }
+        GoalSpot = null;
+        cues.ClearWorldTags();
+    }
+
+    /// <summary>Asteroids take <paramref name="seconds"/> from appearing to arriving, until <see cref="RestoreAsteroidSpeed"/>.</summary>
+    void SlowAsteroids(float seconds)
+    {
+        if (spawner == null) return;
+        if (savedPlanetLead < 0f) savedPlanetLead = spawner.planetLeadSeconds;
+        spawner.planetLeadSeconds = seconds;
     }
 
     /// <summary>Back to normal asteroids: they can hurt again and arrive at the usual speed.</summary>
@@ -519,6 +706,108 @@ public class Tutorial : MonoBehaviour
         }
     }
 
+    // Step 8: a short look at the HUD. Each stop frames one part and names it; the controls stay on.
+
+    IEnumerator HudTour()
+    {
+        yield return HudStop("YOUR LIVES", "Each heart is a life. A hit costs one.", HeartsRect);
+        // No callout for the score: under the card sit the hearts, so the frame and the title name it.
+        yield return HudStop("YOUR SCORE", "PERFECT and GOOD shots score points. Hits in a row raise the multiplier, up to x4.", ScoreRect, false);
+
+        // The song progress bar is hidden in the tutorial, so show it part-way filled while it's pointed at.
+        SongProgressBar bar = flow != null ? flow.GetComponent<SongProgressBar>() : null;
+        if (bar != null)
+        {
+            bar.previewFill = 0.35f;
+            yield return null; // let it lay itself out
+            yield return HudStop("SONG PROGRESS", "The bar fills as the song plays. When it's full, the level is done.", ProgressRect);
+            StopProgressPreview();
+        }
+    }
+
+    /// <summary>
+    /// Frames the part of the HUD <paramref name="target"/> finds (screen pixels) and names it in the banner
+    /// (and with a callout next to it, if <paramref name="callout"/>), for <see cref="hudStopSeconds"/>.
+    /// Skipped if that part isn't on screen. The HUD doesn't move, so it's measured once.
+    /// </summary>
+    IEnumerator HudStop(string title, string line, Func<Rect?> target, bool callout = true)
+    {
+        Rect? found = target();
+        if (found == null) yield break;
+        ShowBanner(title, line);
+        FrameAround(found.Value);
+        highlight.SetActive(true);
+        if (callout) ShowCalloutNextTo(found.Value, title);
+        yield return new WaitForSecondsRealtime(hudStopSeconds);
+        highlight.SetActive(false);
+        cues.HideCallout();
+        HideBanner();
+    }
+
+    /// <summary>The hearts in the top-left corner (HealthHUD), in screen pixels.</summary>
+    Rect? HeartsRect() => ScreenRectOf(GameObject.Find("HealthHUD")?.transform.Find("Corner"));
+
+    /// <summary>The score card above the hearts (ScoreHUD), in screen pixels.</summary>
+    Rect? ScoreRect() => ScreenRectOf(GameObject.Find("ScoreHUD")?.transform.Find("Card"));
+
+    Rect? ProgressRect()
+    {
+        SongProgressBar bar = flow != null ? flow.GetComponent<SongProgressBar>() : null;
+        return bar != null && bar.TryGetScreenRect(out Rect rect) && rect.width > 1f && rect.height > 1f ? rect : (Rect?)null;
+    }
+
+    void StopProgressPreview()
+    {
+        SongProgressBar bar = flow != null ? flow.GetComponent<SongProgressBar>() : null;
+        if (bar != null) bar.previewFill = -1f;
+    }
+
+    /// <summary>
+    /// The screen rectangle around every visible image under <paramref name="root"/> (an overlay canvas is in
+    /// pixels). Text is left out, so a hint line under the hearts doesn't stretch the frame.
+    /// </summary>
+    static Rect? ScreenRectOf(Transform root)
+    {
+        if (root == null || !root.gameObject.activeInHierarchy) return null;
+        bool any = false;
+        Vector2 min = Vector2.positiveInfinity, max = Vector2.negativeInfinity;
+        var corners = new Vector3[4];
+        foreach (Image g in root.GetComponentsInChildren<Image>())
+        {
+            if (!g.isActiveAndEnabled || g.color.a <= 0.01f) continue;
+            g.rectTransform.GetWorldCorners(corners);
+            foreach (Vector3 c in corners)
+            {
+                min = Vector2.Min(min, c);
+                max = Vector2.Max(max, c);
+            }
+            any = true;
+        }
+        return any ? Rect.MinMaxRect(min.x, min.y, max.x, max.y) : (Rect?)null;
+    }
+
+    /// <summary>Puts the pulsing highlight frame around a screen rectangle.</summary>
+    void FrameAround(Rect screen)
+    {
+        const float pad = 14f;
+        float scale = Mathf.Max(0.01f, canvas.scaleFactor);
+        var rect = (RectTransform)highlight.transform;
+        rect.anchoredPosition = screen.center / scale;
+        rect.sizeDelta = screen.size / scale + Vector2.one * pad * 2f;
+    }
+
+    /// <summary>A callout naming the framed part: under it (pointing up), or to its left for something on the right edge.</summary>
+    void ShowCalloutNextTo(Rect screen, string text)
+    {
+        const float gap = 22f;
+        float scale = Mathf.Max(0.01f, canvas.scaleFactor);
+        Rect r = new Rect(screen.position / scale, screen.size / scale);
+        if (screen.center.x > Screen.width * 0.6f)
+            cues.ShowCallout(text, Vector2.zero, new Vector2(r.xMin - gap - 440f, r.center.y - 35f), TutorialCues.CalloutArrow.Right);
+        else
+            cues.ShowCallout(text, Vector2.zero, new Vector2(Mathf.Max(8f, r.center.x - 165f), r.yMin - gap - 120f), TutorialCues.CalloutArrow.Up);
+    }
+
     // The end: straight into the first level.
 
     /// <summary>Hands over to the first level on Easy. The level shows its own intro card and count-in.</summary>
@@ -528,78 +817,21 @@ public class Tutorial : MonoBehaviour
         HideBanner();
         if (skipButton != null) skipButton.SetActive(false);
         ClearAsteroids();
+        StopProgressPreview();
         SetTimeScale(1f);
         flow.FinishTutorial();
     }
 
-    // Off for now (hudStep): where your lives and time are, and what the ship's colour means. To be
-    // redone, short and without locking the controls, with the score HUD and the song progress bar (#157).
-
-    IEnumerator HudTour()
-    {
-        LockShooter(true);
-        LockMovement(true);
-        BasicShield shield = health.GetComponent<BasicShield>();
-        if (shield != null && shield.Active) shield.TryAbsorb(); // a shield would soak up the demo hits
-        health.Heal(health.maxHealth);
-
-        // Lives: top left.
-        ShowBanner("YOUR LIVES", "Each heart is a life. A hit costs one.");
-        ShowLivesHighlight(true);
-        // Under the banner and the hearts, pointing up at them.
-        cues.ShowCallout("YOUR LIVES", new Vector2(0f, 1f), new Vector2(-10f, -125f), TutorialCues.CalloutArrow.Up);
-        yield return new WaitForSecondsRealtime(4.2f);
-        ShowLivesHighlight(false);
-        cues.HideCallout();
-
-        // Time: top right, where the clock sits in a level.
-        ShowBanner("YOUR TIME", "The clock counts down the time left in the song.");
-        clockSample.gameObject.SetActive(true);
-        timeHighlight.SetActive(true);
-        cues.ShowCallout("YOUR TIME", new Vector2(1f, 1f), new Vector2(24f, -125f), TutorialCues.CalloutArrow.Up);
-        yield return new WaitForSecondsRealtime(4.2f);
-        timeHighlight.SetActive(false);
-        clockSample.gameObject.SetActive(false);
-        cues.HideCallout();
-
-        // Ship colour: blue, then orange at 2 lives, then red at 1.
-        ShowBanner("SHIP COLOR", "Your ship changes color as you lose lives.");
-        cues.TagWorld(health.transform, "BLUE: healthy", accentColor);
-        yield return new WaitForSecondsRealtime(2f);
-        yield return LoseLives(2);
-        cues.ClearWorldTags();
-        cues.TagWorld(health.transform, "ORANGE: 2 lives left", warnColor);
-        yield return new WaitForSecondsRealtime(2f);
-        yield return LoseLives(1);
-        cues.ClearWorldTags();
-        cues.TagWorld(health.transform, "RED: last life!", new Color(1f, 0.35f, 0.35f));
-        yield return new WaitForSecondsRealtime(2f);
-
-        cues.ClearWorldTags();
-        health.Heal(health.maxHealth);
-        LockShooter(false);
-        LockMovement(false);
-    }
-
-    /// <summary>Takes hits, one at a time, until the ship is down to <paramref name="lives"/>.</summary>
-    IEnumerator LoseLives(int lives)
-    {
-        for (int tries = 0; health.Health > lives && tries < 8; tries++)
-        {
-            health.TakeDamage(1);
-            yield return new WaitForSecondsRealtime(0.85f); // past the ship's short invulnerable time
-        }
-    }
-
     // ------------------------------------------------------------------ stars
 
-    /// <summary>Parks a star on a spot that isn't the ship's or another star's, until it's grabbed.</summary>
-    PowerUpPickup SpawnStar(PowerUpPickup.Kind kind, IEnumerable<PowerUpPickup> others)
+    /// <summary>
+    /// Parks a star on a spot next to the ship (not W, which sits under the banner and the power-up tab),
+    /// until it's grabbed.
+    /// </summary>
+    PowerUpPickup SpawnStar(PowerUpPickup.Kind kind)
     {
         if (powerUps == null) return null;
-        int used = SpotBit(movement.Current);
-        foreach (PowerUpPickup other in others)
-            if (other != null) used |= SpotBit(SpotOf(other));
+        int used = SpotBit(movement.Current) | SpotBit(PlayerMovement.Spot.Center);
         PlayerMovement.Spot spot = SafeSpot(movement.Current, used);
         PowerUpPickup star = kind switch
         {
@@ -641,16 +873,17 @@ public class Tutorial : MonoBehaviour
 
     // ------------------------------------------------------------------ asteroids
 
-    IEnumerator SpawnOne(NoteLane lane, Action<ChartTarget> got, bool big = false, float leadBeats = 2f)
+    IEnumerator SpawnOne(NoteLane lane, Action<ChartTarget> got, bool big = false, float leadBeats = 2f, bool turbo = false)
     {
         var list = new List<ChartTarget>();
-        yield return SpawnWave(new[] { (leadBeats, lane) }, list, big);
+        yield return SpawnWave(new[] { (leadBeats, lane) }, list, big, turbo);
         got(list.Count > 0 ? list[0] : null);
     }
 
     /// <summary>Queues notes (beats from now, lane) and waits until they have all spawned.
-    /// With <paramref name="big"/>, every note in the wave is a big, unshootable asteroid.</summary>
-    IEnumerator SpawnWave((float beats, NoteLane lane)[] wave, List<ChartTarget> into, bool big = false)
+    /// With <paramref name="big"/>, every note in the wave is a big, unshootable asteroid; with
+    /// <paramref name="turbo"/>, an orange two-shot one.</summary>
+    IEnumerator SpawnWave((float beats, NoteLane lane)[] wave, List<ChartTarget> into, bool big = false, bool turbo = false)
     {
         if (spawner == null) yield break;
         var notes = new List<ChartNote>();
@@ -661,6 +894,7 @@ public class Tutorial : MonoBehaviour
             float time = now + beats * Beat;
             notes.Add(new ChartNote(time, 0, lane));
             if (big) bigTimes.Add(time);
+            else if (turbo) turboTimes.Add(time);
             lastTime = Mathf.Max(lastTime, time);
         }
 
@@ -676,10 +910,20 @@ public class Tutorial : MonoBehaviour
         spawned.Add(target);
         if (harmless) target.shipHitRadius = -1f;
         int big = bigTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
-        if (big < 0) return;
-        bigTimes.RemoveAt(big);
-        target.MakeBig(spawner.bigScale, spawner.bigHitRadius, spawner.bigColor);
-        target.steadyWarning = true;
+        if (big >= 0)
+        {
+            bigTimes.RemoveAt(big);
+            target.MakeBig(spawner.bigScale, spawner.bigHitRadius, spawner.bigColor);
+            target.steadyWarning = true;
+            return;
+        }
+        int turbo = turboTimes.FindIndex(time => Mathf.Abs(time - target.hitTime) < 0.01f);
+        if (turbo < 0) return;
+        turboTimes.RemoveAt(turbo);
+        // Same as an orange asteroid in a level.
+        target.MakeTurbo(spawner.turboHits, spawner.turboHeal, spawner.turboScale, spawner.turboColor,
+            spawner.turboShrinkTo, spawner.turboWiden, spawner.turboFirstHitDelay, spawner.turboWindowScale);
+        target.SlowApproach(spawner.turboSlow);
     }
 
     NoteLane NextLane()
@@ -756,9 +1000,12 @@ public class Tutorial : MonoBehaviour
     static readonly Dictionary<string, (string title, string line)> Words = new Dictionary<string, (string, string)>
     {
         ["shoot"] = ("SHOOT", "Click the moment the brackets turn gold for a PERFECT."),
+        ["turbo"] = ("ORANGE ASTEROIDS", "These take 2 shots. Shoot each time the brackets turn gold."),
         ["move"] = ("MOVE", "Press W A S D to move your ship."),
-        ["dodge"] = ("AVOID BIG ASTEROIDS", "Big red asteroids can't be shot. Move out of the way!"),
-        ["powerups"] = ("POWER-UPS", "Move to collect power-ups: SHIELD, FREEZE and BOMB."),
+        ["dodge"] = ("AVOID BIG ASTEROIDS", "A red ! means a big asteroid is coming. It can't be shot: move out of the way!"),
+        ["shield"] = ("SHIELD", "Move onto the purple star to collect it. It blocks one hit."),
+        ["freeze"] = ("FREEZE", "Move onto the blue star to collect it. Watch the asteroids."),
+        ["bomb"] = ("BOMB", "Move onto the orange star to collect it. Watch the asteroids."),
     };
 
     void ShowStep(string step)
@@ -826,25 +1073,18 @@ public class Tutorial : MonoBehaviour
         banner.SetActive(false);
 
         if (CanSkip) BuildSkipButton();
-        BuildLivesHighlight();
-        BuildClockSample();
+        BuildHighlight();
     }
 
-    /// <summary>A frame around the lives in the top left (same layout as <see cref="HealthHUD"/>).</summary>
-    void BuildLivesHighlight()
+    /// <summary>A pulsing frame the HUD tour puts around the hearts, the score and the song progress bar.</summary>
+    void BuildHighlight()
     {
-        // Read from HealthHUD's layout so the frame always fits the hearts (same canvas scaling).
-        const float pad = 14f, thickness = 7f;
-        int hearts = health != null ? health.maxHealth : 5;
-        float heartsWidth = hearts * HealthHUD.PipWidth + (hearts - 1) * HealthHUD.PipGap;
-        Vector2 size = new Vector2(heartsWidth + pad * 2f, HealthHUD.PipHeight + pad * 2f);
-
-        var root = new GameObject("LivesHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
+        const float thickness = 7f;
+        var root = new GameObject("HudHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
         root.SetParent(canvasObject.transform, false);
-        root.anchorMin = root.anchorMax = root.pivot = new Vector2(0f, 1f);
-        root.anchoredPosition = new Vector2(HealthHUD.Margin - pad, -HealthHUD.Margin + pad);
-        root.sizeDelta = size;
-        livesHighlight = root.gameObject;
+        root.anchorMin = root.anchorMax = Vector2.zero; // positioned in canvas units from the bottom-left corner
+        root.pivot = new Vector2(0.5f, 0.5f);
+        highlight = root.gameObject;
 
         var parts = new List<Graphic>();
         void Bar(Vector2 min, Vector2 max, Vector2 sizeDelta)
@@ -862,59 +1102,8 @@ public class Tutorial : MonoBehaviour
         Bar(new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(thickness, 0f));
         Bar(new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(thickness, 0f));
 
-        livesHighlightParts = parts.ToArray();
-        livesHighlight.SetActive(false);
-    }
-
-    /// <summary>The game's clock is hidden in the tutorial, so show a sample where it sits in a level, with a frame.</summary>
-    void BuildClockSample()
-    {
-        // Same spot and size as LevelClock: under the pause button in the top-right corner.
-        clockSample = AddText(canvasObject.transform, LevelClock.FontSize, FontStyle.Bold, Vector2.zero);
-        RectTransform rect = clockSample.rectTransform;
-        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(1f, 1f);
-        rect.anchoredPosition = new Vector2(-LevelClock.Margin, -LevelClock.Top);
-        rect.sizeDelta = new Vector2(220f, 73f);
-        clockSample.alignment = TextAnchor.UpperRight;
-        clockSample.text = "1:30";
-        clockSample.gameObject.AddComponent<Outline>().effectColor = new Color(0f, 0f, 0f, 0.6f);
-        clockSample.gameObject.SetActive(false);
-
-        const float pad = 12f, thickness = 7f;
-        var root = new GameObject("TimeHighlight", typeof(RectTransform)).GetComponent<RectTransform>();
-        root.SetParent(canvasObject.transform, false);
-        root.anchorMin = root.anchorMax = root.pivot = new Vector2(1f, 1f);
-        root.anchoredPosition = new Vector2(-LevelClock.Margin + pad, -LevelClock.Top + pad);
-        root.sizeDelta = new Vector2(170f + pad * 2f, 66f + pad * 2f);
-        var parts = new List<Graphic>();
-        void Bar(Vector2 min, Vector2 max, Vector2 sizeDelta)
-        {
-            var bar = new GameObject("Edge", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
-            bar.rectTransform.SetParent(root, false);
-            bar.rectTransform.anchorMin = min;
-            bar.rectTransform.anchorMax = max;
-            bar.rectTransform.sizeDelta = sizeDelta;
-            bar.raycastTarget = false;
-            parts.Add(bar);
-        }
-        Bar(new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0f, thickness));
-        Bar(new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, thickness));
-        Bar(new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(thickness, 0f));
-        Bar(new Vector2(1f, 0f), new Vector2(1f, 1f), new Vector2(thickness, 0f));
-        timeHighlight = root.gameObject;
-        timeHighlightParts = parts.ToArray();
-        timeHighlight.SetActive(false);
-    }
-
-    void ShowLivesHighlight(bool show)
-    {
-        if (livesHighlight != null) livesHighlight.SetActive(show);
-    }
-
-    void PulseLivesHighlight()
-    {
-        PulseFrame(livesHighlight, livesHighlightParts);
-        PulseFrame(timeHighlight, timeHighlightParts);
+        highlightParts = parts.ToArray();
+        highlight.SetActive(false);
     }
 
     void PulseFrame(GameObject frame, Graphic[] parts)

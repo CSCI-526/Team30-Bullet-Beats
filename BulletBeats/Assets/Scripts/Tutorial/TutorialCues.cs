@@ -234,6 +234,9 @@ public class TutorialCues
         }
     }
 
+    /// <summary>True while the progress dots show under the banner.</summary>
+    public bool ProgressShowing => progress != null && progress.gameObject.activeSelf;
+
     // ---------------------------------------------------------------- per frame
 
     public void Update(Camera cam)
