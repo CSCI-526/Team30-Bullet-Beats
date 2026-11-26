@@ -257,6 +257,9 @@ public class RhythmSession : MonoBehaviour
             if (metronome != null) metronome.PlayCountInClick();
             yield return WaitDsp(quarter);
         }
+        // The metronome is only on for the count-in unless metronomeOn asks for it during the song.
+        // Left on, it ticks on every chart note even when the player isn't shooting.
+        if (metronome != null && !metronomeOn) metronome.enabled = false;
 
         if (musicSource.clip != null)
         {
