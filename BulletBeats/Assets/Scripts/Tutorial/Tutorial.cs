@@ -58,6 +58,8 @@ public class Tutorial : MonoBehaviour
     public float freezeShowSeconds = 1.8f;
     [Tooltip("Real seconds each HUD stop (lives, score, song progress) stays up.")]
     public float hudStopSeconds = 2.2f;
+    [Tooltip("Seconds a power-up star takes to fly in to its spot. Quicker than in a level, so nobody waits on it.")]
+    public float starFlySeconds = 1f;
     [Tooltip("Returning players see Skip (and ESC skips) only for this many real seconds at the start.")]
     public float skipSeconds = 30f;
 
@@ -112,6 +114,7 @@ public class Tutorial : MonoBehaviour
     readonly List<float> bigTimes = new List<float>();
     readonly List<float> turboTimes = new List<float>();
     readonly Dictionary<PowerUpPickup, PlayerMovement.Spot> starSpots = new Dictionary<PowerUpPickup, PlayerMovement.Spot>();
+    readonly Dictionary<PowerUpPickup, float> starLandsAt = new Dictionary<PowerUpPickup, float>();
     /// <summary>Counters a step keeps between its tries (cleared when a step starts).</summary>
     readonly Dictionary<string, int> stepState = new Dictionary<string, int>();
     int damageTaken;
@@ -552,9 +555,10 @@ public class Tutorial : MonoBehaviour
 
     static int SpotBit(PlayerMovement.Spot spot) => 1 << (int)spot;
 
-    // Steps 5-7: the power-ups, one at a time. Each star waits on a spot next to the ship (never W, so
-    // the top of the screen stays clear for the power-up tab); once it's collected, a short setup shows
-    // what it does, then a line names the result. The power-up tabs (PowerUpBanners) show like in a level.
+    // Steps 5-7: the power-ups, one at a time. Each star flies in quickly and waits on a spot next to the
+    // ship (never W, so the top of the screen stays clear for the power-up tab); once it has landed, an arrow
+    // leads the ship onto it. Once it's collected, a short setup shows what it does, then a line names the
+    // result. The power-up tabs (PowerUpBanners) show like in a level.
 
     // Shield: then hold still and let one asteroid hit it. Hearts don't change.
     IEnumerator ShieldTry(Try result)
@@ -667,13 +671,15 @@ public class Tutorial : MonoBehaviour
     }
 
     /// <summary>
-    /// Parks the star for <paramref name="kind"/> on a spot next to the ship and waits until
-    /// <paramref name="collected"/> is true. A star that's gone without being collected comes back.
-    /// <paramref name="whileWaiting"/> runs every frame (e.g. to keep asteroids coming).
+    /// The star for <paramref name="kind"/> flies in quickly to a spot next to the ship. Once it has landed,
+    /// an arrow and a glow lead the ship onto it: the banner says to move onto the star, so the way is shown
+    /// only when the star is there. Waits until <paramref name="collected"/> is true. A star that's gone
+    /// without being collected comes back. <paramref name="whileWaiting"/> runs every frame (e.g. to keep asteroids coming).
     /// </summary>
     IEnumerator Collect(PowerUpPickup.Kind kind, string label, Color color, Func<bool> collected, Action whileWaiting = null)
     {
         PowerUpPickup star = null;
+        PlayerMovement.Spot? lit = null;
         while (!collected())
         {
             if (star == null)
@@ -685,13 +691,27 @@ public class Tutorial : MonoBehaviour
                     cues.BackGlow(star.transform, color);
                 }
             }
-            GoalSpot = star != null ? SpotOf(star) : (PlayerMovement.Spot?)null;
+            PlayerMovement.Spot? goal = star != null && HasLanded(star) ? SpotOf(star) : (PlayerMovement.Spot?)null;
+            if (goal != lit)
+            {
+                if (lit.HasValue) cues.Glow(lit.Value, false);
+                if (goal.HasValue) cues.Glow(goal.Value, true);
+                lit = goal;
+            }
+            if (goal.HasValue && movement.Current != goal.Value) cues.ShowArrow(movement.Current, goal.Value);
+            else cues.HideArrow();
+            GoalSpot = goal;
             whileWaiting?.Invoke();
             yield return null;
         }
         GoalSpot = null;
+        cues.HideArrow();
+        if (lit.HasValue) cues.Glow(lit.Value, false);
         cues.ClearWorldTags();
     }
+
+    /// <summary>True once a star has flown in and sits on its spot.</summary>
+    bool HasLanded(PowerUpPickup star) => !starLandsAt.TryGetValue(star, out float at) || SongTime >= at;
 
     /// <summary>Asteroids take <paramref name="seconds"/> from appearing to arriving, until <see cref="RestoreAsteroidSpeed"/>.</summary>
     void SlowAsteroids(float seconds)
@@ -848,6 +868,14 @@ public class Tutorial : MonoBehaviour
         if (star == null) return null;
         KeepUntilGrabbed(star);
         starSpots[star] = spot;
+        // It still flies in from the middle like in a level, to show where stars come from, just quicker.
+        float landsAt = SongTime;
+        if (star.TryGetComponent(out PickupStar flight))
+        {
+            landsAt = SongTime + starFlySeconds;
+            flight.LandAt(landsAt);
+        }
+        starLandsAt[star] = landsAt;
         return star;
     }
 

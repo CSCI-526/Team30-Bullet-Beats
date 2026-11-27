@@ -15,8 +15,8 @@ public class TutorialCues
         { PlayerMovement.Spot.Center, PlayerMovement.Spot.Left, PlayerMovement.Spot.Bottom, PlayerMovement.Spot.Right };
 
     const float KeySize = 66f;
-    /// <summary>How far below the object the key cap and the label sit, at 1080p.</summary>
-    const float KeyDrop = 112f, LabelDrop = 62f;
+    /// <summary>How far below the spot the key cap sits, and the gap between a star and the label above it, at 1080p.</summary>
+    const float KeyDrop = 112f, TagGap = 22f;
     const float GlowSize = 190f;
 
     readonly Canvas canvas;
@@ -348,12 +348,24 @@ public class TutorialCues
             text.gameObject.SetActive(alive);
             // Stacked, so two stars flying in from the same point don't print over each other.
             if (!alive) continue;
-            Vector2 at = (Vector2)cam.WorldToScreenPoint(follow.position) + Vector2.down * (LabelDrop + 34f * i) * scale;
+            // Above the star and clear of it: it grows a lot as it flies in, and once it lands on the bottom
+            // row there's no room under it.
+            Vector3 p = cam.WorldToScreenPoint(follow.position);
+            float clear = StarScreenRadius(cam, follow, p.z) + (TagGap + 17f + 34f * i) * scale;
+            Vector2 at = (Vector2)p + Vector2.up * clear;
             // Keep the whole label on screen, e.g. above a ship parked at the right edge.
             float half = text.preferredWidth * 0.5f * scale + 14f * scale;
             at.x = Mathf.Clamp(at.x, half, Mathf.Max(half, Screen.width - half));
             text.rectTransform.position = at;
         }
+    }
+
+    /// <summary>Half a power-up star's size on screen (pixels), with a little of its glow.</summary>
+    static float StarScreenRadius(Camera cam, Transform follow, float depth)
+    {
+        if (depth <= 0.01f) return 0f;
+        float world = (follow.TryGetComponent(out PickupStar star) ? star.starRadius * 1.3f : 1f) * follow.lossyScale.x;
+        return world * cam.pixelHeight / (2f * depth * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad));
     }
 
     void UpdateMark(Camera cam, float scale)
