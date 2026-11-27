@@ -68,7 +68,7 @@ public class GameFlow : MonoBehaviour
     /// The only songs the game shows, in this order (Level Select, level numbers and Next Level follow it). A song
     /// in the catalog that isn't listed here stays hidden until it is ready: add its id here to show it again.
     /// </summary>
-    public static readonly string[] ShownLevelIds = { "pink-panther", "cheat-codes", "boogie-shoes", "flames", "far-out" };
+    public static readonly string[] ShownLevelIds = { "pink-panther", "cheat-codes", "cut-it-out", "boogie-shoes", "flames", "far-out" };
     [Tooltip("Level length in seconds while BeatClock has no song. 0 = never ends by time.")]
     public float levelLengthSeconds = 90f;
     [Tooltip("If off, running out of health does not end the level (for testing).")]
