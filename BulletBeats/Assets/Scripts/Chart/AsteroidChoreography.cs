@@ -166,6 +166,7 @@ public class AsteroidChoreography : MonoBehaviour
     float[] sampleBuf;
     readonly System.Collections.Generic.List<ScheduledSpawn> chart = new System.Collections.Generic.List<ScheduledSpawn>();
     int nextChart;
+    float nextDiag; // TEMP diagnostics
     bool baked;
     bool recording;
     float stepNoteTime;
@@ -314,6 +315,13 @@ public class AsteroidChoreography : MonoBehaviour
     {
         if (music == null || !HasLoadedStems || spawner == null) return;
         BeatClock clock = BeatClock.Instance;
+        // TEMP diagnostics: why stem levels stop spawning mid-song. Remove once found.
+        if (clock != null && Time.unscaledTime >= nextDiag)
+        {
+            nextDiag = Time.unscaledTime + 2f;
+            Debug.Log($"[StemDiag] song {clock.SongTime:0.0}s playing {music.isPlaying} baked {baked} " +
+                      $"next {nextChart}/{chart.Count} live {spawner.LiveCount}/{spawner.maxLiveAsteroids}", this);
+        }
         // music.isPlaying is true while the song runs, even if CornerMute set listener volume to 0.
         if (clock == null || !music.isPlaying) return;
         if (baked)

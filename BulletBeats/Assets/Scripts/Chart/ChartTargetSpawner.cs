@@ -356,7 +356,10 @@ public class ChartTargetSpawner : MonoBehaviour
         }
     }
 
-    bool StemsDriving => choreography != null && choreography.enabled && choreography.HasLoadedStems;
+    // TEMP diagnostics: asteroids currently counted against maxLiveAsteroids.
+    public int LiveCount => liveViewports.Count;
+
+    bool StemsDriving =>choreography != null && choreography.enabled && choreography.HasLoadedStems;
 
     /// <summary>
     /// Spawns an asteroid that reaches the ship at noteTime, aimed at a point inside
