@@ -9,6 +9,14 @@ The live page is <https://csci-526.github.io/Team30-Bullet-Beats/analytics/>. It
 these late or skips them, so don't rely on it), and whenever someone presses "Run workflow" on the Actions
 tab. Press it just before the page is graded.
 
+## Only some dates
+
+To graph one stretch of time (for example just the Beta playtest days), run it locally with a date range. Both days are included:
+
+```
+python3 visualize_analytics.py responses.csv -o beta.html --since 2026-11-03 --until 2026-11-10
+```
+
 ## What the game sends
 
 The form's columns don't change. New values are packed with `|`.
