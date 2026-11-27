@@ -243,6 +243,13 @@ public class GameFlow : MonoBehaviour
         }
     }
 
+    // Clicking outside the game (or switching tabs) takes focus away, and the web build stops the
+    // song. Pause so the player comes back to the pause card instead of an ended run.
+    void OnApplicationFocus(bool hasFocus)
+    {
+        if (!hasFocus) SetPaused(true);
+    }
+
     public void ShowTitle()
     {
         // Back from an ended level: reload so the level starts fresh next time.
