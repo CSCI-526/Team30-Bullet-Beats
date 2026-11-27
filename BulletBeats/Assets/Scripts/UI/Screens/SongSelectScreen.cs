@@ -34,6 +34,7 @@ public class SongSelectScreen : UIScreen
     TextMeshProUGUI detailTitle, detailBest;
     readonly PixelButton[] difficultyButtons = new PixelButton[3];
     Coroutine launching;
+    Image cover, coverBars;
 
     int index;
     int? difficulty;
@@ -141,33 +142,38 @@ public class SongSelectScreen : UIScreen
     {
         details = PixelPanel.Create(Content, new Vector2(820f, 700f), new Vector2(390f, -70f), "Details");
 
-        // Song visual: a framed equalizer until each song has its own art.
-        RectTransform art = PixelPanel.Create(details, new Vector2(560f, 210f), new Vector2(0f, 200f), "SongArt");
-        Image bars = PixelArt.IconImage(art, PixelArt.Icon.Equalizer, 150f, UITheme.ElectricCyan);
-        bars.rectTransform.anchoredPosition = Vector2.zero;
+        // Song cover (Resources/UI/Art/cover_<song id>.png, square) in a pixel frame; the equalizer shows if a song has none.
+        RectTransform art = PixelPanel.Create(details, new Vector2(270f, 270f), new Vector2(0f, 180f), "SongArt");
+        coverBars = PixelArt.IconImage(art, PixelArt.Icon.Equalizer, 150f, UITheme.ElectricCyan);
+        coverBars.rectTransform.anchoredPosition = Vector2.zero;
+        cover = new GameObject("Cover", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        cover.rectTransform.SetParent(art, false);
+        cover.rectTransform.sizeDelta = new Vector2(246f, 246f);
+        cover.preserveAspect = true;
+        cover.raycastTarget = false;
 
         detailTitle = UITheme.Text(details, "", 50f, UITheme.White);
         detailTitle.rectTransform.sizeDelta = new Vector2(760f, 70f);
-        detailTitle.rectTransform.anchoredPosition = new Vector2(0f, 45f);
+        detailTitle.rectTransform.anchoredPosition = new Vector2(0f, 0f);
         detailTitle.enableAutoSizing = true;
         detailTitle.fontSizeMin = 28f;
         detailTitle.fontSizeMax = 50f;
 
         detailBest = UITheme.Text(details, "", 26f, UITheme.AccentYellow, display: false);
         detailBest.rectTransform.sizeDelta = new Vector2(760f, 40f);
-        detailBest.rectTransform.anchoredPosition = new Vector2(0f, -15f);
+        detailBest.rectTransform.anchoredPosition = new Vector2(0f, -55f);
 
         TextMeshProUGUI label = UITheme.Text(details, "DIFFICULTY", 26f, UITheme.MutedGrey);
         label.rectTransform.sizeDelta = new Vector2(760f, 40f);
-        label.rectTransform.anchoredPosition = new Vector2(0f, -75f);
+        label.rectTransform.anchoredPosition = new Vector2(0f, -115f);
 
         string[] names = { "EASY", "MEDIUM", "HARD" };
         for (int i = 0; i < 3; i++)
         {
             int d = i;
             difficultyButtons[i] = PixelButton.Create(details, names[i], () => StartWith(d),
-                UITheme.ButtonStyle.Secondary, 230f, 80f, -140f, 30f);
-            ((RectTransform)difficultyButtons[i].transform).anchoredPosition = new Vector2(-245f + 245f * i, -140f);
+                UITheme.ButtonStyle.Secondary, 230f, 80f, -185f, 30f);
+            ((RectTransform)difficultyButtons[i].transform).anchoredPosition = new Vector2(-245f + 245f * i, -185f);
             difficultyButtons[i].Button.navigation = new Navigation { mode = Navigation.Mode.None };
         }
 
@@ -339,6 +345,10 @@ public class SongSelectScreen : UIScreen
 
         GameFlow.Level selected = Levels[index];
         detailTitle.text = selected.displayName;
+        Sprite coverArt = Resources.Load<Sprite>("UI/Art/cover_" + selected.id);
+        cover.sprite = coverArt;
+        cover.enabled = coverArt != null;
+        coverBars.enabled = coverArt == null;
         if (difficulty.HasValue)
         {
             int high = ScoreKeeper.GetHighScore(selected, (Difficulty)difficulty.Value);
