@@ -231,6 +231,10 @@ public class ScriptedLevel : MonoBehaviour
 
         Vector3 hit = ship.transform.position;
         Vector3 v = cam.WorldToViewportPoint(hit);
+        // Never from the bottom: A, S and D sit on the bottom edge, where it would come in hidden right
+        // behind the ship. From higher up (and in from the side edges) it comes down to the ship in plain view.
+        v.y = Mathf.Max(v.y, spawner.bigMinSpawnY);
+        v.x = Mathf.Clamp(v.x, spawner.bigSpawnSideInset, 1f - spawner.bigSpawnSideInset);
         v.z = spawner.PrepareSpawnDistance(cam);
         ChartNote note = new ChartNote(time, 0, NoteLane.FarLeft);
         ChartTarget target = spawner.SpawnScripted(note, cam.ViewportToWorldPoint(v), hit, Chart.flyIn, Chart.cue, ChartTargetSpawner.ScriptedKind.Big);

@@ -119,6 +119,12 @@ public class ChartTargetSpawner : MonoBehaviour
     [Tooltip("How close the asteroid must pass to hit the ship.")]
     public float bigHitRadius = 7f;
     public Color bigColor = new Color(1f, 0.15f, 0.15f);
+    [Tooltip("Scripted levels: lowest point on screen (0 = bottom, 1 = top) a big asteroid starts from. It still flies at the ship, " +
+             "so with the ship on A, S or D it comes down from above instead of from right behind the ship at the bottom edge.")]
+    [Range(0f, 1f)] public float bigMinSpawnY = 0.5f;
+    [Tooltip("Scripted levels: how far in from the left and right edges (share of the screen width) a big asteroid starts, " +
+             "so one heading for A or D stays on screen as it grows.")]
+    [Range(0f, 0.5f)] public float bigSpawnSideInset = 0.2f;
 
     readonly List<ChartNote> notes = new List<ChartNote>();
     readonly List<Vector2> liveViewports = new List<Vector2>();
