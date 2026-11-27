@@ -27,7 +27,12 @@ public class RingTunnel : MonoBehaviour
 
     struct Ring { public Transform t; public MeshRenderer[] renderers; public float spin; }
 
+    /// <summary>Levels that use this backdrop. Other levels keep the plain star streaks.</summary>
+    public static readonly string[] LevelIds = { "pink-panther" };
+
     readonly List<Ring> rings = new List<Ring>();
+    MeshRenderer skyRenderer;
+    bool shown = true;
     MaterialPropertyBlock block;
     Camera cam;
     Vector3 origin;
@@ -83,6 +88,17 @@ public class RingTunnel : MonoBehaviour
 
     void Update()
     {
+        GameFlow flow = GameFlow.Instance;
+        var level = flow != null ? flow.CurrentLevel : null;
+        bool want = level != null && !flow.IsTutorial && System.Array.IndexOf(LevelIds, level.id) >= 0;
+        if (want != shown)
+        {
+            shown = want;
+            foreach (Ring r in rings) r.renderers[0].enabled = want;
+            if (skyRenderer != null) skyRenderer.enabled = want;
+        }
+        if (!shown) return;
+
         float step = speed * Time.deltaTime;
         foreach (Ring r in rings)
         {
@@ -218,6 +234,7 @@ public class RingTunnel : MonoBehaviour
         quad.transform.position = origin + new Vector3(0f, 0f, farDistance + 15f);
         quad.transform.localScale = new Vector3(3600f, 2000f, 1f);
         var qr = quad.GetComponent<MeshRenderer>();
+        skyRenderer = qr;
         qr.sharedMaterial = mat;
         qr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
