@@ -57,14 +57,30 @@ def read_text(source):
         return f.read()
 
 
-def load_rows(source):
-    """Rows as dicts, by form order (Timestamp, session, event, level, time, d1, d2, d3)."""
+def row_date(stamp):
+    """The day of a form Timestamp ("11/5/2026 14:03:22" or "2026-11-05 ..."), or None if it can't be read."""
+    day = stamp.split(" ")[0]
+    for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(day, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+def load_rows(source, since=None, until=None):
+    """Rows as dicts, by form order (Timestamp, session, event, level, time, d1, d2, d3).
+    With since/until (dates, inclusive), rows outside that range are left out."""
     rows = list(csv.reader(io.StringIO(read_text(source))))
     out = []
     for row in rows[1:]:
         if len(row) < 5:
             continue
         row = [c.strip() for c in row] + [""] * 8
+        if since or until:
+            day = row_date(row[0])
+            if day is None or (since and day < since) or (until and day > until):
+                continue
         try:
             t = float(row[4])
         except ValueError:
@@ -534,12 +550,16 @@ def main(argv=None):
     parser.add_argument("source", nargs="?", help="responses CSV file or link; leave out to write the empty page")
     parser.add_argument("-o", "--output", default="analytics_report.html")
     parser.add_argument("--simulated", action="store_true", help="local testing only: label the data as simulated")
+    parser.add_argument("--since", type=lambda v: datetime.strptime(v, "%Y-%m-%d").date(),
+                        help="only responses on or after this day (YYYY-MM-DD)")
+    parser.add_argument("--until", type=lambda v: datetime.strptime(v, "%Y-%m-%d").date(),
+                        help="only responses on or before this day (YYYY-MM-DD)")
     args = parser.parse_args(argv)
 
     runs, hidden = [], 0
     if args.source:
         try:
-            runs = build_runs(load_rows(args.source))
+            runs = build_runs(load_rows(args.source, args.since, args.until))
         except Exception as error:  # keep the last good page: don't replace it with an empty one
             print(f"Could not read the source: {error}", file=sys.stderr)
             return 1
@@ -554,6 +574,8 @@ def main(argv=None):
         source = "simulated sample responses" if args.simulated else "Google Form responses"
         if hidden:
             source += f" ({plural(hidden, 'run')} on songs that are no longer in the game not shown)"
+        if args.since or args.until:
+            source += f", {args.since or 'start'} to {args.until or 'now'}"
         page = build_page(runs, source, args.simulated)
         print(f"Wrote {args.output}: {len(runs)} runs{' (simulated)' if args.simulated else ''}")
     else:
