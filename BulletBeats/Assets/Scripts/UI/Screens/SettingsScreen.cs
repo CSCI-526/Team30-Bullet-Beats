@@ -5,10 +5,11 @@ using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 /// <summary>
-/// Settings: three ON/OFF toggles on one page, no sub-menus and no sliders.
+/// Settings: four ON/OFF toggles on one page, no sub-menus and no sliders.
 /// SOUND mutes everything (<see cref="CornerMute"/>), AIM ASSIST turns the shot lock-on fully on
 /// or off (<see cref="PlayerShooter.SetAimAssist"/>), HOLD TO FIRE keeps firing while the mouse
-/// is held (<see cref="PlayerShooter.SetHoldToFire"/>). BACK or Esc returns to whatever opened it
+/// is held (<see cref="PlayerShooter.SetHoldToFire"/>), HIT SOUNDS plays the Perfect/Good laser sound
+/// (<see cref="ShotSound.Enabled"/>). BACK or Esc returns to whatever opened it
 /// (the main menu now, the pause menu later), through the callback given to <see cref="Open(Action)"/>.
 /// </summary>
 public class SettingsScreen : UIScreen
@@ -20,7 +21,7 @@ public class SettingsScreen : UIScreen
         public Action<bool> set;
     }
 
-    readonly Row[] rows = new Row[3];
+    readonly Row[] rows = new Row[4];
     MenuBackground background;
     PixelButton back;
     Action onBack;
@@ -38,15 +39,16 @@ public class SettingsScreen : UIScreen
         title.rectTransform.sizeDelta = new Vector2(900f, 110f);
         title.rectTransform.anchoredPosition = new Vector2(0f, 300f);
 
-        RectTransform panel = PixelPanel.Create(Content, new Vector2(980f, 470f), new Vector2(0f, -40f), "SettingsPanel");
+        RectTransform panel = PixelPanel.Create(Content, new Vector2(980f, 600f), new Vector2(0f, -40f), "SettingsPanel");
 
-        rows[0] = AddRow(panel, "SOUND", 130f, () => !CornerMute.Muted, on => CornerMute.SetMuted(!on));
-        rows[1] = AddRow(panel, "AIM ASSIST", 0f, AimAssistOn, SetAimAssist);
-        rows[2] = AddRow(panel, "HOLD TO FIRE", -130f, () => PlayerShooter.HoldToFireEnabled, SetHoldToFire);
+        rows[0] = AddRow(panel, "SOUND", 195f, () => !CornerMute.Muted, on => CornerMute.SetMuted(!on));
+        rows[1] = AddRow(panel, "AIM ASSIST", 65f, AimAssistOn, SetAimAssist);
+        rows[2] = AddRow(panel, "HOLD TO FIRE", -65f, () => PlayerShooter.HoldToFireEnabled, SetHoldToFire);
+        rows[3] = AddRow(panel, "HIT SOUNDS", -195f, () => ShotSound.Enabled, on => ShotSound.Enabled = on);
 
         TextMeshProUGUI hint = UITheme.Text(Content, "ARROWS  MOVE      ENTER  TOGGLE      ESC  BACK", 24f, UITheme.MutedGrey, display: false);
         hint.rectTransform.sizeDelta = new Vector2(1200f, 40f);
-        hint.rectTransform.anchoredPosition = new Vector2(0f, -340f);
+        hint.rectTransform.anchoredPosition = new Vector2(0f, -395f);
     }
 
     /// <summary>Opens settings. <paramref name="onBack"/> runs after BACK/Esc closes it.</summary>

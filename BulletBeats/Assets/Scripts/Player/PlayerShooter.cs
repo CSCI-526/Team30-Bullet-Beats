@@ -109,6 +109,7 @@ public class PlayerShooter : MonoBehaviour
     {
         if (SavedAimAssist >= 0f) aimAssist = SavedAimAssist;
         holdToFire = HoldToFireEnabled;
+        if (GetComponent<ShotSound>() == null) gameObject.AddComponent<ShotSound>();
     }
 
     void Start()
