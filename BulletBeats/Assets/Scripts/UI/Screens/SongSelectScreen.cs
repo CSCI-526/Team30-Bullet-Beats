@@ -13,9 +13,9 @@ using UnityEngine.UI;
 /// Up/Down keys, the mouse wheel, the wheel's top/bottom and clicking a row move the highlight; the
 /// centre SELECT button or Enter confirms.</para>
 /// <para><b>Details:</b> confirming slides the iPod left and the details card in on the right (song,
-/// high score, EASY / MEDIUM / HARD, START). The iPod keeps working, so the song can change without going
-/// back. Easy is picked to begin with, so START works at once.</para>
-/// <para>Keys in details: Up/Down change song, Left/Right pick difficulty, Enter starts. Esc goes from
+/// high score, EASY / MEDIUM / HARD). The iPod keeps working, so the song can change without going
+/// back. Nothing is picked at first; clicking a difficulty lights it up and starts the level.</para>
+/// <para>Keys in details: Up/Down change song, Left/Right highlight a difficulty, Enter starts it. Esc goes from
 /// details back to browsing, and from browsing back to the main menu.</para>
 /// </summary>
 public class SongSelectScreen : UIScreen
@@ -33,7 +33,8 @@ public class SongSelectScreen : UIScreen
     Image upArrow, downArrow;
     TextMeshProUGUI detailTitle, detailBest;
     readonly PixelButton[] difficultyButtons = new PixelButton[3];
-    PixelButton start;
+    Coroutine launching;
+    Image cover, coverBars;
 
     int index;
     int? difficulty;
@@ -141,38 +142,40 @@ public class SongSelectScreen : UIScreen
     {
         details = PixelPanel.Create(Content, new Vector2(820f, 700f), new Vector2(390f, -70f), "Details");
 
-        // Song visual: a framed equalizer until each song has its own art.
-        RectTransform art = PixelPanel.Create(details, new Vector2(560f, 210f), new Vector2(0f, 200f), "SongArt");
-        Image bars = PixelArt.IconImage(art, PixelArt.Icon.Equalizer, 150f, UITheme.ElectricCyan);
-        bars.rectTransform.anchoredPosition = Vector2.zero;
+        // Song cover (Resources/UI/Art/cover_<song id>.png, square) in a pixel frame; the equalizer shows if a song has none.
+        RectTransform art = PixelPanel.Create(details, new Vector2(270f, 270f), new Vector2(0f, 180f), "SongArt");
+        coverBars = PixelArt.IconImage(art, PixelArt.Icon.Equalizer, 150f, UITheme.ElectricCyan);
+        coverBars.rectTransform.anchoredPosition = Vector2.zero;
+        cover = new GameObject("Cover", typeof(RectTransform), typeof(Image)).GetComponent<Image>();
+        cover.rectTransform.SetParent(art, false);
+        cover.rectTransform.sizeDelta = new Vector2(246f, 246f);
+        cover.preserveAspect = true;
+        cover.raycastTarget = false;
 
         detailTitle = UITheme.Text(details, "", 50f, UITheme.White);
         detailTitle.rectTransform.sizeDelta = new Vector2(760f, 70f);
-        detailTitle.rectTransform.anchoredPosition = new Vector2(0f, 45f);
+        detailTitle.rectTransform.anchoredPosition = new Vector2(0f, 0f);
         detailTitle.enableAutoSizing = true;
         detailTitle.fontSizeMin = 28f;
         detailTitle.fontSizeMax = 50f;
 
         detailBest = UITheme.Text(details, "", 26f, UITheme.AccentYellow, display: false);
         detailBest.rectTransform.sizeDelta = new Vector2(760f, 40f);
-        detailBest.rectTransform.anchoredPosition = new Vector2(0f, -15f);
+        detailBest.rectTransform.anchoredPosition = new Vector2(0f, -55f);
 
         TextMeshProUGUI label = UITheme.Text(details, "DIFFICULTY", 26f, UITheme.MutedGrey);
         label.rectTransform.sizeDelta = new Vector2(760f, 40f);
-        label.rectTransform.anchoredPosition = new Vector2(0f, -75f);
+        label.rectTransform.anchoredPosition = new Vector2(0f, -115f);
 
         string[] names = { "EASY", "MEDIUM", "HARD" };
         for (int i = 0; i < 3; i++)
         {
             int d = i;
-            difficultyButtons[i] = PixelButton.Create(details, names[i], () => PickDifficulty(d),
-                UITheme.ButtonStyle.Secondary, 230f, 80f, -140f, 30f);
-            ((RectTransform)difficultyButtons[i].transform).anchoredPosition = new Vector2(-245f + 245f * i, -140f);
+            difficultyButtons[i] = PixelButton.Create(details, names[i], () => StartWith(d),
+                UITheme.ButtonStyle.Secondary, 230f, 80f, -185f, 30f);
+            ((RectTransform)difficultyButtons[i].transform).anchoredPosition = new Vector2(-245f + 245f * i, -185f);
             difficultyButtons[i].Button.navigation = new Navigation { mode = Navigation.Mode.None };
         }
-
-        start = PixelButton.Create(details, "START", StartSong, UITheme.ButtonStyle.Primary, 420f, 96f, -265f, 46f);
-        start.Button.navigation = new Navigation { mode = Navigation.Mode.None };
 
         details.gameObject.SetActive(false);
     }
@@ -181,6 +184,7 @@ public class SongSelectScreen : UIScreen
     {
         showingDetails = false;
         difficulty = null;
+        launching = null;
         if (Levels != null && Levels.Length > 0)
         {
             int current = System.Array.IndexOf(Levels, flow.CurrentLevel);
@@ -263,8 +267,6 @@ public class SongSelectScreen : UIScreen
     {
         if (showingDetails || !GameFlow.CanLoad(Levels[index])) return;
         showingDetails = true;
-        // Easy is picked to begin with, so START works straight away; Medium or Hard is one click.
-        if (!difficulty.HasValue) difficulty = 0;
         Refresh();
         if (move != null) StopCoroutine(move);
         move = StartCoroutine(ShowDetails());
@@ -298,6 +300,21 @@ public class SongSelectScreen : UIScreen
         Refresh();
     }
 
+    /// <summary>Clicking a difficulty: light it up for a moment, then start the level on it.</summary>
+    void StartWith(int d)
+    {
+        if (!showingDetails || launching != null) return;
+        PickDifficulty(d);
+        launching = StartCoroutine(LaunchSoon());
+    }
+
+    IEnumerator LaunchSoon()
+    {
+        yield return new WaitForSecondsRealtime(0.15f);
+        launching = null;
+        StartSong();
+    }
+
     void StartSong()
     {
         if (!showingDetails || !difficulty.HasValue) return;
@@ -328,6 +345,10 @@ public class SongSelectScreen : UIScreen
 
         GameFlow.Level selected = Levels[index];
         detailTitle.text = selected.displayName;
+        Sprite coverArt = Resources.Load<Sprite>("UI/Art/cover_" + selected.id);
+        cover.sprite = coverArt;
+        cover.enabled = coverArt != null;
+        coverBars.enabled = coverArt == null;
         if (difficulty.HasValue)
         {
             int high = ScoreKeeper.GetHighScore(selected, (Difficulty)difficulty.Value);
@@ -337,7 +358,6 @@ public class SongSelectScreen : UIScreen
 
         for (int i = 0; i < 3; i++)
             difficultyButtons[i].SetStyle(difficulty == i ? UITheme.ButtonStyle.Primary : UITheme.ButtonStyle.Secondary);
-        start.Button.interactable = difficulty.HasValue;
     }
 
     static RectTransform Art(Transform parent, string art, float width, float height = 0f)
