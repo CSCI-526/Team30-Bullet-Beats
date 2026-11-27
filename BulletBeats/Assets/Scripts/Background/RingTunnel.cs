@@ -21,7 +21,7 @@ public class RingTunnel : MonoBehaviour
     public int chunksPerRing = 44;
 
     [Header("Look")]
-    public Color rockNear = new Color(0.21f, 0.23f, 0.28f);
+    public Color rockNear = new Color(0.9f, 0.92f, 1f);
     public Color skyTint = new Color(0.06f, 0.09f, 0.17f);
     public float bend = 60f;              // how far the far end of the tunnel drifts sideways
 
@@ -42,6 +42,7 @@ public class RingTunnel : MonoBehaviour
     Camera cam;
     Vector3 origin;
     static readonly int BaseColor = Shader.PropertyToID("_BaseColor");
+    static readonly int EmissionColor = Shader.PropertyToID("_EmissionColor");
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoCreate()
@@ -144,7 +145,9 @@ public class RingTunnel : MonoBehaviour
         // Fade far rings into the sky (no fog, so asteroids stay crisp).
         float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(220f, farDistance * 0.85f, d));
         block.SetColor(BaseColor, Color.Lerp(rockNear, skyTint, fade));
+        block.SetColor(EmissionColor, new Color(1.6f, 1.6f, 1.6f) * (1f - fade));
         r.renderers[0].SetPropertyBlock(block, 0);
+        block.Clear();
         block.SetColor(BaseColor, Color.Lerp(new Color(0.55f, 0.42f, 0.25f), skyTint, Mathf.Max(fade, 0.25f)));
         r.renderers[0].SetPropertyBlock(block, 1);
     }
@@ -155,6 +158,7 @@ public class RingTunnel : MonoBehaviour
     {
         var verts = new List<Vector3>();
         var norms = new List<Vector3>();
+        var uvs = new List<Vector2>();
         var rockTris = new List<int>();
         var lightTris = new List<int>();
         float R = ringRadius;
@@ -169,14 +173,14 @@ public class RingTunnel : MonoBehaviour
             float len = R * arc * Rand(rng, 0.92f, 1.08f);
             Vector3 center = Dir(a) * (inner + thick * 0.5f);
             Quaternion rot = Quaternion.Euler(Rand(rng, -4f, 4f), Rand(rng, -4f, 4f), a * Mathf.Rad2Deg - 90f);
-            AddBox(verts, norms, rockTris, center, rot, new Vector3(len, thick, depth));
+            AddBox(verts, norms, uvs, rockTris, center, rot, new Vector3(len, thick, depth));
 
             // Outer rubble band: smaller blocks stacked on the outside for a rocky silhouette.
             if (rng.NextDouble() < 0.5)
             {
                 float h = Rand(rng, 6f, 14f);
                 Vector3 c2 = Dir(a + Rand(rng, -0.3f, 0.3f) * arc) * (inner + thick + h * 0.4f);
-                AddBox(verts, norms, rockTris, c2, rot * Quaternion.Euler(0, 0, Rand(rng, -12f, 12f)),
+                AddBox(verts, norms, uvs, rockTris, c2, rot * Quaternion.Euler(0, 0, Rand(rng, -12f, 12f)),
                     new Vector3(len * Rand(rng, 0.4f, 0.8f), h, depth * Rand(rng, 0.5f, 0.9f)));
             }
 
@@ -186,16 +190,16 @@ public class RingTunnel : MonoBehaviour
             {
                 float px = Rand(rng, -0.35f, 0.35f) * len, py = Rand(rng, -0.3f, 0.3f) * thick;
                 Vector3 pc = center + rot * new Vector3(px, py, -depth * 0.5f - 0.8f);
-                AddBox(verts, norms, rockTris, pc, rot, new Vector3(len * Rand(rng, 0.2f, 0.45f), thick * Rand(rng, 0.2f, 0.4f), 1.6f));
+                AddBox(verts, norms, uvs, rockTris, pc, rot, new Vector3(len * Rand(rng, 0.2f, 0.45f), thick * Rand(rng, 0.2f, 0.4f), 1.6f));
             }
             // Rib between blocks, sticking out a little toward the tunnel center and the camera.
             Vector3 rib = Dir(a + arc * 0.5f) * (inner + thick * 0.45f) + new Vector3(0f, 0f, -depth * 0.5f - 0.5f);
-            AddBox(verts, norms, rockTris, rib, Quaternion.Euler(0, 0, (a + arc * 0.5f) * Mathf.Rad2Deg - 90f), new Vector3(2.2f, thick * 1.15f, depth * 0.4f));
+            AddBox(verts, norms, uvs, rockTris, rib, Quaternion.Euler(0, 0, (a + arc * 0.5f) * Mathf.Rad2Deg - 90f), new Vector3(2.2f, thick * 1.15f, depth * 0.4f));
             // Small blocks on the inner edge give the ring a broken, rocky rim.
             if (rng.NextDouble() < 0.55)
             {
                 Vector3 c4 = Dir(a + Rand(rng, -0.4f, 0.4f) * arc) * (inner - Rand(rng, 1f, 4f));
-                AddBox(verts, norms, rockTris, c4, rot * Quaternion.Euler(Rand(rng, -20f, 20f), Rand(rng, -20f, 20f), Rand(rng, -30f, 30f)),
+                AddBox(verts, norms, uvs, rockTris, c4, rot * Quaternion.Euler(Rand(rng, -20f, 20f), Rand(rng, -20f, 20f), Rand(rng, -30f, 30f)),
                     Vector3.one * Rand(rng, 3f, 7f));
             }
 
@@ -203,13 +207,15 @@ public class RingTunnel : MonoBehaviour
             if (rng.NextDouble() < 0.3)
             {
                 Vector3 c3 = center + rot * new Vector3(0f, Rand(rng, -thick * 0.25f, thick * 0.25f), -depth * 0.5f - 0.4f);
-                AddBox(verts, norms, lightTris, c3, rot, new Vector3(len * 0.35f, 2.2f, 0.6f));
+                AddBox(verts, norms, uvs, lightTris, c3, rot, new Vector3(len * 0.35f, 2.2f, 0.6f));
             }
         }
 
         var m = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
         m.SetVertices(verts);
         m.SetNormals(norms);
+        m.SetUVs(0, uvs);
+        m.RecalculateTangents();
         m.subMeshCount = 2;
         m.SetTriangles(rockTris, 0);
         m.SetTriangles(lightTris, 1);
@@ -223,8 +229,12 @@ public class RingTunnel : MonoBehaviour
 
     static readonly Vector3[] FaceN = { Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back };
 
-    static void AddBox(List<Vector3> v, List<Vector3> n, List<int> tris, Vector3 c, Quaternion q, Vector3 size)
+    const float TexTile = 70f; // world units per texture repeat
+
+    static void AddBox(List<Vector3> v, List<Vector3> n, List<Vector2> uv, List<int> tris, Vector3 c, Quaternion q, Vector3 size)
     {
+        // Each block samples a different part of the hull texture.
+        var off = new Vector2(Mathf.Repeat(c.x * 0.37f + c.z * 0.11f, 1f), Mathf.Repeat(c.y * 0.29f + c.x * 0.07f, 1f));
         Vector3 h = size * 0.5f;
         foreach (Vector3 f in FaceN)
         {
@@ -236,6 +246,7 @@ public class RingTunnel : MonoBehaviour
                 float su = (k == 0 || k == 3) ? -1 : 1, sw = (k < 2) ? -1 : 1;
                 Vector3 p = Vector3.Scale(f + u * su + w * sw, h);
                 v.Add(c + q * p);
+                uv.Add(off + new Vector2(Vector3.Dot(p, u), Vector3.Dot(p, w)) / TexTile);
                 n.Add(q * f);
             }
             tris.Add(b); tris.Add(b + 1); tris.Add(b + 2);
