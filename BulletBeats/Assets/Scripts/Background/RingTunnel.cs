@@ -32,7 +32,12 @@ public class RingTunnel : MonoBehaviour
 
     readonly List<Ring> rings = new List<Ring>();
     MeshRenderer skyRenderer;
-    bool shown = true;
+    Renderer starSphere;
+    ParticleSystem dust;
+    Camera[] cams;
+    CameraClearFlags[] camFlags;
+    Color[] camColors;
+    bool? shown;
     MaterialPropertyBlock block;
     Camera cam;
     Vector3 origin;
@@ -59,10 +64,19 @@ public class RingTunnel : MonoBehaviour
 
         // Enlarge the star sphere so the tunnel has room to stretch into the distance.
         GameObject stars = GameObject.Find("skysphere");
-        if (stars != null) stars.transform.localScale *= 3f;
-        foreach (Camera c in FindObjectsByType<Camera>(FindObjectsSortMode.None)) c.farClipPlane = Mathf.Max(c.farClipPlane, 2200f);
+        if (stars != null) { stars.transform.localScale *= 3f; starSphere = stars.GetComponentInChildren<Renderer>(); }
+        cams = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+        camFlags = new CameraClearFlags[cams.Length];
+        camColors = new Color[cams.Length];
+        for (int i = 0; i < cams.Length; i++)
+        {
+            cams[i].farClipPlane = Mathf.Max(cams[i].farClipPlane, 2200f);
+            camFlags[i] = cams[i].clearFlags;
+            camColors[i] = cams[i].backgroundColor;
+        }
 
         BuildSky(sky);
+        BuildDust(sky);
 
         var rng = new System.Random(526);
         Mesh[] variants = { BuildRingMesh(rng), BuildRingMesh(rng), BuildRingMesh(rng) };
@@ -91,13 +105,22 @@ public class RingTunnel : MonoBehaviour
         GameFlow flow = GameFlow.Instance;
         var level = flow != null ? flow.CurrentLevel : null;
         bool want = level != null && !flow.IsTutorial && System.Array.IndexOf(LevelIds, level.id) >= 0;
-        if (want != shown)
+        if (shown != want)
         {
             shown = want;
             foreach (Ring r in rings) r.renderers[0].enabled = want;
             if (skyRenderer != null) skyRenderer.enabled = want;
+            if (dust != null) { if (want) dust.Play(); else { dust.Stop(); dust.Clear(); } }
+            // The tunnel brings its own sky: hide the streaky star sphere and clear to black.
+            if (starSphere != null) starSphere.enabled = !want;
+            for (int i = 0; i < cams.Length; i++)
+            {
+                if (cams[i] == null) continue;
+                cams[i].clearFlags = want ? CameraClearFlags.SolidColor : camFlags[i];
+                cams[i].backgroundColor = want ? Color.black : camColors[i];
+            }
         }
-        if (!shown) return;
+        if (shown != true) return;
 
         float step = speed * Time.deltaTime;
         foreach (Ring r in rings)
@@ -119,7 +142,7 @@ public class RingTunnel : MonoBehaviour
         r.t.position = new Vector3(origin.x, origin.y, origin.z + d) + drift;
 
         // Fade far rings into the sky (no fog, so asteroids stay crisp).
-        float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(250f, farDistance, d));
+        float fade = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(220f, farDistance * 0.85f, d));
         block.SetColor(BaseColor, Color.Lerp(rockNear, skyTint, fade));
         r.renderers[0].SetPropertyBlock(block, 0);
         block.SetColor(BaseColor, Color.Lerp(new Color(0.55f, 0.42f, 0.25f), skyTint, Mathf.Max(fade, 0.25f)));
@@ -157,8 +180,27 @@ public class RingTunnel : MonoBehaviour
                     new Vector3(len * Rand(rng, 0.4f, 0.8f), h, depth * Rand(rng, 0.5f, 0.9f)));
             }
 
-            // A few dim, warm panels on the face toward the camera.
-            if (rng.NextDouble() < 0.18)
+            // Surface detail on the face toward the camera: raised plates, a recessed seam, rivet blocks.
+            int plates = 1 + rng.Next(3);
+            for (int k = 0; k < plates; k++)
+            {
+                float px = Rand(rng, -0.35f, 0.35f) * len, py = Rand(rng, -0.3f, 0.3f) * thick;
+                Vector3 pc = center + rot * new Vector3(px, py, -depth * 0.5f - 0.8f);
+                AddBox(verts, norms, rockTris, pc, rot, new Vector3(len * Rand(rng, 0.2f, 0.45f), thick * Rand(rng, 0.2f, 0.4f), 1.6f));
+            }
+            // Rib between blocks, sticking out a little toward the tunnel center and the camera.
+            Vector3 rib = Dir(a + arc * 0.5f) * (inner + thick * 0.45f) + new Vector3(0f, 0f, -depth * 0.5f - 0.5f);
+            AddBox(verts, norms, rockTris, rib, Quaternion.Euler(0, 0, (a + arc * 0.5f) * Mathf.Rad2Deg - 90f), new Vector3(2.2f, thick * 1.15f, depth * 0.4f));
+            // Small blocks on the inner edge give the ring a broken, rocky rim.
+            if (rng.NextDouble() < 0.55)
+            {
+                Vector3 c4 = Dir(a + Rand(rng, -0.4f, 0.4f) * arc) * (inner - Rand(rng, 1f, 4f));
+                AddBox(verts, norms, rockTris, c4, rot * Quaternion.Euler(Rand(rng, -20f, 20f), Rand(rng, -20f, 20f), Rand(rng, -30f, 30f)),
+                    Vector3.one * Rand(rng, 3f, 7f));
+            }
+
+            // Dim, warm lit panels on the face toward the camera.
+            if (rng.NextDouble() < 0.3)
             {
                 Vector3 c3 = center + rot * new Vector3(0f, Rand(rng, -thick * 0.25f, thick * 0.25f), -depth * 0.5f - 0.4f);
                 AddBox(verts, norms, lightTris, c3, rot, new Vector3(len * 0.35f, 2.2f, 0.6f));
@@ -206,7 +248,7 @@ public class RingTunnel : MonoBehaviour
     void BuildSky(Material sky)
     {
         if (sky == null) return;
-        const int W = 256, H = 144;
+        const int W = 512, H = 288;
         var tex = new Texture2D(W, H, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
         var px = new Color[W * H];
         for (int y = 0; y < H; y++)
@@ -217,10 +259,13 @@ public class RingTunnel : MonoBehaviour
             float glow = Mathf.Exp(-(dx * dx + dy * dy) * 3.2f);
             float clouds = Fbm(u * 5f, v * 3f);
             float band = Mathf.Exp(-Mathf.Pow((v - 0.45f) * 4f, 2f)); // light low across the middle
-            float c = glow * 0.30f + clouds * (0.16f + band * 0.16f);
-            // Darker toward the edges so the rings and screen edges stay calm.
-            c *= Mathf.Lerp(1f, 0.35f, Mathf.Clamp01(Mathf.Abs(dx) * 1.2f));
-            px[y * W + x] = new Color(c * 0.55f, c * 0.72f, c * 1.05f, 1f);
+            float wisps = Fbm(u * 11f + 3f, v * 6f + 1f);
+            float c = glow * 0.42f + clouds * (0.30f + band * 0.25f) + wisps * clouds * 0.18f;
+            float edge = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dy * dy * 0.6f));
+            c *= Mathf.Lerp(1f, 0.45f, edge);
+            float core = glow * glow; // whiter, warmer right at the center, deep blue outside
+            c *= 0.8f;
+            px[y * W + x] = new Color(c * (0.22f + core * 0.55f), c * (0.42f + core * 0.45f), c * (1.0f + core * 0.1f), 1f);
         }
         tex.SetPixels(px);
         tex.Apply();
@@ -237,6 +282,65 @@ public class RingTunnel : MonoBehaviour
         skyRenderer = qr;
         qr.sharedMaterial = mat;
         qr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+
+    // ---------- Thin stars drifting toward the camera ----------
+
+    void BuildDust(Material baseMat)
+    {
+        if (baseMat == null) return;
+        const int N = 16;
+        var dot = new Texture2D(N, N, TextureFormat.RGBA32, false);
+        for (int y = 0; y < N; y++)
+        for (int x = 0; x < N; x++)
+        {
+            float r = new Vector2(x - N / 2f + 0.5f, y - N / 2f + 0.5f).magnitude / (N / 2f);
+            float a = Mathf.Clamp01(1f - r);
+            a *= a;
+            dot.SetPixel(x, y, new Color(a, a, a, a));
+        }
+        dot.Apply();
+        var mat = new Material(baseMat) { mainTexture = dot };
+        mat.SetTexture("_BaseMap", dot);
+
+        var go = new GameObject("TunnelStars");
+        go.transform.SetParent(transform, false);
+        go.transform.position = origin + new Vector3(0f, 0f, farDistance);
+        dust = go.AddComponent<ParticleSystem>();
+        dust.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        var main = dust.main;
+        main.loop = true;
+        main.playOnAwake = false;
+        main.startLifetime = farDistance / 160f;
+        main.startSpeed = 0f;
+        main.startSize = new ParticleSystem.MinMaxCurve(1.6f, 3.4f);
+        main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.75f, 0.85f, 1f, 0.9f), new Color(1f, 1f, 1f, 1f));
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 1500;
+        var emission = dust.emission;
+        emission.rateOverTime = 160f;
+        var shape = dust.shape;
+        shape.shapeType = ParticleSystemShapeType.Box;
+        shape.scale = new Vector3(1500f, 900f, 1f);
+        var vel = dust.velocityOverLifetime;
+        vel.enabled = true;
+        vel.space = ParticleSystemSimulationSpace.World;
+        vel.x = new ParticleSystem.MinMaxCurve(0f);
+        vel.y = new ParticleSystem.MinMaxCurve(0f);
+        vel.z = new ParticleSystem.MinMaxCurve(-160f);
+        var col = dust.colorOverLifetime;
+        col.enabled = true;
+        var g = new Gradient();
+        g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+            new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.25f), new GradientAlphaKey(1f, 1f) });
+        col.color = g;
+        var pr = go.GetComponent<ParticleSystemRenderer>();
+        pr.sharedMaterial = mat;
+        pr.renderMode = ParticleSystemRenderMode.Stretch;
+        pr.velocityScale = 0.02f;   // short, thin streaks
+        pr.lengthScale = 1.5f;
+        pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        dust.Play();
     }
 
     static float Fbm(float x, float y)
