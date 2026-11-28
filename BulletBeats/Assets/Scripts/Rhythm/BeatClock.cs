@@ -39,6 +39,7 @@ public class BeatClock : MonoBehaviour
 
     bool musicStarted;
     float clipEndedAt = -1f;
+    float lastPlaybackTime;
 
     // While the music's pitch is changed (slow motion), the web build reports the playback position
     // wrong: too slow, then a jump forward once the pitch is back to 1. So from the first pitch change
@@ -91,8 +92,15 @@ public class BeatClock : MonoBehaviour
 
     void Update()
     {
-        if (HasMusic && music.isPlaying) musicStarted = true;
-        if (HasMusic && musicStarted && clipEndedAt < 0f && !music.isPlaying && !AudioListener.pause)
+        if (HasMusic && music.isPlaying)
+        {
+            musicStarted = true;
+            lastPlaybackTime = counting ? countedTime : PlaybackTime;
+        }
+        // Only treat the clip as finished if it actually reached the end. The web build also stops
+        // the source when the page loses focus, and that must not count as the song ending.
+        if (HasMusic && musicStarted && clipEndedAt < 0f && !music.isPlaying && !AudioListener.pause
+            && lastPlaybackTime >= music.clip.length - 1f)
             clipEndedAt = Time.time;
         if (HasMusic) CountWhilePitched();
 
@@ -127,6 +135,7 @@ public class BeatClock : MonoBehaviour
         startTime = Time.time;
         musicStarted = false;
         clipEndedAt = -1f;
+        lastPlaybackTime = 0f;
         counting = false;
     }
 
